@@ -22,6 +22,7 @@ import shutil
 import time
 import uuid
 from urllib.parse import urlsplit
+import filesystem as fs
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,13 @@ class DesktopSkills:
         'todo.clear_completed': '_adapter_clear_completed_todos',
         'todo.move': '_adapter_move_todo',
         'system.context': '_adapter_get_desktop_context',
+        'filesystem.list': '_adapter_list_files',
+        'filesystem.read': '_adapter_read_file',
+        'filesystem.search': '_adapter_search_files',
+        'filesystem.write': '_adapter_write_file',
+        'filesystem.mkdir': '_adapter_make_directory',
+        'filesystem.move': '_adapter_move_path',
+        'filesystem.trash': '_adapter_trash_path',
     }
 
     # ── Adapter → required system commands ────────────────────────────
@@ -98,6 +106,13 @@ class DesktopSkills:
         'todo.move': (),
         'system.context': ('hyprctl', 'omarchy-battery-status', 'omarchy-network-status',
                            'omarchy-brightness-display', 'omarchy-hyprland-monitor-focused', 'pactl'),
+        'filesystem.list': (),
+        'filesystem.read': (),
+        'filesystem.search': (),
+        'filesystem.write': (),
+        'filesystem.mkdir': (),
+        'filesystem.move': (),
+        'filesystem.trash': (),
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
@@ -401,6 +416,33 @@ class DesktopSkills:
             return await handler(**arguments)
         except TypeError:
             raise SkillError(f'invalid arguments for {name}') from None
+
+    async def _file_operation(self, operation, *args, **kwargs):
+        try:
+            return await asyncio.to_thread(operation, *args, **kwargs)
+        except fs.FileOperationError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_files(self, path, limit=100):
+        return await self._file_operation(fs.list_directory, path, limit)
+
+    async def _adapter_read_file(self, path, max_chars=12000):
+        return await self._file_operation(fs.read_text, path, max_chars)
+
+    async def _adapter_search_files(self, path, query, limit=50):
+        return await self._file_operation(fs.search_files, path, query, limit)
+
+    async def _adapter_write_file(self, path, content, overwrite=False):
+        return await self._file_operation(fs.write_text, path, content, overwrite)
+
+    async def _adapter_make_directory(self, path):
+        return await self._file_operation(fs.make_directory, path)
+
+    async def _adapter_move_path(self, source, destination):
+        return await self._file_operation(fs.move_path, source, destination)
+
+    async def _adapter_trash_path(self, path):
+        return await self._file_operation(fs.trash_path, path)
 
     # ── Existing adapters ─────────────────────────────────────────────
 

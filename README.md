@@ -73,6 +73,12 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 - **Notifications**: `show_notification` with dynamic application name (`notify-send`)
 - **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
 - **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
+- **Filesystem**: list, read, search, create, replace, move, and trash files or directories by explicit path using the permissions of the user running JARVIS
+
+Filesystem skills operate on paths the local user can access. Text reads are capped at
+20,000 characters per call; writes are capped at 1 MiB. Existing files require an
+explicit `overwrite=true` to replace them. `trash_path` moves items to the desktop
+Trash so they can be recovered. These skills do not provide shell execution.
 
 The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
 their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,
