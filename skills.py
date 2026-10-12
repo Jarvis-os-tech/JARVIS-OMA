@@ -2,6 +2,10 @@
 
 The model can only select a declared skill.  Arguments are validated here and
 are always passed to subprocesses as an argv list; no shell is involved.
+
+Adapters self-declare their command dependencies.  Only commands actually needed
+by discovered skills are looked up.  Skills whose commands are unavailable are
+excluded at load time with a warning (graceful degradation).
 """
 from __future__ import annotations
 
@@ -9,11 +13,15 @@ import asyncio
 import configparser
 import ipaddress
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import shutil
+import time as _time
 from urllib.parse import urlsplit
+
+log = logging.getLogger(__name__)
 
 
 class SkillError(ValueError):
@@ -27,6 +35,7 @@ def _normalized(value: str) -> str:
 class DesktopSkills:
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
+    # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
@@ -35,20 +44,104 @@ class DesktopSkills:
         'display.brightness': '_adapter_adjust_brightness',
         'workspace.switch': '_adapter_switch_workspace',
         'notification.show': '_adapter_show_notification',
+        'system.lock': '_adapter_lock_screen',
+        'system.screenshot': '_adapter_take_screenshot',
+        'window.manage': '_adapter_manage_window',
+        'system.power': '_adapter_system_power',
+        'network.wifi': '_adapter_toggle_wifi',
+        'network.bluetooth': '_adapter_toggle_bluetooth',
+        'clipboard.read': '_adapter_read_clipboard',
+        'clipboard.write': '_adapter_write_clipboard',
     }
 
-    def __init__(self, manifest_dirs=None):
-        self._commands = {
-            name: shutil.which(name) for name in (
-                'gtk-launch', 'hyprctl', 'notify-send',
-                'omarchy-audio-output-volume', 'omarchy-brightness-display',
-                'omarchy-launch-webapp',
-            )
-        }
+    # ── Adapter → required system commands ────────────────────────────
+    ADAPTER_COMMANDS = {
+        'applications.list': (),
+        'applications.open': ('gtk-launch',),
+        'web.open': ('omarchy-launch-webapp',),
+        'audio.volume': ('omarchy-audio-output-volume',),
+        'display.brightness': ('omarchy-brightness-display',),
+        'workspace.switch': ('hyprctl',),
+        'notification.show': ('notify-send',),
+        'system.lock': ('loginctl',),
+        'system.screenshot': ('grim',),
+        'window.manage': ('hyprctl',),
+        'system.power': ('systemctl',),
+        'network.wifi': ('nmcli',),
+        'network.bluetooth': ('rfkill',),
+        'clipboard.read': ('wl-paste',),
+        'clipboard.write': ('wl-copy',),
+    }
+
+    def __init__(self, manifest_dirs=None, *, config=None,
+                 exclude_unavailable=True, app_name=None):
+        """Initialize with dynamic command discovery.
+
+        Args:
+            manifest_dirs: Override skill manifest directories.
+            config: Optional Config object for settings.
+            exclude_unavailable: If True, skip skills whose adapters lack
+                required commands (graceful degradation). If False, keep
+                them and fail at runtime.
+            app_name: Application name for notifications. Defaults to config
+                or 'Jarvis'.
+        """
+        if config is not None:
+            self._app_name = app_name or config.agent.name
+            self._command_timeout = config.audio.command_timeout
+            self._command_overrides = dict(config.commands)
+            if manifest_dirs is None and config.skills.manifest_dirs:
+                manifest_dirs = config.skills.manifest_dirs
+            exclude_unavailable = config.skills.exclude_unavailable
+        else:
+            self._app_name = app_name or 'Jarvis'
+            self._command_timeout = 8
+            self._command_overrides = {}
+
         if manifest_dirs is None:
             manifest_dirs = [Path(__file__).with_name('skill_manifests')]
         self.manifest_dirs = [Path(directory) for directory in manifest_dirs]
         self._skills = self._load_manifests()
+
+        # Discover commands dynamically from active adapters
+        self._commands = self._discover_commands()
+
+        # Graceful degradation: exclude skills with missing commands
+        if exclude_unavailable:
+            self._exclude_unavailable_skills()
+
+    def _discover_commands(self):
+        """Build command registry from what active adapters actually need."""
+        needed = set()
+        for spec in self._skills.values():
+            adapter = spec['adapter']
+            needed.update(self.ADAPTER_COMMANDS.get(adapter, ()))
+
+        commands = {}
+        for name in sorted(needed):
+            # Check for explicit override first
+            override = self._command_overrides.get(name)
+            if override and os.path.isfile(override) and os.access(override, os.X_OK):
+                commands[name] = override
+            else:
+                commands[name] = shutil.which(name)
+        return commands
+
+    def _exclude_unavailable_skills(self):
+        """Remove skills whose adapter commands are not installed."""
+        to_remove = []
+        for skill_name, spec in self._skills.items():
+            adapter = spec['adapter']
+            required = self.ADAPTER_COMMANDS.get(adapter, ())
+            missing = [cmd for cmd in required if not self._commands.get(cmd)]
+            if missing:
+                log.warning('Skill %s excluded: missing commands %s',
+                            skill_name, ', '.join(missing))
+                to_remove.append(skill_name)
+        for name in to_remove:
+            del self._skills[name]
+        if not self._skills:
+            raise SkillError('no desktop skills available (all required commands missing)')
 
     @property
     def declarations(self):
@@ -186,7 +279,16 @@ class DesktopSkills:
         return True
 
     def availability(self):
-        return {name: path is not None for name, path in self._commands.items()}
+        """Per-command and per-adapter availability report."""
+        command_status = {name: path is not None for name, path in self._commands.items()}
+        adapter_status = {}
+        for adapter_name, required_cmds in self.ADAPTER_COMMANDS.items():
+            if not required_cmds:
+                adapter_status[adapter_name] = True
+            else:
+                adapter_status[adapter_name] = all(
+                    self._commands.get(cmd) is not None for cmd in required_cmds)
+        return {'commands': command_status, 'adapters': adapter_status}
 
     def _command(self, name):
         path = self._commands.get(name)
@@ -194,7 +296,9 @@ class DesktopSkills:
             raise SkillError(f'{name} is not installed on this desktop')
         return path
 
-    async def _run(self, *argv, timeout=8):
+    async def _run(self, *argv, timeout=None):
+        if timeout is None:
+            timeout = self._command_timeout
         process = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             limit=64 * 1024)
@@ -224,12 +328,16 @@ class DesktopSkills:
             raise SkillError('application launcher failed')
 
     def _applications(self):
-        directories = [Path('/usr/share/applications'), Path('/usr/local/share/applications')]
-        data_home = os.getenv('XDG_DATA_HOME')
-        if data_home:
-            directories.insert(0, Path(data_home) / 'applications')
-        else:
-            directories.insert(0, Path.home() / '.local/share/applications')
+        """Discover installed .desktop applications via XDG directories."""
+        # XDG Base Directory Specification compliant
+        data_home = os.getenv('XDG_DATA_HOME') or str(Path.home() / '.local/share')
+        data_dirs_str = os.getenv('XDG_DATA_DIRS', '/usr/local/share:/usr/share')
+        data_dirs = [d.strip() for d in data_dirs_str.split(':') if d.strip()]
+
+        directories = [Path(data_home) / 'applications']
+        for d in data_dirs:
+            directories.append(Path(d) / 'applications')
+
         apps = {}
         for directory in directories:
             if not directory.is_dir():
@@ -264,6 +372,8 @@ class DesktopSkills:
             return await handler(**arguments)
         except TypeError:
             raise SkillError(f'invalid arguments for {name}') from None
+
+    # ── Existing adapters ─────────────────────────────────────────────
 
     async def _adapter_list_applications(self):
         names = sorted(set(self._applications().values()), key=str.casefold)
@@ -340,5 +450,127 @@ class DesktopSkills:
         title, message = title.strip(), message.strip()
         if not title or len(title) > 80 or not message or len(message) > 300:
             raise SkillError('notification title or message has an invalid length')
-        await self._run(self._command('notify-send'), '--app-name=Jarvis', title, message)
+        await self._run(self._command('notify-send'),
+                        f'--app-name={self._app_name}', title, message)
         return {'status': 'shown'}
+
+    # ── New system control adapters ───────────────────────────────────
+
+    async def _adapter_lock_screen(self):
+        """Lock the current session via loginctl."""
+        await self._run(self._command('loginctl'), 'lock-session')
+        return {'status': 'locked'}
+
+    async def _adapter_take_screenshot(self, region='full'):
+        """Capture a screenshot using grim."""
+        if region not in ('full', 'active'):
+            raise SkillError('screenshot region must be full or active')
+        pictures_dir = os.environ.get(
+            'XDG_PICTURES_DIR',
+            str(Path.home() / 'Pictures'))
+        Path(pictures_dir).mkdir(parents=True, exist_ok=True)
+        filename = str(Path(pictures_dir) / f'screenshot_{int(_time.time())}.png')
+        args = [self._command('grim')]
+        if region == 'active':
+            # Capture the active window by getting its geometry from hyprctl
+            hyprctl = self._commands.get('hyprctl')
+            if hyprctl:
+                try:
+                    info = await self._run(hyprctl, 'activewindow', '-j')
+                    import json as _json
+                    window = _json.loads(info)
+                    at = window.get('at', [0, 0])
+                    size = window.get('size', [1920, 1080])
+                    args.extend(['-g', f'{at[0]},{at[1]} {size[0]}x{size[1]}'])
+                except (SkillError, json.JSONDecodeError, KeyError):
+                    pass  # Fall back to full screen
+        args.append(filename)
+        await self._run(*args, timeout=10)
+        return {'status': 'captured', 'path': filename}
+
+    async def _adapter_manage_window(self, action):
+        """Manage the active window via hyprctl dispatch."""
+        dispatch_map = {
+            'fullscreen': 'fullscreen',
+            'close': 'killactive',
+            'minimize': 'movetospecialsilent',
+            'float': 'togglefloating',
+            'center': 'centerwindow',
+            'maximize': 'fullscreen 1',
+        }
+        if action not in dispatch_map:
+            valid = ', '.join(sorted(dispatch_map))
+            raise SkillError(f'window action must be one of: {valid}')
+        dispatch_arg = dispatch_map[action]
+        # Handle compound dispatch arguments (e.g. 'fullscreen 1')
+        parts = dispatch_arg.split(None, 1)
+        await self._run(self._command('hyprctl'), 'dispatch', *parts)
+        return {'status': 'done', 'action': action}
+
+    async def _adapter_system_power(self, action):
+        """Sleep or hibernate the system. Shutdown/reboot excluded for safety."""
+        allowed = {
+            'sleep': 'suspend',
+            'hibernate': 'hibernate',
+        }
+        if action not in allowed:
+            raise SkillError('power action must be sleep or hibernate '
+                             '(shutdown and reboot are not available for safety)')
+        await self._run(self._command('systemctl'), allowed[action])
+        return {'status': 'done', 'action': action}
+
+    async def _adapter_toggle_wifi(self, action):
+        """Toggle or check Wi-Fi status via nmcli."""
+        if action not in ('on', 'off', 'status'):
+            raise SkillError('Wi-Fi action must be on, off, or status')
+        if action == 'status':
+            output = await self._run(self._command('nmcli'), 'radio', 'wifi')
+            state = output.strip().lower()
+            return {'status': state, 'wifi': state}
+        await self._run(self._command('nmcli'), 'radio', 'wifi', action)
+        return {'status': 'done', 'wifi': action}
+
+    async def _adapter_toggle_bluetooth(self, action):
+        """Toggle or check Bluetooth status via rfkill."""
+        if action not in ('on', 'off', 'status'):
+            raise SkillError('Bluetooth action must be on, off, or status')
+        if action == 'status':
+            output = await self._run(self._command('rfkill'), 'list', 'bluetooth')
+            blocked = 'Soft blocked: yes' in output
+            return {'status': 'off' if blocked else 'on', 'bluetooth': 'off' if blocked else 'on'}
+        cmd = 'unblock' if action == 'on' else 'block'
+        await self._run(self._command('rfkill'), cmd, 'bluetooth')
+        return {'status': 'done', 'bluetooth': action}
+
+    async def _adapter_read_clipboard(self):
+        """Read current clipboard content via wl-paste."""
+        try:
+            output = await self._run(self._command('wl-paste'),
+                                     '--no-newline', timeout=3)
+        except SkillError:
+            return {'status': 'empty', 'content': ''}
+        return {'status': 'read', 'content': output[:500]}
+
+    async def _adapter_write_clipboard(self, content):
+        """Write text to clipboard via wl-copy."""
+        if not isinstance(content, str):
+            raise SkillError('clipboard content must be text')
+        if len(content) > 10000:
+            raise SkillError('clipboard content must be 10000 characters or fewer')
+        if not content.strip():
+            raise SkillError('clipboard content must not be empty')
+        process = await asyncio.create_subprocess_exec(
+            self._command('wl-copy'), '--',
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE)
+        try:
+            _, stderr = await asyncio.wait_for(
+                process.communicate(content.encode('utf-8')), 5)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+            raise SkillError('clipboard write timed out') from None
+        if process.returncode:
+            raise SkillError('clipboard write failed')
+        return {'status': 'written', 'length': len(content)}

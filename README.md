@@ -1,5 +1,11 @@
 # Jarvis — full-duplex voice agent for Omarchy
 
+[![CI](https://github.com/Jarvis-os-tech/JARVIS-OMA/actions/workflows/ci.yml/badge.svg)](https://github.com/Jarvis-os-tech/JARVIS-OMA/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Gemini Live API](https://img.shields.io/badge/Gemini-Live%20API-4285F4.svg)](https://ai.google.dev/)
+[![Platform](https://img.shields.io/badge/platform-Omarchy%20%2F%20Arch%20Linux-1793d1.svg)](https://archlinux.org/)
+
 **Everything for this agent is in this folder.** Copy it anywhere on an
 Omarchy/Arch Linux desktop. It has no imports from the original Omarchy AI app.
 
@@ -19,6 +25,7 @@ Open a terminal **inside this folder**, then:
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env  # optional: set your GEMINI_API_KEY
 ./run.sh --check
 ./run.sh --list-skills
 ./run.sh
@@ -129,9 +136,10 @@ may retain scrollback. A cloud connection and its usage costs are required.
 - `skill_manifests/omarchy-defaults.json`: bundled dynamic skill declarations.
 - `echo_cancel.py`: session-owned PipeWire routing adapted from the existing
   Omarchy voice code. Includes optional gain management, unused by the default CLI.
+- `config.py`: dynamic configuration loader supporting TOML, JSON, and `JARVIS_*` environment variables.
 - `requirements.txt`: the tested Google GenAI SDK version.
 - `run.sh`: starts this folder's virtual environment when present.
-- `test_agent.py`, `test_echo_cancel.py`, `test_skills.py`: offline regression tests.
+- `test_agent.py`, `test_echo_cancel.py`, `test_skills.py`, `test_config.py`: offline unit and regression tests.
 - `LICENSE`: original MIT notice retained for reused audio code.
 
 ## Verification
