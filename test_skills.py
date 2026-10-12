@@ -32,7 +32,13 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
         directory = Path(temporary.name)
         for index, document in enumerate(documents):
             (directory / f'{index}.json').write_text(json.dumps(document), encoding='utf-8')
-        return DesktopSkills([directory])
+        skills = DesktopSkills([directory])
+        for cmd in ('omarchy-brightness-display', 'gtk-launch', 'hyprctl', 'notify-send',
+                    'omarchy-audio-output-volume', 'omarchy-launch-webapp', 'loginctl',
+                    'grim', 'systemctl', 'nmcli', 'rfkill', 'wl-paste', 'wl-copy'):
+            if not skills._commands.get(cmd):
+                skills._commands[cmd] = f'/usr/bin/{cmd}'
+        return skills
 
     async def test_discovers_skill_names_and_schemas_from_manifests(self):
         skills = self.make_skills(manifest([spec('second'), spec('first')]))
@@ -89,6 +95,8 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_application_adapter_launches_only_catalogued_exact_match(self):
         skills = DesktopSkills()
+        if not skills._commands.get('gtk-launch'):
+            skills._commands['gtk-launch'] = '/usr/bin/gtk-launch'
         with patch.object(skills, '_applications', return_value={'firefox.desktop': 'Firefox'}), \
              patch.object(skills, '_launch', new=AsyncMock()) as launch:
             result = await skills.execute('open_application', {'name': 'Firefox'})
