@@ -1,0 +1,27 @@
+Offline verification — 2026-10-12
+
+Command:
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s . -p 'test_*.py' -v
+
+Result:
+Ran 32 tests in 0.132s
+OK
+
+Coverage includes:
+- full-duplex microphone, playback, interruption and worker cleanup
+- retry, resumption and echo-route cleanup behavior
+- Gemini Live dynamic tool declaration and function-response ID matching
+- background tool execution without blocking audio/event reception
+- JSON manifest discovery, duplicate detection and fail-closed validation
+- strict dynamic argument schemas, including bool/integer and range checks
+- reviewed adapter routing with no shell command execution
+- exact installed-application matching
+- public HTTP(S) URL policy and local/private literal rejection
+
+Additional checks:
+- ./run.sh --check: PASS, skills enabled
+- ./run.sh --list-skills: 7 dynamic skills; all required commands available
+- ./run.sh --no-skills --check: PASS, conversation-only configuration
+
+No live Gemini session, physical microphone/speaker echo test, or real desktop
+action was performed by this offline verification.

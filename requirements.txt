@@ -1,0 +1,2 @@
+# SDK version used for the offline contract tests. No local inference packages.
+google-genai==2.24.0
