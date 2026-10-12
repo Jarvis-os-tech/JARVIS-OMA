@@ -73,12 +73,37 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 - **Notifications**: `show_notification` with dynamic application name (`notify-send`)
 - **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
 - **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
-- **Filesystem**: list, read, search, create, replace, move, and trash files or directories by explicit path using the permissions of the user running JARVIS
+- **Desktop awareness & perception**: `inspect_screen` (Wayland capture + fast local OCR), `list_windows` (open apps across all workspaces), `focus_window` (bring apps to foreground), `list_workspaces`, and `get_system_resources` (real-time CPU, RAM, disk, and process monitoring)
+- **Filesystem**: list, read, search, create, edit, copy, move, and trash files or directories by explicit path using the permissions of the user running JARVIS
+- **Multi-step tasks**: `start_task`, `task_status`, `list_tasks`, and `cancel_task` for bounded background file jobs with per-step results
+- **System agent orchestration**: discover and delegate to Codex, Claude Code, OpenCode, Gemini CLI, Hermes, and OMP; inspect progress and stop owned jobs
 
 Filesystem skills operate on paths the local user can access. Text reads are capped at
 20,000 characters per call; writes are capped at 1 MiB. Existing files require an
 explicit `overwrite=true` to replace them. `trash_path` moves items to the desktop
 Trash so they can be recovered. These skills do not provide shell execution.
+
+For a multi-step file request, JARVIS can inspect paths, submit a JSON plan of up
+to 30 validated file actions, and report progress by task ID. Cancellation takes
+effect before the next step; an operation already running may finish. Task records
+are kept while this JARVIS process runs and are cleared on restart. The task
+runner does not execute arbitrary shell commands or permanent deletion.
+
+Agent orchestration uses `list_system_agents`, `delegate_agent`, `check_agent_job`,
+`list_agent_jobs`, and `cancel_agent_job`. Delegate with an agent name, task prompt,
+and absolute path to an existing workspace. JARVIS supervises up to four agents in
+separate workspaces, reserves overlapping directories while jobs run, and retains
+up to 50 job records in memory. Recent output is bounded and available through
+`check_agent_job`; the live voice session receives a completion/failure notification.
+Jobs time out after 15 minutes by default (configurable per job up to two hours).
+Stopping JARVIS stops its owned agent processes. Completed file changes remain.
+
+Agents use their existing login, configuration, and tool permissions. Installation
+discovery does not verify login or quota. Permission requests that cannot be answered
+headlessly may fail or time out; inspect the job output for details. Job records are
+not restored after restarting JARVIS. This manages jobs launched by JARVIS, rather
+than attaching to unrelated sessions already open in another application. Review an
+agent's changes before treating a successful process exit as verified task completion.
 
 The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
 their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,

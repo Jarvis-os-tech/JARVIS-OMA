@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "inspect_screen",
+      "description": "Inspect what is currently visible on the screen or active window, capturing visual layout and extracting on-screen text via local OCR.",
+      "adapter": "screen.inspect",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": ["full", "active"],
+            "description": "Region to inspect: full screen or focused active window."
+          },
+          "extract_text": {
+            "type": "boolean",
+            "description": "Whether to extract visible on-screen text using OCR."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_windows",
+      "description": "List all currently open application windows across all workspaces, including application name, window title, workspace ID, and focus state.",
+      "adapter": "window.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Optional workspace number to filter windows by."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "focus_window",
+      "description": "Bring an open application window to the foreground and focus it by application class, title substring, or window address.",
+      "adapter": "window.focus",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Application name (e.g. 'foot', 'firefox'), title keyword, or window address."
+          }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_workspaces",
+      "description": "List all active desktop workspaces, their window counts, and which workspace is currently active.",
+      "adapter": "workspace.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_system_resources",
+      "description": "Check real-time hardware health and system performance: CPU load percentage, RAM usage, disk storage, and top resource-consuming processes.",
+      "adapter": "system.resources",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -23,6 +23,8 @@ import time
 import uuid
 from urllib.parse import urlsplit
 import filesystem as fs
+from task_runner import TaskPlanError, TaskRunner
+from agent_orchestrator import AgentOrchestrator, OrchestrationError
 
 log = logging.getLogger(__name__)
 
@@ -71,9 +73,29 @@ class DesktopSkills:
         'filesystem.read': '_adapter_read_file',
         'filesystem.search': '_adapter_search_files',
         'filesystem.write': '_adapter_write_file',
+        'filesystem.append': '_adapter_append_file',
         'filesystem.mkdir': '_adapter_make_directory',
         'filesystem.move': '_adapter_move_path',
         'filesystem.trash': '_adapter_trash_path',
+        'filesystem.copy': '_adapter_copy_path',
+        'filesystem.edit': '_adapter_edit_file',
+        'task.start': '_adapter_start_task',
+        'task.status': '_adapter_task_status',
+        'task.list': '_adapter_list_tasks',
+        'task.cancel': '_adapter_cancel_task',
+        'agents.list': '_adapter_list_system_agents',
+        'agents.delegate': '_adapter_delegate_agent',
+        'agents.status': '_adapter_check_agent_job',
+        'agents.jobs': '_adapter_list_agent_jobs',
+        'agents.cancel': '_adapter_cancel_agent_job',
+        'filesystem.delete': '_adapter_delete_path',
+        'filesystem.info': '_adapter_inspect_path',
+        'filesystem.grep': '_adapter_search_file_content',
+        'screen.inspect': '_adapter_inspect_screen',
+        'window.list': '_adapter_list_windows',
+        'window.focus': '_adapter_focus_window',
+        'workspace.list': '_adapter_list_workspaces',
+        'system.resources': '_adapter_get_system_resources',
     }
 
     # ── Adapter → required system commands ────────────────────────────
@@ -110,9 +132,29 @@ class DesktopSkills:
         'filesystem.read': (),
         'filesystem.search': (),
         'filesystem.write': (),
+        'filesystem.append': (),
         'filesystem.mkdir': (),
         'filesystem.move': (),
         'filesystem.trash': (),
+        'filesystem.copy': (),
+        'filesystem.edit': (),
+        'task.start': (),
+        'task.status': (),
+        'task.list': (),
+        'task.cancel': (),
+        'agents.list': (),
+        'agents.delegate': (),
+        'agents.status': (),
+        'agents.jobs': (),
+        'agents.cancel': (),
+        'filesystem.delete': (),
+        'filesystem.info': (),
+        'filesystem.grep': (),
+        'screen.inspect': ('grim', 'tesseract'),
+        'window.list': ('hyprctl',),
+        'window.focus': ('hyprctl',),
+        'workspace.list': ('hyprctl',),
+        'system.resources': ('ps',),
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
@@ -144,6 +186,8 @@ class DesktopSkills:
             manifest_dirs = [Path(__file__).with_name('skill_manifests')]
         self.manifest_dirs = [Path(directory) for directory in manifest_dirs]
         self._skills = self._load_manifests()
+        self._task_runner = TaskRunner(self.execute, self._valid_task_step)
+        self._agent_orchestrator = AgentOrchestrator()
 
         # Discover commands dynamically from active adapters
         self._commands = self._discover_commands()
@@ -417,32 +461,106 @@ class DesktopSkills:
         except TypeError:
             raise SkillError(f'invalid arguments for {name}') from None
 
+    def _valid_task_step(self, name, arguments):
+        spec = self._skills.get(name)
+        return spec is not None and self._arguments_match(arguments, spec['parameters_json_schema'])
+
+    async def _adapter_list_system_agents(self):
+        return self._agent_orchestrator.discover()
+
+    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900):
+        try:
+            return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds)
+        except OrchestrationError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_check_agent_job(self, job_id, max_chars=6000):
+        try:
+            return self._agent_orchestrator.status(job_id, max_chars)
+        except OrchestrationError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_agent_jobs(self):
+        return self._agent_orchestrator.list_jobs()
+
+    async def _adapter_cancel_agent_job(self, job_id):
+        try:
+            return await self._agent_orchestrator.cancel(job_id)
+        except OrchestrationError as error:
+            raise SkillError(str(error)) from None
+
+    async def close_agent_jobs(self):
+        await self._agent_orchestrator.close()
+
+    @property
+    def agent_job_events(self):
+        return self._agent_orchestrator.events
+
+    async def _adapter_start_task(self, description, plan_json):
+        try:
+            return self._task_runner.start(description, plan_json)
+        except TaskPlanError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_task_status(self, task_id):
+        try:
+            return self._task_runner.status(task_id)
+        except TaskPlanError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_tasks(self):
+        return self._task_runner.list_tasks()
+
+    async def _adapter_cancel_task(self, task_id):
+        try:
+            return self._task_runner.cancel(task_id)
+        except TaskPlanError as error:
+            raise SkillError(str(error)) from None
+
     async def _file_operation(self, operation, *args, **kwargs):
         try:
-            return await asyncio.to_thread(operation, *args, **kwargs)
+            return operation(*args, **kwargs)
         except fs.FileOperationError as error:
             raise SkillError(str(error)) from None
 
-    async def _adapter_list_files(self, path, limit=100):
-        return await self._file_operation(fs.list_directory, path, limit)
+    async def _adapter_list_files(self, path, limit=100, include_hidden=True):
+        return await self._file_operation(fs.list_directory, path, limit, include_hidden)
 
-    async def _adapter_read_file(self, path, max_chars=12000):
-        return await self._file_operation(fs.read_text, path, max_chars)
+    async def _adapter_read_file(self, path, offset=0, max_chars=20000):
+        return await self._file_operation(fs.read_text, path, offset, max_chars)
 
-    async def _adapter_search_files(self, path, query, limit=50):
-        return await self._file_operation(fs.search_files, path, query, limit)
+    async def _adapter_search_files(self, path, query, limit=50, include_hidden=False):
+        return await self._file_operation(fs.search_files, path, query, limit, include_hidden)
+
+    async def _adapter_search_file_content(self, path, query, limit=30):
+        return await self._file_operation(fs.search_file_content, path, query, limit)
 
     async def _adapter_write_file(self, path, content, overwrite=False):
         return await self._file_operation(fs.write_text, path, content, overwrite)
 
+    async def _adapter_append_file(self, path, content):
+        return await self._file_operation(fs.append_text, path, content)
+
     async def _adapter_make_directory(self, path):
         return await self._file_operation(fs.make_directory, path)
 
-    async def _adapter_move_path(self, source, destination):
-        return await self._file_operation(fs.move_path, source, destination)
+    async def _adapter_move_path(self, source, destination, overwrite=False):
+        return await self._file_operation(fs.move_path, source, destination, overwrite)
+
+    async def _adapter_copy_path(self, source, destination, overwrite=False):
+        return await self._file_operation(fs.copy_path, source, destination, overwrite)
 
     async def _adapter_trash_path(self, path):
         return await self._file_operation(fs.trash_path, path)
+
+    async def _adapter_delete_path(self, path, recursive=False):
+        return await self._file_operation(fs.delete_path, path, recursive)
+
+    async def _adapter_inspect_path(self, path):
+        return await self._file_operation(fs.inspect_path, path)
+
+    async def _adapter_edit_file(self, path, old, new):
+        return await self._file_operation(fs.replace_text, path, old, new)
 
     # ── Existing adapters ─────────────────────────────────────────────
 
@@ -727,7 +845,233 @@ class DesktopSkills:
                 self._command('omarchy-hyprland-monitor-focused'))
         except SkillError:
             context['brightness'] = None
+        try:
+            if hypr:
+                clients_raw = await self._run(hypr, 'clients', '-j', max_output=65536)
+                clients = json.loads(clients_raw)
+                context['open_windows_count'] = len(clients) if isinstance(clients, list) else None
+            else:
+                context['open_windows_count'] = None
+        except (SkillError, json.JSONDecodeError, TypeError):
+            context['open_windows_count'] = None
         return context
+
+    # ── Desktop awareness adapters ────────────────────────────────────
+
+    async def _adapter_inspect_screen(self, region='full', extract_text=True):
+        """Inspect what is currently visible on screen or active window, capturing visual layout and OCR text."""
+        if region not in ('full', 'active'):
+            raise SkillError('screen inspection region must be full or active')
+        screenshots_dir = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'jarvis_screen'
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        filename = str(screenshots_dir / f'inspect_{int(time.time() * 1000)}.png')
+
+        args = [self._command('grim')]
+        active_window_info = None
+        hyprctl = self._commands.get('hyprctl')
+        if hyprctl:
+            try:
+                raw_active = await self._run(hyprctl, 'activewindow', '-j', max_output=65536)
+                parsed = json.loads(raw_active)
+                if isinstance(parsed, dict):
+                    ws = parsed.get('workspace', {})
+                    ws_val = ws.get('name', ws.get('id')) if isinstance(ws, dict) else ws
+                    active_window_info = {
+                        'title': parsed.get('title', ''),
+                        'class': parsed.get('class', ''),
+                        'workspace': ws_val,
+                    }
+                    if region == 'active':
+                        at = parsed.get('at', [0, 0])
+                        size = parsed.get('size', [1920, 1080])
+                        args.extend(['-g', f'{at[0]},{at[1]} {size[0]}x{size[1]}'])
+            except (SkillError, json.JSONDecodeError, KeyError):
+                pass
+
+        args.append(filename)
+        await self._run(*args, timeout=10)
+
+        extracted_text = None
+        if extract_text:
+            try:
+                tesseract = self._command('tesseract')
+                raw_ocr = await self._run(tesseract, filename, 'stdout', '--oem', '1', '-l', 'eng', timeout=15)
+                lines = [line.strip() for line in raw_ocr.splitlines()]
+                cleaned_lines = [l for l in lines if l]
+                extracted_text = '\n'.join(cleaned_lines)[:3000]
+            except SkillError as err:
+                log.warning('OCR extraction failed: %s', err)
+                extracted_text = ''
+
+        return {
+            'status': 'inspected',
+            'region': region,
+            'active_window': active_window_info,
+            'text_content': extracted_text,
+            'screenshot_path': filename,
+        }
+
+    async def _adapter_list_windows(self, workspace=None):
+        """List open application windows across workspaces."""
+        if workspace is not None and (isinstance(workspace, bool) or not isinstance(workspace, int) or workspace < 1):
+            raise SkillError('invalid workspace number')
+        hypr = self._command('hyprctl')
+        raw = await self._run(hypr, 'clients', '-j', max_output=131072)
+        try:
+            clients = json.loads(raw)
+        except json.JSONDecodeError:
+            raise SkillError('could not parse window list from Hyprland') from None
+        if not isinstance(clients, list):
+            raise SkillError('invalid window data received from Hyprland')
+
+        windows = []
+        for c in clients:
+            if not isinstance(c, dict):
+                continue
+            ws = c.get('workspace', {})
+            ws_id = ws.get('id') if isinstance(ws, dict) else ws
+            if workspace is not None and ws_id != workspace:
+                continue
+            windows.append({
+                'title': c.get('title', ''),
+                'class': c.get('class', ''),
+                'workspace': ws_id,
+                'address': c.get('address', ''),
+                'focused': bool(c.get('focusHistoryID') == 0),
+                'floating': bool(c.get('floating', False)),
+                'fullscreen': bool(c.get('fullscreen', 0) != 0),
+            })
+        return {'windows': windows, 'count': len(windows)}
+
+    async def _adapter_focus_window(self, query):
+        """Focus an open window by class, title substring, or address."""
+        if not isinstance(query, str) or not query.strip():
+            raise SkillError('query must be non-empty text')
+        needle = query.strip().casefold()
+        clients_res = await self._adapter_list_windows()
+        windows = clients_res.get('windows', [])
+
+        match = None
+        # Priority 1: Exact address match or exact class match
+        for w in windows:
+            if w.get('address', '').casefold() == needle or w.get('class', '').casefold() == needle:
+                match = w
+                break
+
+        # Priority 2: Substring class match
+        if match is None:
+            for w in windows:
+                if needle in w.get('class', '').casefold():
+                    match = w
+                    break
+
+        # Priority 3: Substring title match
+        if match is None:
+            for w in windows:
+                if needle in w.get('title', '').casefold():
+                    match = w
+                    break
+
+        if match is None:
+            raise SkillError(f'no open window found matching "{query}"')
+
+        hypr = self._command('hyprctl')
+        address = match['address']
+        lua_cmd = f'hl.dsp.focus({{ window = "address:{address}" }})'
+        try:
+            await self._run(hypr, 'dispatch', lua_cmd)
+        except SkillError:
+            await self._run(hypr, 'dispatch', 'focuswindow', f'address:{address}')
+
+        return {'status': 'focused', 'window': match}
+
+    async def _adapter_list_workspaces(self):
+        """List active desktop workspaces, their window count, and focused workspace."""
+        hypr = self._command('hyprctl')
+        raw_ws = await self._run(hypr, 'workspaces', '-j', max_output=65536)
+        raw_active = await self._run(hypr, 'activeworkspace', '-j', max_output=65536)
+        try:
+            workspaces = json.loads(raw_ws)
+            active = json.loads(raw_active)
+        except json.JSONDecodeError:
+            raise SkillError('could not parse workspace list from Hyprland') from None
+
+        formatted = []
+        if isinstance(workspaces, list):
+            for ws in workspaces:
+                if isinstance(ws, dict):
+                    formatted.append({
+                        'id': ws.get('id'),
+                        'name': ws.get('name', str(ws.get('id'))),
+                        'windows': ws.get('windows', 0),
+                    })
+        formatted.sort(key=lambda item: item['id'] if isinstance(item.get('id'), int) else 0)
+        active_id = active.get('id') if isinstance(active, dict) else None
+        return {
+            'active_workspace': active_id,
+            'workspaces': formatted,
+            'count': len(formatted),
+        }
+
+    async def _adapter_get_system_resources(self):
+        """Check real-time hardware health and system performance metrics."""
+        load1, load5, load15 = os.getloadavg()
+        cpu_count = os.cpu_count() or 1
+        cpu_pct = round((load1 / cpu_count) * 100, 1)
+
+        mem = {}
+        try:
+            with open('/proc/meminfo', 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.split(':')
+                    if len(parts) == 2:
+                        mem[parts[0].strip()] = int(parts[1].strip().split()[0])
+        except (OSError, ValueError):
+            pass
+
+        total_kb = mem.get('MemTotal', 1)
+        avail_kb = mem.get('MemAvailable', 0)
+        ram_pct = round(((total_kb - avail_kb) / total_kb) * 100, 1)
+
+        disk = shutil.disk_usage('/')
+        disk_total = getattr(disk, 'total', disk[0] if isinstance(disk, (list, tuple)) else 1)
+        disk_used = getattr(disk, 'used', disk[1] if isinstance(disk, (list, tuple)) else 0)
+        disk_pct = round((disk_used / disk_total) * 100, 1) if disk_total else 0.0
+
+        uptime_hours = 0.0
+        try:
+            with open('/proc/uptime', 'r', encoding='utf-8') as f:
+                uptime_hours = round(float(f.read().split()[0]) / 3600, 2)
+        except (OSError, ValueError, IndexError):
+            pass
+
+        top_procs = []
+        try:
+            ps_cmd = self._command('ps')
+            raw_ps = await self._run(ps_cmd, '-eo', 'comm,%cpu,%mem', '--sort=-%cpu', '--no-headers', timeout=5)
+            for line in raw_ps.splitlines()[:5]:
+                parts = line.split()
+                if len(parts) >= 3:
+                    top_procs.append({
+                        'name': parts[0],
+                        'cpu_percent': float(parts[1]),
+                        'mem_percent': float(parts[2]),
+                    })
+        except (SkillError, ValueError):
+            pass
+
+        return {
+            'cpu_load_percent': cpu_pct,
+            'cpu_cores': cpu_count,
+            'load_averages': [load1, load5, load15],
+            'ram_total_gb': round(total_kb / 1024 / 1024, 2),
+            'ram_used_gb': round((total_kb - avail_kb) / 1024 / 1024, 2),
+            'ram_used_percent': ram_pct,
+            'disk_total_gb': round(disk_total / 1024**3, 2),
+            'disk_used_percent': disk_pct,
+            'uptime_hours': uptime_hours,
+            'top_processes': top_procs,
+        }
 
     # ── New system control adapters ───────────────────────────────────
 
