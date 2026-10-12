@@ -443,7 +443,13 @@ class DesktopSkills:
             target = 'e+1' if workspace == 'next' else 'e-1'
         else:
             raise SkillError('workspace must be 1 to 10, next, or previous')
-        await self._run(self._command('hyprctl'), 'dispatch', 'workspace', target)
+        hypr = self._command('hyprctl')
+        # Hyprland 0.56+ uses Lua dispatch: hl.dsp.focus({ workspace = "..." })
+        # Older Hyprland used: hyprctl dispatch workspace <target>
+        try:
+            await self._run(hypr, 'dispatch', f'hl.dsp.focus({{ workspace = "{target}" }})')
+        except SkillError:
+            await self._run(hypr, 'dispatch', 'workspace', target)
         return {'status': 'switched', 'workspace': workspace}
 
     async def _adapter_show_notification(self, title, message):
@@ -492,21 +498,30 @@ class DesktopSkills:
 
     async def _adapter_manage_window(self, action):
         """Manage the active window via hyprctl dispatch."""
-        dispatch_map = {
-            'fullscreen': 'fullscreen',
-            'close': 'killactive',
-            'minimize': 'movetospecialsilent',
-            'float': 'togglefloating',
-            'center': 'centerwindow',
-            'maximize': 'fullscreen 1',
+        lua_map = {
+            'fullscreen': 'hl.dsp.window.fullscreen({ mode = "fullscreen" })',
+            'maximize': 'hl.dsp.window.fullscreen({ mode = "maximized" })',
+            'close': 'hl.dsp.window.close()',
+            'minimize': 'hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })',
+            'float': 'hl.dsp.window.float({ action = "toggle" })',
+            'center': 'hl.dsp.window.center()',
         }
-        if action not in dispatch_map:
-            valid = ', '.join(sorted(dispatch_map))
+        legacy_map = {
+            'fullscreen': ['fullscreen'],
+            'maximize': ['fullscreen', '1'],
+            'close': ['killactive'],
+            'minimize': ['movetospecialsilent'],
+            'float': ['togglefloating'],
+            'center': ['centerwindow'],
+        }
+        if action not in lua_map:
+            valid = ', '.join(sorted(lua_map))
             raise SkillError(f'window action must be one of: {valid}')
-        dispatch_arg = dispatch_map[action]
-        # Handle compound dispatch arguments (e.g. 'fullscreen 1')
-        parts = dispatch_arg.split(None, 1)
-        await self._run(self._command('hyprctl'), 'dispatch', *parts)
+        hypr = self._command('hyprctl')
+        try:
+            await self._run(hypr, 'dispatch', lua_map[action])
+        except SkillError:
+            await self._run(hypr, 'dispatch', *legacy_map[action])
         return {'status': 'done', 'action': action}
 
     async def _adapter_system_power(self, action):

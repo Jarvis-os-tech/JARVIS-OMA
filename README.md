@@ -40,35 +40,41 @@ speak while Gemini is speaking. Press **Ctrl+C** to stop microphone capture, clo
 the connection, stop playback and release the private audio routes. This version
 uses stop/restart rather than a separate mute interface.
 
-Optional settings:
+Optional settings and dynamic configuration:
 
 ```sh
 ./run.sh --voice Aoede --transcripts
 ./run.sh --model gemini-3.8-live
+./run.sh --agent-name "Friday"
+./run.sh --config ./config.toml
+./run.sh --system-instruction "Custom prompt..."
 pactl list short sources
 ./run.sh --microphone YOUR_PHYSICAL_SOURCE_NAME
 ./run.sh --no-skills
 ```
 
-The model can also be set through `GEMINI_LIVE_MODEL`. The default is
-`gemini-3.8-live`; account access still needs live verification. Select a physical
-microphone, not a source ending in `.monitor`. Output uses the system default
-speaker selected at startup. Restart this agent after changing audio hardware.
+Settings can also be loaded automatically from a configuration file (`~/.config/jarvis-oma/config.toml`,
+`./config.toml`, or `./config.json`; see `config.toml.example` for all options), or via environment
+variables (`JARVIS_AGENT_NAME`, `JARVIS_VOICE`, `JARVIS_MODEL`, `JARVIS_CONFIG`, `GEMINI_LIVE_MODEL`).
 
 ## Dynamic Omarchy skills
 
 Skills are enabled by default. At startup Jarvis reads JSON manifests from
 `skill_manifests/`, validates their names and strict argument schemas, and gives
-the discovered declarations to Gemini Live. The bundled manifest enables
-application discovery/launching, public website opening, output volume, display
-brightness, workspace switching, and local notifications.
+the discovered declarations to Gemini Live. The bundled manifests enable:
 
-The manifests are dynamic configuration rather than executable plugins. They can
-rename, remove, or select reviewed adapters, but cannot provide a shell command,
-executable path, environment, or raw argument template. The adapter layer uses
-fixed argument arrays and validates values again before calling Omarchy. It does
-not expose package installation, privilege elevation, shutdown, file access,
-arbitrary keyboard/mouse input, or arbitrary terminal commands.
+- **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
+- **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)
+- **Audio & display controls**: `adjust_volume`, `adjust_brightness`
+- **Window & workspace management**: `switch_workspace`, `manage_window` (fullscreen, close, minimize, float, center, maximize via `hyprctl`)
+- **System controls**: `lock_screen` (`loginctl`), `take_screenshot` (`grim`), `system_power` (safe sleep/hibernate via `systemctl`)
+- **Network controls**: `toggle_wifi` (`nmcli`), `toggle_bluetooth` (`rfkill`)
+- **Clipboard**: `read_clipboard` (`wl-paste`), `write_clipboard` (`wl-copy`)
+- **Notifications**: `show_notification` with dynamic application name (`notify-send`)
+
+The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
+their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,
+skills that depend on it are excluded gracefully at startup with a warning instead of failing during a call.
 
 To replace the bundled set with manifests from another directory:
 

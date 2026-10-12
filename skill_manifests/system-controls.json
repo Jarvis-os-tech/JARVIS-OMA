@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "lock_screen",
+      "description": "Lock the screen or computer session.",
+      "adapter": "system.lock",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "take_screenshot",
+      "description": "Capture a screenshot of the entire screen or active window.",
+      "adapter": "system.screenshot",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": ["full", "active"],
+            "description": "Screen region to capture: full screen or active window."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "manage_window",
+      "description": "Manage the active window: fullscreen, close, minimize, float, center, or maximize.",
+      "adapter": "window.manage",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["fullscreen", "close", "minimize", "float", "center", "maximize"],
+            "description": "Window management action."
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "system_power",
+      "description": "Put the computer to sleep or hibernate.",
+      "adapter": "system.power",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["sleep", "hibernate"],
+            "description": "Power state action: sleep or hibernate."
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "toggle_wifi",
+      "description": "Turn Wi-Fi on, turn Wi-Fi off, or check Wi-Fi connection status.",
+      "adapter": "network.wifi",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["on", "off", "status"],
+            "description": "Wi-Fi action: on, off, or status."
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "toggle_bluetooth",
+      "description": "Turn Bluetooth on, turn Bluetooth off, or check Bluetooth status.",
+      "adapter": "network.bluetooth",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["on", "off", "status"],
+            "description": "Bluetooth action: on, off, or status."
+          }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_clipboard",
+      "description": "Read text content currently in the system clipboard.",
+      "adapter": "clipboard.read",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "write_clipboard",
+      "description": "Copy text content to the system clipboard.",
+      "adapter": "clipboard.write",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Text to place on the clipboard."
+          }
+        },
+        "required": ["content"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

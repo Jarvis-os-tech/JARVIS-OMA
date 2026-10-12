@@ -16,6 +16,7 @@ import signal
 import sys
 import time
 
+from config import Config, load_config
 from echo_cancel import EchoCancellation
 from skills import DesktopSkills, SkillError
 
@@ -57,9 +58,15 @@ async def supervise(*workers):
 class Playback:
     """Bounded PCM playback, with generation fences for interruption races."""
 
-    def __init__(self, sink):
+    def __init__(self, sink, *, config=None):
         self.sink = sink
-        self.queue = asyncio.Queue(maxsize=500)  # At most ten seconds of PCM.
+        self.config = config
+        audio_cfg = config.audio if config else None
+        self.queue_maxsize = audio_cfg.queue_max_chunks if audio_cfg else 500
+        self.output_bytes = audio_cfg.output_frame_bytes if audio_cfg else OUTPUT_BYTES
+        self.sample_rate = audio_cfg.output_sample_rate if audio_cfg else 24000
+        self.playback_latency = f"{audio_cfg.playback_latency_ms}ms" if audio_cfg else "40ms"
+        self.queue = asyncio.Queue(maxsize=self.queue_maxsize)
         self.generation = 0
         self.process = None
         self.playback_until = 0.0
@@ -67,12 +74,12 @@ class Playback:
     def enqueue(self, data):
         if len(data) % 2:
             raise ValueError('Gemini output contains an incomplete PCM16 sample')
-        chunks = (len(data) + OUTPUT_BYTES - 1) // OUTPUT_BYTES
+        chunks = (len(data) + self.output_bytes - 1) // self.output_bytes
         if chunks > self.queue.maxsize - self.queue.qsize():
             # Never block receiving interruption events behind a full queue.
             raise BufferError('Audio output backlog exceeded ten seconds')
-        for offset in range(0, len(data), OUTPUT_BYTES):
-            self.queue.put_nowait((self.generation, data[offset:offset + OUTPUT_BYTES]))
+        for offset in range(0, len(data), self.output_bytes):
+            self.queue.put_nowait((self.generation, data[offset:offset + self.output_bytes]))
 
     async def interrupt(self):
         self.generation += 1
@@ -89,8 +96,8 @@ class Playback:
                 continue
             if self.process is None:
                 process = await asyncio.create_subprocess_exec(
-                    'pw-play', '--rate', '24000', '--channels', '1', '--format', 's16',
-                    '--latency', '40ms', '--target', self.sink, '-a', '-',
+                    'pw-play', '--rate', str(self.sample_rate), '--channels', '1', '--format', 's16',
+                    '--latency', self.playback_latency, '--target', self.sink, '-a', '-',
                     stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
                 # An interruption can arrive while process creation is awaited.
                 if generation != self.generation:
@@ -108,9 +115,9 @@ class Playback:
                     continue
                 raise
             now = time.monotonic()
-            self.playback_until = max(self.playback_until, now) + len(data) / 48000
-            # Feed a small cushion without dumping a whole reply into PipeWire.
-            await asyncio.sleep(max(0.0, self.playback_until - now - 0.08))
+            self.playback_until = max(self.playback_until, now) + len(data) / (self.sample_rate * 2)
+            # Feed a safe cushion without dumping a whole reply into PipeWire.
+            await asyncio.sleep(max(0.0, self.playback_until - now - 0.15))
 
 
 class RenewConnection(Exception):
@@ -118,10 +125,14 @@ class RenewConnection(Exception):
 
 
 class LiveVoice:
-    def __init__(self, player, *, transcripts=False, skills=None):
+    def __init__(self, player, *, transcripts=False, skills=None, config=None):
         self.player = player
         self.transcripts = transcripts
         self.skills = skills
+        self.config = config
+        audio_cfg = config.audio if config else None
+        self.input_bytes = audio_cfg.input_frame_bytes if audio_cfg else INPUT_BYTES
+        self.input_sample_rate = audio_cfg.input_sample_rate if audio_cfg else 16000
         self.resume_handle = None
         self.send_lock = asyncio.Lock()
         self.tool_tasks = {}
@@ -132,13 +143,13 @@ class LiveVoice:
 
         while True:
             try:
-                chunk = await reader.readexactly(INPUT_BYTES)
+                chunk = await reader.readexactly(self.input_bytes)
             except asyncio.IncompleteReadError as error:
                 raise EOFError('Microphone stream ended') from error
             # No playback-state gate: speech continues upstream during replies.
             async with self.send_lock:
                 await session.send_realtime_input(
-                    audio=types.Blob(data=chunk, mime_type='audio/pcm;rate=16000'))
+                    audio=types.Blob(data=chunk, mime_type=f'audio/pcm;rate={self.input_sample_rate}'))
 
     async def _send_tool_response(self, session, response):
         async with self.send_lock:
@@ -246,55 +257,101 @@ class LiveVoice:
             await self.cancel_tools()
 
 
-def live_config(voice, resume_handle=None, skills=None):
-    instruction = (
-        'You are Jarvis, a friendly voice assistant for an Omarchy desktop. '
-        'Speak naturally, clearly and briefly, and match the user\'s language. '
-        'Listen to corrections and interruptions. Use a declared desktop skill '
-        'only when the user asks for that action. Never claim an action succeeded '
-        'until its tool result says so. You cannot run arbitrary shell commands, '
-        'access private files, install software, or perform destructive actions.'
-        if skills is not None else
-        'You are a friendly voice conversation assistant. Speak naturally, '
-        'clearly and briefly. Match the user\'s language. Listen to corrections '
-        'and interruptions. Ask a short clarification when needed. You can '
-        'converse, but have no tools or access to the user\'s computer.'
-    )
-    config = {
+def live_config(voice, resume_handle=None, skills=None, *, config=None):
+    agent_name = config.agent.name if config else 'Jarvis'
+    lang_code = config.agent.language if config else 'en'
+    lang_desc = {
+        'en': 'English',
+        'te': 'Telugu',
+        'hi': 'Hindi',
+    }.get(lang_code, lang_code)
+
+    if lang_code == 'en':
+        lang_rule = (
+            'Always speak and respond in English. Do not switch to Telugu, Hindi, or any other language '
+            'unless the user explicitly requests it (for example, "speak in Hindi" or "speak in Telugu").'
+        )
+    else:
+        lang_rule = (
+            f'Always speak and respond in {lang_desc}. Do not switch to another language '
+            'unless the user explicitly requests it.'
+        )
+
+    if config and config.agent.system_instruction:
+        instruction = config.agent.system_instruction
+    elif skills is not None:
+        instruction = (
+            f'You are {agent_name}, a friendly voice assistant for an Omarchy desktop. '
+            f'Speak naturally, clearly and briefly. {lang_rule} '
+            'Do not switch languages based on ambient sounds, background noise, or phonetic ambiguity. '
+            'Listen to corrections and interruptions. Use a declared desktop skill '
+            'only when the user asks for that action. Never claim an action succeeded '
+            'until its tool result says so. You cannot run arbitrary shell commands, '
+            'access private files, install software, or perform destructive actions.'
+        )
+    else:
+        instruction = (
+            f'You are {agent_name}, a friendly voice conversation assistant. Speak naturally, '
+            f'clearly and briefly. {lang_rule} '
+            'Do not switch languages based on ambient sounds, background noise, or phonetic ambiguity. '
+            'Listen to corrections and interruptions. Ask a short clarification when needed. You can '
+            'converse, but have no tools or access to the user\'s computer.'
+        )
+    vad_cfg = config.vad if config else None
+    realtime_input_config = {
+        'automatic_activity_detection': {
+            'disabled': not vad_cfg.enabled if vad_cfg else False,
+            'start_of_speech_sensitivity': vad_cfg.start_sensitivity if vad_cfg else 'START_SENSITIVITY_LOW',
+            'end_of_speech_sensitivity': vad_cfg.end_sensitivity if vad_cfg else 'END_SENSITIVITY_LOW',
+            'prefix_padding_ms': vad_cfg.prefix_padding_ms if vad_cfg else 300,
+            'silence_duration_ms': vad_cfg.silence_duration_ms if vad_cfg else 800,
+        },
+        'activity_handling': vad_cfg.activity_handling if vad_cfg else 'START_OF_ACTIVITY_INTERRUPTS',
+    }
+    input_transcription = {}
+    if config and config.agent.language and config.agent.language != 'auto':
+        input_transcription = {'language_codes': [config.agent.language]}
+
+    cfg = {
         'response_modalities': ['AUDIO'],
         'system_instruction': instruction,
         'speech_config': {'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}},
-        'input_audio_transcription': {},
+        'input_audio_transcription': input_transcription,
         'output_audio_transcription': {},
-        'realtime_input_config': {
-            'automatic_activity_detection': {
-                'disabled': False,
-                'start_of_speech_sensitivity': 'START_SENSITIVITY_HIGH',
-                'end_of_speech_sensitivity': 'END_SENSITIVITY_LOW',
-                'prefix_padding_ms': 200,
-                'silence_duration_ms': 400,
-            },
-            'activity_handling': 'START_OF_ACTIVITY_INTERRUPTS',
-        },
+        'realtime_input_config': realtime_input_config,
         'session_resumption': {'handle': resume_handle},
         'context_window_compression': {'sliding_window': {}},
     }
     if skills is not None:
-        config['tools'] = [{'function_declarations': skills.declarations}]
-    return config
+        cfg['tools'] = [{'function_declarations': skills.declarations}]
+    return cfg
 
 
-async def run(args, key):
+async def run(args, key, *, config=None):
     from google import genai
+
+    if config is None:
+        config = load_config(
+            getattr(args, 'config', None),
+            agent_name=getattr(args, 'agent_name', None),
+            voice=getattr(args, 'voice', None),
+            model=getattr(args, 'model', None),
+            language=getattr(args, 'language', None),
+            system_instruction=getattr(args, 'system_instruction', None),
+            skills_enabled=not getattr(args, 'no_skills', False),
+        )
 
     echo = EchoCancellation()
     try:
         # Failing closed prevents a raw speaker-to-microphone feedback loop.
-        await echo.start(args.microphone)
-        player = Playback(echo.sink)
-        skills = (None if getattr(args, 'no_skills', False) else
-                  DesktopSkills(getattr(args, 'skill_dir', None) or None))
-        voice = LiveVoice(player, transcripts=args.transcripts, skills=skills)
+        try:
+            await echo.start(args.microphone, noise_suppression=config.audio.noise_suppression)
+        except TypeError:
+            await echo.start(args.microphone)
+        player = Playback(echo.sink, config=config)
+        skills = (None if getattr(args, 'no_skills', False) or not config.skills.enabled else
+                  DesktopSkills(getattr(args, 'skill_dir', None) or None, config=config))
+        voice = LiveVoice(player, transcripts=args.transcripts, skills=skills, config=config)
         failures = 0
         async with genai.Client(api_key=key).aio as client:
             while True:
@@ -306,13 +363,13 @@ async def run(args, key):
                              ' (resuming)' if voice.resume_handle else '')
                     async with client.live.connect(
                         model=args.model,
-                        config=live_config(args.voice, voice.resume_handle, skills)
+                        config=live_config(args.voice, voice.resume_handle, skills, config=config)
                     ) as session:
                         microphone = await asyncio.create_subprocess_exec(
-                            'pw-record', '--rate', '16000', '--channels', '1',
-                            '--format', 's16', '--latency', '20ms', '--target',
+                            'pw-record', '--rate', str(config.audio.input_sample_rate), '--channels', '1',
+                            '--format', 's16', '--latency', f'{config.audio.capture_latency_ms}ms', '--target',
                             echo.source, '-a', '-', stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.DEVNULL, limit=INPUT_BYTES * 10)
+                            stderr=asyncio.subprocess.DEVNULL, limit=config.audio.input_frame_bytes * 10)
                         log.info('LIVE — microphone streaming; speak naturally. Ctrl+C stops capture.')
                         await supervise(voice.send_audio(session, microphone.stdout),
                                         voice.receive(session), player.run())
@@ -321,12 +378,12 @@ async def run(args, key):
                     log.info('Gemini requested connection renewal')
                 except Exception as error:
                     code = getattr(error, 'code', None)
-                    if code == 400 and voice.resume_handle:
+                    if voice.resume_handle:
                         voice.resume_handle = None
-                        log.warning('Session resume rejected; next attempt starts a fresh conversation')
+                        log.warning('Session resume failed; next attempt starts a fresh conversation')
                     elif code in (400, 401, 403, 404):
                         raise RuntimeError(f'Gemini rejected configuration/credentials (HTTP {code})') from None
-                    if time.monotonic() - started >= 60:
+                    if time.monotonic() - started >= 30:
                         failures = 0
                     failures += 1
                     if failures > args.retries:
@@ -358,6 +415,10 @@ def main():
     parser.add_argument('--skill-dir', action='append', metavar='DIR',
                         help='Load dynamic JSON skill manifests from DIR instead of bundled defaults')
     parser.add_argument('--check', action='store_true', help='Check dependencies without opening audio or network')
+    parser.add_argument('--config', metavar='FILE', help='Path to dynamic configuration file (.toml or .json)')
+    parser.add_argument('--agent-name', help='Custom agent identity name (e.g. Jarvis, Friday, Nova)')
+    parser.add_argument('--language', default=None, help='Primary spoken language code (e.g. en, te, hi; default: en)')
+    parser.add_argument('--system-instruction', help='Custom system prompt/instruction for the agent')
     args = parser.parse_args()
     if args.retries < 0:
         parser.error('--retries must be nonnegative')
@@ -366,8 +427,17 @@ def main():
         parser.error('Missing desktop audio commands: ' + ', '.join(missing))
     try:
         from google.genai import types
-        check_skills = None if args.no_skills else DesktopSkills(args.skill_dir or None)
-        types.LiveConnectConfig.model_validate(live_config(args.voice, skills=check_skills))
+        cfg = load_config(
+            args.config,
+            agent_name=args.agent_name,
+            voice=args.voice,
+            model=args.model,
+            language=args.language,
+            system_instruction=args.system_instruction,
+            skills_enabled=not args.no_skills,
+        )
+        check_skills = None if args.no_skills else DesktopSkills(args.skill_dir or None, config=cfg)
+        types.LiveConnectConfig.model_validate(live_config(args.voice, skills=check_skills, config=cfg))
     except ImportError:
         parser.error('Install the packages in requirements.txt first')
     except SkillError as error:
@@ -386,6 +456,16 @@ def main():
         return 0
     key = os.getenv('GEMINI_API_KEY', '').strip()
     if not key:
+        env_path = Path(__file__).with_name('.env')
+        if env_path.is_file():
+            for line in env_path.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    if k.strip() == 'GEMINI_API_KEY':
+                        key = v.strip().strip('"').strip("'")
+                        break
+    if not key:
         if not sys.stdin.isatty():
             parser.error('Set GEMINI_API_KEY or run interactively to enter it privately')
         key = getpass.getpass('Gemini API key (hidden, not saved): ').strip()
@@ -398,7 +478,7 @@ def main():
         task = asyncio.current_task()
         loop.add_signal_handler(signal.SIGTERM, task.cancel)
         try:
-            await run(args, key)
+            await run(args, key, config=cfg)
         finally:
             loop.remove_signal_handler(signal.SIGTERM)
 

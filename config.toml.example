@@ -1,0 +1,36 @@
+# Jarvis Configuration Example (TOML)
+# Copy this file to ~/.config/jarvis-oma/config.toml or ./config.toml
+
+[agent]
+name = "Jarvis"                          # Custom agent name (e.g. Jarvis, Friday, Nova)
+voice = "Aoede"                          # Prebuilt voice: Aoede, Charon, Fenrir, Kore, Puck
+model = "gemini-3.8-live"                # Gemini Live model
+# system_instruction = "Custom persona prompt..." # Optional custom system prompt
+
+[audio]
+input_sample_rate = 16000                # Capture sample rate in Hz
+output_sample_rate = 24000               # Playback sample rate in Hz
+input_frame_ms = 20                      # Input frame size in ms
+output_frame_ms = 20                     # Output frame size in ms
+queue_max_seconds = 10                   # Playback backlog ceiling
+playback_latency_ms = 40                 # PipeWire playback latency
+capture_latency_ms = 20                  # PipeWire capture latency
+command_timeout = 8                      # Subprocess command timeout in seconds
+
+[vad]
+enabled = true                           # Voice Activity Detection
+start_sensitivity = "START_SENSITIVITY_HIGH"  # HIGH or LOW
+end_sensitivity = "END_SENSITIVITY_LOW"        # HIGH or LOW
+prefix_padding_ms = 200                  # Audio buffer before speech
+silence_duration_ms = 400                # Silence duration before turn end
+activity_handling = "START_OF_ACTIVITY_INTERRUPTS"
+
+[skills]
+enabled = true                           # Enable desktop controls
+exclude_unavailable = true               # Exclude skills if system binary is missing
+# manifest_dirs = ["/custom/manifest/path"]
+
+[commands]
+# Override binary paths if installed in custom locations:
+# hyprctl = "/usr/bin/hyprctl"
+# grim = "/usr/bin/grim"

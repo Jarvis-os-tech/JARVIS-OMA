@@ -32,6 +32,7 @@ class AgentConfig:
     system_instruction: str | None = None  # None = use default template
     voice: str = 'Aoede'
     model: str = 'gemini-3.8-live'
+    language: str = 'en'  # Primary language code (e.g. 'en', 'te', 'hi', or 'auto')
 
 
 @dataclass
@@ -42,9 +43,10 @@ class AudioConfig:
     input_frame_ms: int = 20
     output_frame_ms: int = 20
     queue_max_seconds: int = 10
-    playback_latency_ms: int = 40
-    capture_latency_ms: int = 20
+    playback_latency_ms: int = 60
+    capture_latency_ms: int = 30
     command_timeout: int = 8
+    noise_suppression: bool = False
 
     @property
     def input_frame_bytes(self) -> int:
@@ -67,10 +69,10 @@ class AudioConfig:
 class VADConfig:
     """Voice Activity Detection parameters for Gemini Live."""
     enabled: bool = True
-    start_sensitivity: str = 'START_SENSITIVITY_HIGH'
+    start_sensitivity: str = 'START_SENSITIVITY_LOW'
     end_sensitivity: str = 'END_SENSITIVITY_LOW'
-    prefix_padding_ms: int = 200
-    silence_duration_ms: int = 400
+    prefix_padding_ms: int = 300
+    silence_duration_ms: int = 800
     activity_handling: str = 'START_OF_ACTIVITY_INTERRUPTS'
 
 
@@ -168,6 +170,7 @@ def _apply_env_overrides(config: Config):
         'JARVIS_AGENT_NAME': ('agent', 'name'),
         'JARVIS_VOICE': ('agent', 'voice'),
         'JARVIS_MODEL': ('agent', 'model'),
+        'JARVIS_LANGUAGE': ('agent', 'language'),
         'JARVIS_SYSTEM_INSTRUCTION': ('agent', 'system_instruction'),
         'GEMINI_LIVE_MODEL': ('agent', 'model'),  # backward compat
     }
@@ -226,6 +229,7 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
         'agent_name': ('agent', 'name'),
         'voice': ('agent', 'voice'),
         'model': ('agent', 'model'),
+        'language': ('agent', 'language'),
         'system_instruction': ('agent', 'system_instruction'),
         'skills_enabled': ('skills', 'enabled'),
     }

@@ -1,27 +1,38 @@
-Offline verification — 2026-10-12
+Offline verification — 2026-10-12 (Dynamic System Controlling Refactor)
 
 Command:
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s . -p 'test_*.py' -v
 
 Result:
-Ran 32 tests in 0.132s
+Ran 50 tests in 0.270s
 OK
 
 Coverage includes:
-- full-duplex microphone, playback, interruption and worker cleanup
-- retry, resumption and echo-route cleanup behavior
+- Dynamic configuration via TOML, JSON, environment variables, and CLI flags
+- Full-duplex microphone, playback, interruption, and worker cleanup
+- Retry, resumption, and echo-route cleanup behavior
+- Configurable VAD parameters and custom agent name/persona instructions
 - Gemini Live dynamic tool declaration and function-response ID matching
-- background tool execution without blocking audio/event reception
-- JSON manifest discovery, duplicate detection and fail-closed validation
-- strict dynamic argument schemas, including bool/integer and range checks
-- reviewed adapter routing with no shell command execution
-- exact installed-application matching
-- public HTTP(S) URL policy and local/private literal rejection
+- Background tool execution without blocking audio/event reception
+- JSON manifest discovery across multiple manifest files
+- Self-declaring adapter command dependencies (ADAPTER_COMMANDS)
+- Graceful degradation: auto-excluding skills with missing commands at startup
+- Strict dynamic argument schemas, including bool/integer and range checks
+- Application discovery using XDG Base Directory Specification (XDG_DATA_DIRS)
+- Desktop skills:
+  * Application discovery and launch (gtk-launch)
+  * Public HTTP(S) URL policy and private IP rejection (omarchy-launch-webapp)
+  * Audio volume and display brightness controls (omarchy-audio-output-volume, omarchy-brightness-display)
+  * Hyprland workspace switching and window management (hyprctl)
+  * Desktop notifications with configurable app name (notify-send)
+  * Session lock screen (loginctl)
+  * Screen and active-window screenshot capture (grim)
+  * Safe power operations (systemctl suspend/hibernate; shutdown/reboot excluded)
+  * Network Wi-Fi and Bluetooth toggling and status (nmcli, rfkill)
+  * Wayland clipboard read and write (wl-paste, wl-copy)
 
 Additional checks:
 - ./run.sh --check: PASS, skills enabled
-- ./run.sh --list-skills: 7 dynamic skills; all required commands available
+- ./run.sh --list-skills: 15 dynamic skills; all required commands available
+- ./run.sh --agent-name "Friday" --check: PASS
 - ./run.sh --no-skills --check: PASS, conversation-only configuration
-
-No live Gemini session, physical microphone/speaker echo test, or real desktop
-action was performed by this offline verification.

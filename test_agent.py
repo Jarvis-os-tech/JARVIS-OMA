@@ -17,6 +17,8 @@ class StandaloneTests(unittest.TestCase):
                 cwd=directory, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--microphone', result.stdout)
+        self.assertIn('--config', result.stdout)
+        self.assertIn('--agent-name', result.stdout)
 
 
 from google.genai import types
@@ -223,6 +225,29 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         from google.genai import types
         config = types.LiveConnectConfig.model_validate(live_config('Aoede'))
         self.assertFalse(config.tools)
+
+    async def test_live_config_custom_agent_name_and_instruction(self):
+        from config import Config, AgentConfig
+        cfg = Config(agent=AgentConfig(name='Friday'))
+        res = live_config('Aoede', skills=DesktopSkills(), config=cfg)
+        self.assertIn('You are Friday', res['system_instruction'])
+
+        custom_instruction = 'You are a pirate assistant. Talk like a pirate.'
+        cfg_custom = Config(agent=AgentConfig(name='Blackbeard', system_instruction=custom_instruction))
+        res_custom = live_config('Aoede', skills=DesktopSkills(), config=cfg_custom)
+        self.assertEqual(res_custom['system_instruction'], custom_instruction)
+
+    async def test_live_config_custom_vad_settings(self):
+        from config import Config, VADConfig
+        vad = VADConfig(start_sensitivity='START_SENSITIVITY_LOW', prefix_padding_ms=300)
+        cfg = Config(vad=vad)
+        res = live_config('Aoede', skills=DesktopSkills(), config=cfg)
+        self.assertEqual(
+            res['realtime_input_config']['automatic_activity_detection']['start_of_speech_sensitivity'],
+            'START_SENSITIVITY_LOW')
+        self.assertEqual(
+            res['realtime_input_config']['automatic_activity_detection']['prefix_padding_ms'],
+            300)
 
     async def test_tool_call_runs_in_background_and_returns_matching_id(self):
         class Skills:
