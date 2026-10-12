@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import configparser
+import datetime as dt
 import ipaddress
 import json
 import logging
@@ -18,7 +19,8 @@ import os
 from pathlib import Path
 import re
 import shutil
-import time as _time
+import time
+import uuid
 from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
@@ -52,6 +54,18 @@ class DesktopSkills:
         'network.bluetooth': '_adapter_toggle_bluetooth',
         'clipboard.read': '_adapter_read_clipboard',
         'clipboard.write': '_adapter_write_clipboard',
+        'reminder.create': '_adapter_create_reminder',
+        'reminder.list': '_adapter_list_reminders',
+        'reminder.clear': '_adapter_clear_reminders',
+        'reminder.cancel': '_adapter_cancel_reminder',
+        'todo.create': '_adapter_create_todo',
+        'todo.list': '_adapter_list_todos',
+        'todo.update': '_adapter_update_todo',
+        'todo.complete': '_adapter_complete_todo',
+        'todo.delete': '_adapter_delete_todo',
+        'todo.clear_completed': '_adapter_clear_completed_todos',
+        'todo.move': '_adapter_move_todo',
+        'system.context': '_adapter_get_desktop_context',
     }
 
     # ── Adapter → required system commands ────────────────────────────
@@ -71,6 +85,19 @@ class DesktopSkills:
         'network.bluetooth': ('rfkill',),
         'clipboard.read': ('wl-paste',),
         'clipboard.write': ('wl-copy',),
+        'reminder.create': ('omarchy-reminder',),
+        'reminder.list': ('omarchy-reminder',),
+        'reminder.clear': ('omarchy-reminder',),
+        'reminder.cancel': ('omarchy-reminder', 'systemctl'),
+        'todo.create': (),
+        'todo.list': (),
+        'todo.update': (),
+        'todo.complete': (),
+        'todo.delete': (),
+        'todo.clear_completed': (),
+        'todo.move': (),
+        'system.context': ('hyprctl', 'omarchy-battery-status', 'omarchy-network-status',
+                           'omarchy-brightness-display', 'omarchy-hyprland-monitor-focused', 'pactl'),
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
@@ -298,7 +325,7 @@ class DesktopSkills:
             raise SkillError(f'{name} is not installed on this desktop')
         return path
 
-    async def _run(self, *argv, timeout=None):
+    async def _run(self, *argv, timeout=None, max_output=500):
         if timeout is None:
             timeout = self._command_timeout
         process = await asyncio.create_subprocess_exec(
@@ -313,7 +340,7 @@ class DesktopSkills:
         output = (stderr if process.returncode else stdout).decode(errors='replace').strip()
         if process.returncode:
             raise SkillError((output or 'desktop command failed')[:500])
-        return output[:500]
+        return output[:max_output]
 
     async def _launch(self, *argv):
         process = await asyncio.create_subprocess_exec(
@@ -462,6 +489,204 @@ class DesktopSkills:
                         f'--app-name={self._app_name}', title, message)
         return {'status': 'shown'}
 
+    async def _adapter_create_reminder(self, minutes, message='Reminder'):
+        """Create a reminder in Omarchy's native reminder system."""
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 10080:
+            raise SkillError('reminder minutes must be from 1 to 10080')
+        if not isinstance(message, str) or not 1 <= len(message.strip()) <= 300:
+            raise SkillError('reminder message must be 1 to 300 characters')
+        await self._run(self._command('omarchy-reminder'), str(minutes), message.strip())
+        return {'status': 'created', 'minutes': minutes, 'message': message.strip(), 'system': 'omarchy'}
+
+    async def _adapter_list_reminders(self):
+        """Read reminders from Omarchy's native reminder system."""
+        output = await self._run(self._command('omarchy-reminder'), 'show', '--json', max_output=65536)
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            raise SkillError('Omarchy returned invalid reminder data') from None
+        if not isinstance(data, dict) or not isinstance(data.get('reminders'), list):
+            raise SkillError('Omarchy returned invalid reminder data')
+        return data
+
+    async def _adapter_clear_reminders(self):
+        """Clear reminders through Omarchy's native reminder system."""
+        await self._run(self._command('omarchy-reminder'), 'clear')
+        return {'status': 'cleared', 'system': 'omarchy'}
+
+    async def _adapter_cancel_reminder(self, timer):
+        reminders = (await self._adapter_list_reminders())['reminders']
+        matching = [entry for entry in reminders if isinstance(entry, dict) and entry.get('timer') == timer]
+        if len(matching) != 1 or not isinstance(timer, str) or not re.fullmatch(r'omarchy-reminder-[0-9]+m-[0-9]+\.timer', timer):
+            raise SkillError('reminder was not found; list reminders and use its exact timer id')
+        unit = timer.removesuffix('.timer')
+        await self._run(self._command('systemctl'), '--user', 'stop', timer, unit + '.service')
+        reminder_dir = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'omarchy-reminders'
+        try:
+            (reminder_dir / (unit + '.message')).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return {'status': 'cancelled', 'timer': timer, 'system': 'omarchy'}
+
+    @staticmethod
+    def _todo_path():
+        return Path(os.getenv('XDG_STATE_HOME') or (Path.home() / '.local/state')) / 'omarchy/todos.json'
+
+    def _read_todos(self):
+        path = self._todo_path()
+        try:
+            data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+        except (OSError, json.JSONDecodeError):
+            raise SkillError('could not read Omarchy Todo List data') from None
+        if not isinstance(data, dict) or not isinstance(data.get('tasks', []), list):
+            raise SkillError('Omarchy Todo List data has an invalid format')
+        data.setdefault('tasks', [])
+        return data
+
+    async def _adapter_create_todo(self, title, description='', priority='medium'):
+        if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
+            raise SkillError('todo title must be 1 to 200 characters')
+        if not isinstance(description, str) or len(description) > 1000:
+            raise SkillError('todo description must be at most 1000 characters')
+        if priority not in ('critical', 'high', 'medium', 'low'):
+            raise SkillError('todo priority is critical, high, medium, or low')
+        data = self._read_todos()
+        now = int(time.time() * 1000)
+        task = {'id': f'{now:x}-{uuid.uuid4().hex[:8]}', 'title': title.strip(), 'description': description.strip(),
+                'priority': priority, 'status': 'ongoing', 'completed': False,
+                'createdAt': now, 'completedAt': 0}
+        data['version'] = 1
+        data.setdefault('activeTab', 'ongoing')
+        data.setdefault('tasks', [])
+        data['tasks'].insert(0, task)
+        self._write_todos(data)
+        return {'status': 'created', 'todo': task, 'system': 'omarchy'}
+
+    async def _adapter_list_todos(self, query='', status='all'):
+        if not isinstance(query, str) or len(query) > 200 or status not in ('all', 'backlog', 'ongoing', 'complete'):
+            raise SkillError('invalid todo filter')
+        data = self._read_todos()
+        tasks = [item for item in data['tasks'] if isinstance(item, dict) and
+                 (status == 'all' or item.get('status') == status) and
+                 (not query or query.casefold() in str(item.get('title', '')).casefold() or
+                  query.casefold() in str(item.get('description', '')).casefold())]
+        return {'tasks': tasks, 'count': len(tasks), 'system': 'omarchy'}
+
+    def _write_todos(self, data):
+        path = self._todo_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+        try:
+            temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _find_todo(self, data, task):
+        needle = str(task).strip().casefold()
+        matches = [item for item in data['tasks'] if isinstance(item, dict) and
+                   (str(item.get('id', '')).casefold() == needle or
+                    str(item.get('title', '')).casefold() == needle)]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise SkillError('multiple todos have that title; use an id from list_todos')
+        raise SkillError('todo was not found; use its exact title or id')
+
+    async def _adapter_update_todo(self, task, title=None, description=None, priority=None):
+        data = self._read_todos(); item = self._find_todo(data, task)
+        if title is not None:
+            if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200: raise SkillError('invalid todo title')
+            item['title'] = title.strip()
+        if description is not None:
+            if not isinstance(description, str) or len(description) > 1000: raise SkillError('invalid todo description')
+            item['description'] = description.strip()
+        if priority is not None:
+            if priority not in ('critical', 'high', 'medium', 'low'): raise SkillError('invalid todo priority')
+            item['priority'] = priority
+        self._write_todos(data)
+        return {'status': 'updated', 'todo': item, 'system': 'omarchy'}
+
+    async def _adapter_complete_todo(self, task, completed=True):
+        data = self._read_todos(); item = self._find_todo(data, task)
+        item['completed'] = bool(completed); item['status'] = 'complete' if item['completed'] else 'ongoing'
+        item['completedAt'] = int(time.time() * 1000) if item['completed'] else 0
+        self._write_todos(data)
+        return {'status': 'completed' if item['completed'] else 'reopened', 'todo': item, 'system': 'omarchy'}
+
+    async def _adapter_delete_todo(self, task):
+        data = self._read_todos(); item = self._find_todo(data, task)
+        data['tasks'] = [candidate for candidate in data['tasks'] if candidate is not item]
+        self._write_todos(data)
+        return {'status': 'deleted', 'todo': item, 'system': 'omarchy'}
+
+    async def _adapter_clear_completed_todos(self):
+        data = self._read_todos(); before = len(data['tasks'])
+        data['tasks'] = [item for item in data['tasks'] if item.get('status') != 'complete' and not item.get('completed')]
+        self._write_todos(data)
+        return {'status': 'cleared', 'count': before - len(data['tasks']), 'system': 'omarchy'}
+
+    async def _adapter_move_todo(self, task, status):
+        if status not in ('backlog', 'ongoing', 'complete'):
+            raise SkillError('todo status must be backlog, ongoing, or complete')
+        data = self._read_todos()
+        item = self._find_todo(data, task)
+        item['status'] = status
+        item['completed'] = status == 'complete'
+        item['completedAt'] = int(time.time() * 1000) if status == 'complete' else 0
+        self._write_todos(data)
+        return {'status': 'moved', 'todo': item, 'system': 'omarchy'}
+
+    async def _adapter_get_desktop_context(self):
+        """Return a compact read-only snapshot of the current Omarchy desktop."""
+        context = {
+            'time': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
+        }
+        hypr = self._commands.get('hyprctl')
+        try:
+            if not hypr: raise SkillError('hyprctl is not installed')
+            active = json.loads(await self._run(hypr, 'activewindow', '-j', max_output=65536))
+            if not isinstance(active, dict): raise ValueError('active window is not an object')
+            context['active_window'] = {
+                'title': active.get('title', ''), 'class': active.get('class', ''),
+                'workspace': active.get('workspace', {}).get('name', active.get('workspace', {}).get('id')),
+            }
+        except (SkillError, json.JSONDecodeError, AttributeError):
+            context['active_window'] = None
+        try:
+            if not hypr: raise SkillError('hyprctl is not installed')
+            workspace = json.loads(await self._run(hypr, 'activeworkspace', '-j', max_output=65536))
+            if not isinstance(workspace, dict): raise ValueError('workspace is not an object')
+            context['workspace'] = {'id': workspace.get('id'), 'name': workspace.get('name')}
+        except (SkillError, json.JSONDecodeError, AttributeError, ValueError):
+            context['workspace'] = None
+        try:
+            network = await self._run(self._command('omarchy-network-status'), '--verbose')
+            parts = network.splitlines()
+            context['network'] = {'raw': network, 'lines': parts}
+        except SkillError:
+            context['network'] = None
+        try:
+            audio = await self._run(self._command('pactl'), 'get-sink-mute', '@DEFAULT_SINK@')
+            volume = await self._run(self._command('pactl'), 'get-sink-volume', '@DEFAULT_SINK@')
+            context['audio'] = {'muted': audio.lower().endswith('yes'),
+                                'volume': volume,
+                                'sink': await self._run(self._command('pactl'), 'get-default-sink')}
+        except SkillError:
+            context['audio'] = None
+        try:
+            battery = await self._run(self._command('omarchy-battery-status'), '--shell')
+            context['battery'] = {'raw': battery, 'available': bool(battery)}
+        except SkillError:
+            context['battery'] = None
+        try:
+            context['brightness'] = await self._run(self._command('omarchy-brightness-display'))
+            context['brightness_monitor'] = await self._run(
+                self._command('omarchy-hyprland-monitor-focused'))
+        except SkillError:
+            context['brightness'] = None
+        return context
+
     # ── New system control adapters ───────────────────────────────────
 
     async def _adapter_lock_screen(self):
@@ -477,7 +702,7 @@ class DesktopSkills:
             'XDG_PICTURES_DIR',
             str(Path.home() / 'Pictures'))
         Path(pictures_dir).mkdir(parents=True, exist_ok=True)
-        filename = str(Path(pictures_dir) / f'screenshot_{int(_time.time())}.png')
+        filename = str(Path(pictures_dir) / f'screenshot_{int(time.time())}.png')
         args = [self._command('grim')]
         if region == 'active':
             # Capture the active window by getting its geometry from hyprctl
@@ -485,8 +710,7 @@ class DesktopSkills:
             if hyprctl:
                 try:
                     info = await self._run(hyprctl, 'activewindow', '-j')
-                    import json as _json
-                    window = _json.loads(info)
+                    window = json.loads(info)
                     at = window.get('at', [0, 0])
                     size = window.get('size', [1920, 1080])
                     args.extend(['-g', f'{at[0]},{at[1]} {size[0]}x{size[1]}'])

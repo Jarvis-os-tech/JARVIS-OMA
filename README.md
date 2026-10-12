@@ -71,6 +71,8 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 - **Network controls**: `toggle_wifi` (`nmcli`), `toggle_bluetooth` (`rfkill`)
 - **Clipboard**: `read_clipboard` (`wl-paste`), `write_clipboard` (`wl-copy`)
 - **Notifications**: `show_notification` with dynamic application name (`notify-send`)
+- **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
+- **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
 
 The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
 their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,
@@ -90,6 +92,10 @@ entry. Websites are limited to HTTP(S), reject embedded credentials, and block
 localhost and private IP literals.
 
 ## Full-duplex flow
+
+Reminders created by voice use Omarchy's native `omarchy reminder` system, so
+JARVIS and the Omarchy reminder UI share the same reminders. You can say, for
+example, “remind me in 30 minutes to check the oven” or “list my reminders”.
 
 ```text
 Physical microphone → private PipeWire AEC source → 16 kHz PCM → Gemini Live
