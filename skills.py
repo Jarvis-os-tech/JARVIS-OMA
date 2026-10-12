@@ -74,15 +74,15 @@ class DesktopSkills:
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
-                 exclude_unavailable=True, app_name=None):
+                 exclude_unavailable=False, app_name=None):
         """Initialize with dynamic command discovery.
 
         Args:
             manifest_dirs: Override skill manifest directories.
             config: Optional Config object for settings.
             exclude_unavailable: If True, skip skills whose adapters lack
-                required commands (graceful degradation). If False, keep
-                them and fail at runtime.
+                required commands (graceful degradation). If False (default),
+                keep them and validate commands on execution.
             app_name: Application name for notifications. Defaults to config
                 or 'Jarvis'.
         """
@@ -279,16 +279,18 @@ class DesktopSkills:
         return True
 
     def availability(self):
-        """Per-command and per-adapter availability report."""
-        command_status = {name: path is not None for name, path in self._commands.items()}
-        adapter_status = {}
-        for adapter_name, required_cmds in self.ADAPTER_COMMANDS.items():
-            if not required_cmds:
-                adapter_status[adapter_name] = True
-            else:
-                adapter_status[adapter_name] = all(
-                    self._commands.get(cmd) is not None for cmd in required_cmds)
-        return {'commands': command_status, 'adapters': adapter_status}
+        """Per-command availability dictionary for backward compatibility."""
+        return {name: path is not None for name, path in self._commands.items()}
+
+    def adapter_availability(self):
+        """Per-adapter availability dictionary indicating if all required commands are present."""
+        return {
+            adapter_name: (
+                True if not required_cmds else
+                all(self._commands.get(cmd) is not None for cmd in required_cmds)
+            )
+            for adapter_name, required_cmds in self.ADAPTER_COMMANDS.items()
+        }
 
     def _command(self, name):
         path = self._commands.get(name)

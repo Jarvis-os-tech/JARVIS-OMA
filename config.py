@@ -79,7 +79,7 @@ class SkillsConfig:
     """Skill system configuration."""
     enabled: bool = True
     manifest_dirs: list[str] | None = None  # None = use default bundled dir
-    exclude_unavailable: bool = True  # Graceful degradation
+    exclude_unavailable: bool = False  # Graceful degradation
 
 
 @dataclass
