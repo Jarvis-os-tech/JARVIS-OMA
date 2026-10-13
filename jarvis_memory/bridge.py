@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from hashlib import sha256
+from itertools import islice
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,15 @@ from .retrieval import rank_candidates
 
 class MemoryError(ValueError):
     pass
+
+
+def rank_all(query, candidates, limit):
+    """Keep bounded ranking batches without excluding older ledger entries."""
+    iterator = iter(candidates)
+    best = []
+    while batch := list(islice(iterator, 256)):
+        best = rank_candidates(query, [*best, *batch], limit)
+    return best
 
 
 class JarvisFactStore(LocalFactStore):
@@ -133,12 +143,12 @@ class MemoryBridge:
         entries = self.knowledge.list(active_only=False)
         retired = {entry['text'].casefold() for entry in entries if entry['status'] != 'active'}
         active = {entry['text'].casefold() for entry in entries if entry['status'] == 'active'}
-        memories = rank_candidates(query, [entry for entry in entries if entry['status'] == 'active'
-                                   and self.scanner.scan(entry['text']).is_clean], limit)
+        memories = rank_all(query, (entry for entry in entries if entry['status'] == 'active'
+                                    and self.scanner.scan(entry['text']).is_clean), limit)
         facts = [asdict(fact) for fact in reversed(self.store.list())
                  if fact.trusted_for_recall and self.scanner.scan(fact.text).is_clean
                  and (fact.text.casefold() not in retired or fact.text.casefold() in active)]
-        ranked_facts = rank_candidates(query, facts, limit)
+        ranked_facts = rank_all(query, facts, limit)
         return {'facts': ranked_facts, 'memories': memories, 'documents': self._search_documents(query, limit),
                 'conversation': self.recall_history(query, limit),
                 'count': len(ranked_facts) + len(memories), 'truncated': len(facts) > limit,
@@ -154,9 +164,9 @@ class MemoryBridge:
         try:
             if not query:
                 rows = connection.execute(
-                'SELECT m.role,m.content,m.timestamp FROM session_messages m '
-                'JOIN sessions s ON s.session_id=m.session_id WHERE s.user_id=? '
-                'ORDER BY m.id DESC LIMIT ?', ('local-user', limit)).fetchall()
+                    'SELECT m.role,m.content,m.timestamp FROM session_messages m '
+                    'JOIN sessions s ON s.session_id=m.session_id WHERE s.user_id=? '
+                    'ORDER BY m.id DESC LIMIT ?', ('local-user', limit)).fetchall()
                 return [{'role': role, 'content': content[:4000], 'timestamp': timestamp}
                         for role, content, timestamp in reversed(rows) if self.scanner.scan(content).is_clean]
             cursor = connection.execute(

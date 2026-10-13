@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from config import Config, MemoryConfig
-from jarvis_memory.bridge import MemoryBridge, MemoryError
+from jarvis_memory.bridge import MemoryBridge, MemoryError, rank_all
 from skills import DesktopSkills
 
 
@@ -24,6 +24,11 @@ class MemoryUpgradeTests(unittest.TestCase):
         self.assertEqual({entry['kind'] for entry in entries}, {'project', 'decision', 'task'})
         self.assertFalse(any('completed' in entry['text'] for entry in entries))
         self.assertTrue(all(entry['evidence']['role'] == 'user' for entry in entries))
+
+    def test_ranking_does_not_drop_matches_after_first_ten_thousand_entries(self):
+        candidates = ({'text': 'Other unrelated topic' if index < 10001 else 'Hermes coding preference',
+                       'id': index} for index in range(10002))
+        self.assertEqual(rank_all('Hermes', candidates, 1)[0]['id'], 10001)
 
     def test_correct_then_forget_cannot_resurrect_legacy_fact(self):
         saved = self.memory.remember('I prefer Hermes for coding.')

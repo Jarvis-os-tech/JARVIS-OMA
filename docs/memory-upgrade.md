@@ -9,8 +9,14 @@ Shared workspace, disjoint file ownership; the main agent integrates and reviews
 | Persistent corrections | Anscombe | knowledge ledger and tests | Restart/concurrency, evidence, supersession | Reviewed |
 | Daily summaries | Wegener | summaries, Obsidian exporter, summary tests | Source IDs; transcripts and manual edits preserved | Reviewed |
 | Recall acceptance tests | Averroes | end-to-end strength tests | Capture/correction/restart/forget/clear/trust/budget | Passed |
-| Runtime integration | Main | bridge, config, skills, manifests, docs | Full regression suite and startup check | Running |
+| Runtime integration | Main | bridge, config, skills, manifests, docs | Full regression suite and startup check | Passed |
 
 No cloud extraction, provider changes, or model installation is required.
 Retrieval is ranked lexical/concept matching, not embedding-based semantic search.
 Summaries are extractive views, not model-generated claims of completion.
+
+Integration review added coverage for stale correction evidence, deleted-family
+resurrection, trust filtering, phrase/concept matching across documents/history,
+bounded long-day summaries, and capture failure without transcript loss.
+The real vault sync reported no conflicts. Restart a running JARVIS to load the
+new modules; tests do not exercise live Gemini responses.
