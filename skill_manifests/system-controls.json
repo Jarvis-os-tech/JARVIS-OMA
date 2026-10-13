@@ -21,7 +21,10 @@
         "properties": {
           "region": {
             "type": "string",
-            "enum": ["full", "active"],
+            "enum": [
+              "full",
+              "active"
+            ],
             "description": "Screen region to capture: full screen or active window."
           }
         },
@@ -38,11 +41,20 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["fullscreen", "close", "minimize", "float", "center", "maximize"],
+            "enum": [
+              "fullscreen",
+              "close",
+              "minimize",
+              "float",
+              "center",
+              "maximize"
+            ],
             "description": "Window management action."
           }
         },
-        "required": ["action"],
+        "required": [
+          "action"
+        ],
         "additionalProperties": false
       }
     },
@@ -55,11 +67,16 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["sleep", "hibernate"],
+            "enum": [
+              "sleep",
+              "hibernate"
+            ],
             "description": "Power state action: sleep or hibernate."
           }
         },
-        "required": ["action"],
+        "required": [
+          "action"
+        ],
         "additionalProperties": false
       }
     },
@@ -72,11 +89,17 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["on", "off", "status"],
+            "enum": [
+              "on",
+              "off",
+              "status"
+            ],
             "description": "Wi-Fi action: on, off, or status."
           }
         },
-        "required": ["action"],
+        "required": [
+          "action"
+        ],
         "additionalProperties": false
       }
     },
@@ -89,11 +112,17 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["on", "off", "status"],
+            "enum": [
+              "on",
+              "off",
+              "status"
+            ],
             "description": "Bluetooth action: on, off, or status."
           }
         },
-        "required": ["action"],
+        "required": [
+          "action"
+        ],
         "additionalProperties": false
       }
     },
@@ -120,7 +149,219 @@
             "description": "Text to place on the clipboard."
           }
         },
-        "required": ["content"],
+        "required": [
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "type_text",
+      "description": "Type text into the currently active/focused window. Supports multi-line blocks via clipboard paste.",
+      "adapter": "input.type",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to type into the focused application."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "press_key",
+      "description": "Press a keyboard key or key combination with modifiers (e.g. Return, Escape, Tab, Super+Return, Ctrl+C).",
+      "adapter": "input.key",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key name, e.g. Return, Escape, BackSpace, Tab, Space, a, Down, Up."
+          },
+          "modifiers": {
+            "type": "string",
+            "description": "Optional modifier keys, e.g. super, ctrl, alt, shift, or combinations like ctrl+alt."
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_desktop_commands",
+      "description": "List installed Omarchy desktop commands and keybindings. Supports fuzzy search query.",
+      "adapter": "system.keybindings_list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional search query to filter keybinding titles or shortcut keys."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Maximum number of command entries to return (default 25)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "execute_desktop_command",
+      "description": "Execute an Omarchy desktop command or keybinding by title (e.g. Terminal, Close window, Browser, Omarchy menu).",
+      "adapter": "system.keybindings_exec",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Exact or fuzzy title of the Omarchy command/keybinding to execute."
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_bar_panels",
+      "description": "Discover all installed top-bar shell plugins, icons, and popups.",
+      "adapter": "shell.bar_list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_bar_panel",
+      "description": "Summon and open a top-bar settings panel by plugin ID (e.g. omarchy.bluetooth, dejan94.todos, omarchy.audio, omarchy.network).",
+      "adapter": "shell.bar_open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "panel_id": {
+            "type": "string",
+            "description": "Plugin ID from list_bar_panels, e.g. omarchy.audio or dejan94.todos."
+          }
+        },
+        "required": [
+          "panel_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "close_bar_panel",
+      "description": "Dismiss and close an open top-bar panel by plugin ID.",
+      "adapter": "shell.bar_close",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "panel_id": {
+            "type": "string",
+            "description": "Plugin ID to dismiss."
+          }
+        },
+        "required": [
+          "panel_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_volume",
+      "description": "Set master speaker output volume to an exact percentage (0 to 100).",
+      "adapter": "audio.volume_set",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Exact volume level percentage (0 to 100)."
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_microphone",
+      "description": "Mute, unmute, or toggle default microphone mute state.",
+      "adapter": "audio.mic_control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "mute",
+              "unmute",
+              "toggle"
+            ],
+            "description": "Microphone action: mute, unmute, or toggle."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_brightness",
+      "description": "Set display brightness to an exact percentage (1 to 100).",
+      "adapter": "display.brightness_set",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Exact brightness level percentage (1 to 100)."
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_window_to_workspace",
+      "description": "Move the currently focused window to a specified desktop workspace number.",
+      "adapter": "window.move_workspace",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Target workspace number (1 to 10)."
+          }
+        },
+        "required": [
+          "workspace"
+        ],
         "additionalProperties": false
       }
     }

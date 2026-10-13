@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "list_applications",
+      "description": "List launchable desktop applications. Use when an app name is uncertain.",
+      "adapter": "applications.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_application",
+      "description": "Open an installed graphical desktop application by its visible name.",
+      "adapter": "applications.open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Visible app name, such as Firefox or Files."}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_website",
+      "description": "Open an HTTP or HTTPS website in the default Omarchy browser.",
+      "adapter": "web.open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "Complete http:// or https:// URL."}
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "adjust_volume",
+      "description": "Raise, lower, or toggle mute for speaker output.",
+      "adapter": "audio.volume",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["raise", "lower", "mute_toggle"]},
+          "amount": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Percentage points; ignored for mute_toggle."}
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "adjust_brightness",
+      "description": "Raise or lower display brightness.",
+      "adapter": "display.brightness",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "direction": {"type": "string", "enum": ["raise", "lower"]},
+          "amount": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Percentage points, default 5."}
+        },
+        "required": ["direction"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "switch_workspace",
+      "description": "Switch to a numbered, next, or previous Omarchy workspace.",
+      "adapter": "workspace.switch",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "oneOf": [
+              {"type": "integer", "minimum": 1, "maximum": 10},
+              {"type": "string", "enum": ["next", "previous"]}
+            ]
+          }
+        },
+        "required": ["workspace"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "show_notification",
+      "description": "Show a short local desktop notification.",
+      "adapter": "notification.show",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "message": {"type": "string"}
+        },
+        "required": ["title", "message"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_reminder",
+      "description": "Create a reminder using Omarchy's native reminder system. Minutes must be from 1 to 10080.",
+      "adapter": "reminder.create",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "minutes": {"type": "integer", "minimum": 1, "maximum": 10080, "description": "Minutes from now."},
+          "message": {"type": "string", "description": "Reminder text."}
+        },
+        "required": ["minutes"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_reminders",
+      "description": "List active reminders from Omarchy's native reminder system.",
+      "adapter": "reminder.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "clear_reminders",
+      "description": "Clear all active reminders from Omarchy's native reminder system.",
+      "adapter": "reminder.clear",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_reminder",
+      "description": "Cancel one Omarchy reminder by the exact timer id returned by list_reminders.",
+      "adapter": "reminder.cancel",
+      "parameters_json_schema": {"type":"object","properties":{"timer":{"type":"string"}},"required":["timer"],"additionalProperties":false}
+    },
+    {
+      "name": "create_todo",
+      "description": "Add a task to Omarchy's native Todo List plugin.",
+      "adapter": "todo.create",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]}
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_todos",
+      "description": "List or search tasks from Omarchy's native Todo List plugin, optionally filtering by status. Returns ids for precise edits.",
+      "adapter": "todo.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {"query":{"type":"string"},"status":{"type":"string","enum":["all","backlog","ongoing","complete"]}},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_todo",
+      "description": "Edit an Omarchy Todo task by exact title or id.",
+      "adapter": "todo.update",
+      "parameters_json_schema": {"type":"object","properties":{"task":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"priority":{"type":"string","enum":["critical","high","medium","low"]}},"required":["task"],"additionalProperties":false}
+    },
+    {
+      "name": "complete_todo",
+      "description": "Complete or reopen an Omarchy Todo task.",
+      "adapter": "todo.complete",
+      "parameters_json_schema": {"type":"object","properties":{"task":{"type":"string"},"completed":{"type":"boolean"}},"required":["task"],"additionalProperties":false}
+    },
+    {
+      "name": "delete_todo",
+      "description": "Delete an Omarchy Todo task by exact title or id.",
+      "adapter": "todo.delete",
+      "parameters_json_schema": {"type":"object","properties":{"task":{"type":"string"}},"required":["task"],"additionalProperties":false}
+    },
+    {
+      "name": "clear_completed_todos",
+      "description": "Remove all completed tasks from Omarchy's Todo List.",
+      "adapter": "todo.clear_completed",
+      "parameters_json_schema": {"type":"object","properties":{},"required":[],"additionalProperties":false}
+    },
+    {
+      "name": "get_desktop_context",
+      "description": "Read the current Omarchy desktop state: active window, workspace, network, audio, battery, and local time.",
+      "adapter": "system.context",
+      "parameters_json_schema": {"type":"object","properties":{},"required":[],"additionalProperties":false}
+    },
+    {
+      "name": "move_todo",
+      "description": "Move an Omarchy Todo task to backlog, ongoing, or complete by exact title or id.",
+      "adapter": "todo.move",
+      "parameters_json_schema": {"type":"object","properties":{"task":{"type":"string"},"status":{"type":"string","enum":["backlog","ongoing","complete"]}},"required":["task","status"],"additionalProperties":false}
+    }
+  ]
+}

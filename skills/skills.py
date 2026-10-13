@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import configparser
+import contextlib
 import datetime as dt
 import ipaddress
 import json
@@ -20,6 +21,7 @@ from pathlib import Path
 import re
 import shutil
 import sqlite3
+import subprocess
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -28,6 +30,16 @@ from task_runner import TaskPlanError, TaskRunner
 from agent_orchestrator import AgentOrchestrator, OrchestrationError
 from config import MemoryConfig
 from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
+try:
+    from skills.input_bar import TestBar
+except ImportError:
+    from test_bar import TestBar
+from proactive.runtime import ProactiveRuntime
+from jarvis_memory.paths import get_config_dir
+try:
+    from skills import system_control
+except ImportError:
+    import system_control
 
 log = logging.getLogger(__name__)
 
@@ -91,8 +103,6 @@ class DesktopSkills:
         'agents.status': '_adapter_check_agent_job',
         'agents.jobs': '_adapter_list_agent_jobs',
         'agents.cancel': '_adapter_cancel_agent_job',
-        'hermes.computer_status': '_adapter_hermes_computer_status',
-        'hermes.computer_task': '_adapter_hermes_computer_task',
         'memory.remember': '_adapter_remember_memory',
         'memory.recall': '_adapter_recall_memory',
         'memory.forget': '_adapter_forget_memory',
@@ -110,7 +120,25 @@ class DesktopSkills:
         'window.list': '_adapter_list_windows',
         'window.focus': '_adapter_focus_window',
         'workspace.list': '_adapter_list_workspaces',
+        'input_bar.open': '_adapter_open_input_bar',
+        'input_bar.close': '_adapter_close_input_bar',
+        'proactive.enqueue': '_adapter_proactive_task',
+        'proactive.status': '_adapter_proactive_status',
+        'proactive.pause': '_adapter_proactive_pause',
+        'proactive.resume': '_adapter_proactive_resume',
+        'proactive.stop': '_adapter_proactive_stop',
         'system.resources': '_adapter_get_system_resources',
+        'input.type': '_adapter_type_text',
+        'input.key': '_adapter_press_key',
+        'system.keybindings_list': '_adapter_list_desktop_commands',
+        'system.keybindings_exec': '_adapter_execute_desktop_command',
+        'shell.bar_list': '_adapter_list_bar_panels',
+        'shell.bar_open': '_adapter_open_bar_panel',
+        'shell.bar_close': '_adapter_close_bar_panel',
+        'audio.volume_set': '_adapter_set_volume',
+        'audio.mic_control': '_adapter_control_microphone',
+        'display.brightness_set': '_adapter_set_brightness',
+        'window.move_workspace': '_adapter_move_window_workspace',
     }
 
     # ── Adapter → required system commands ────────────────────────────
@@ -162,8 +190,6 @@ class DesktopSkills:
         'agents.status': (),
         'agents.jobs': (),
         'agents.cancel': (),
-        'hermes.computer_status': ('hermes',),
-        'hermes.computer_task': ('hermes',),
         'memory.remember': (),
         'memory.recall': (),
         'memory.forget': (),
@@ -181,11 +207,26 @@ class DesktopSkills:
         'window.list': ('hyprctl',),
         'window.focus': ('hyprctl',),
         'workspace.list': ('hyprctl',),
+        'input_bar.open': ('omarchy-launch-webapp',),
+        'input_bar.close': ('hyprctl',),
+        'proactive.enqueue': (), 'proactive.status': (), 'proactive.pause': (),
+        'proactive.resume': (), 'proactive.stop': (),
         'system.resources': ('ps',),
+        'input.type': ('wtype',),
+        'input.key': ('wtype',),
+        'system.keybindings_list': ('bash',),
+        'system.keybindings_exec': ('bash',),
+        'shell.bar_list': ('omarchy-shell',),
+        'shell.bar_open': ('omarchy-shell',),
+        'shell.bar_close': ('omarchy-shell',),
+        'audio.volume_set': ('wpctl',),
+        'audio.mic_control': ('wpctl',),
+        'display.brightness_set': ('brightnessctl',),
+        'window.move_workspace': ('hyprctl',),
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
-                 exclude_unavailable=False, app_name=None):
+                 exclude_unavailable=False, app_name=None, api_key=''):
         """Initialize with dynamic command discovery.
 
         Args:
@@ -210,16 +251,21 @@ class DesktopSkills:
             self._command_overrides = {}
 
         if manifest_dirs is None:
-            manifest_dirs = [Path(__file__).with_name('skill_manifests')]
+            local_manifests = Path(__file__).resolve().parent / 'manifests'
+            root_manifests = Path(__file__).resolve().parents[1] / 'skill_manifests'
+            manifest_dirs = [local_manifests if local_manifests.is_dir() else root_manifests]
         self.manifest_dirs = [Path(directory) for directory in manifest_dirs]
         self._skills = self._load_manifests()
         self._memory_config = config.memory if config else MemoryConfig()
+        self._memory_api_key = api_key
         self._memory = None
         if not self._memory_config.enabled:
             self._skills = {name: spec for name, spec in self._skills.items()
                             if not spec['adapter'].startswith('memory.') or spec['adapter'] == 'memory.status'}
         self._task_runner = TaskRunner(self.execute, self._valid_task_step)
         self._agent_orchestrator = AgentOrchestrator()
+        self.test_bar = TestBar()
+        self._proactive = None
 
         # Discover commands dynamically from active adapters
         self._commands = self._discover_commands()
@@ -500,18 +546,6 @@ class DesktopSkills:
     async def _adapter_list_system_agents(self):
         return self._agent_orchestrator.discover()
 
-    async def _adapter_hermes_computer_status(self):
-        return await self._agent_orchestrator.computer_status()
-
-    async def _adapter_hermes_computer_task(self, prompt, workspace, timeout_seconds=900):
-        readiness = await self._agent_orchestrator.computer_status()
-        if not readiness['ready']:
-            return readiness
-        try:
-            return self._agent_orchestrator.delegate_computer(prompt, workspace, timeout_seconds)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
-
     async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900):
         try:
             return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds)
@@ -533,16 +567,89 @@ class DesktopSkills:
         except OrchestrationError as error:
             raise SkillError(str(error)) from None
 
+    async def _adapter_type_text(self, text):
+        return await system_control.type_text(text)
+
+    async def _adapter_press_key(self, key, modifiers=None):
+        return await system_control.press_key(key, modifiers)
+
+    async def _adapter_list_desktop_commands(self, query=None, limit=25):
+        return await system_control.list_desktop_commands(query=query, limit=limit)
+
+    async def _adapter_execute_desktop_command(self, title):
+        return await system_control.execute_desktop_command(title)
+
+    async def _adapter_list_bar_panels(self):
+        return await system_control.list_bar_panels()
+
+    async def _adapter_open_bar_panel(self, panel_id):
+        return await system_control.open_bar_panel(panel_id)
+
+    async def _adapter_close_bar_panel(self, panel_id):
+        return await system_control.close_bar_panel(panel_id)
+
+    async def _adapter_set_volume(self, percent):
+        return await system_control.set_volume(percent)
+
+    async def _adapter_control_microphone(self, action):
+        return await system_control.control_microphone(action)
+
+    async def _adapter_set_brightness(self, percent):
+        return await system_control.set_brightness(percent)
+
+    async def _adapter_move_window_workspace(self, workspace):
+        return await system_control.move_window_to_workspace(workspace)
+
     async def close_agent_jobs(self):
         await self._agent_orchestrator.close()
+        self.test_bar.close()
         if self._memory is not None:
             self._memory.close()
+
+    async def _adapter_open_input_bar(self):
+        url = self.test_bar.start()
+        await self._launch(self._command('omarchy-launch-webapp'), url)
+        return {'status': 'opened', 'accepts': ['text', 'image', 'audio', 'pdf', 'file']}
+
+    async def _adapter_close_input_bar(self):
+        closed = self.test_bar.close()
+        windows = await self._adapter_list_windows()
+        matches = [item for item in windows['windows']
+                   if 'jarvis input bar' in item.get('title', '').casefold()]
+        for item in matches:
+            await self._run(self._command('hyprctl'), 'dispatch', 'closewindow',
+                            'address:' + item['address'])
+        return {'status': 'closed' if closed or matches else 'already_closed',
+                'windows_closed': len(matches)}
+
+    async def _adapter_proactive_task(self, prompt, workspace, agent=None):
+        return self.proactive.enqueue(prompt, workspace, agent, authorized=True)
+
+    async def _adapter_proactive_status(self):
+        return self.proactive.status()
+
+    async def _adapter_proactive_pause(self):
+        return self.proactive.pause()
+
+    async def _adapter_proactive_resume(self):
+        return self.proactive.resume()
+
+    async def _adapter_proactive_stop(self):
+        return await self.proactive.stop_all()
 
     @property
     def memory(self):
         if self._memory is None:
-            self._memory = MemoryBridge(self._memory_config)
+            self._memory = MemoryBridge(self._memory_config, api_key=self._memory_api_key)
         return self._memory
+
+    @property
+    def proactive(self):
+        if self._proactive is None:
+            memory_root = (Path(self._memory_config.path).expanduser() if self._memory_config.path
+                           else get_config_dir())
+            self._proactive = ProactiveRuntime(memory_root / 'proactive', self._agent_orchestrator)
+        return self._proactive
 
     def memory_context(self):
         try:
@@ -827,6 +934,15 @@ class DesktopSkills:
                   query.casefold() in str(item.get('description', '')).casefold())]
         return {'tasks': tasks, 'count': len(tasks), 'system': 'omarchy'}
 
+    @staticmethod
+    def _notify_quickshell_todos():
+        for args in (
+            ['qs', 'ipc', '-p', '/usr/share/omarchy/shell', '-n', 'call', 'dejan94.todos', 'reload'],
+            ['qs', 'ipc', '-n', 'call', 'dejan94.todos', 'reload'],
+        ):
+            with contextlib.suppress(Exception):
+                subprocess.run(args, capture_output=True, timeout=1)
+
     def _write_todos(self, data):
         path = self._todo_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -836,6 +952,7 @@ class DesktopSkills:
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+        self._notify_quickshell_todos()
 
     def _find_todo(self, data, task):
         needle = str(task).strip().casefold()

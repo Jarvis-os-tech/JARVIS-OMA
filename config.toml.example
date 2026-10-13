@@ -56,6 +56,12 @@ obsidian_vault = ""                     # Existing Obsidian vault path
 obsidian_auto_sync = true               # Sync changes to linked Markdown notes
 obsidian_timezone = "Asia/Kolkata"       # Calendar date/day for daily conversation reports
 structured_capture = true               # Capture explicit user preferences/decisions/tasks locally
+semantic_retrieval = false              # Opt in after choosing an embedding model/provider
+semantic_provider = "gemini"            # Reuses Jarvis's in-memory GEMINI_API_KEY
+semantic_model = ""                     # Example: gemini-embedding-2
+semantic_url = "http://127.0.0.1:11434" # Used only when provider = "ollama"
+semantic_dimension = 768                 # Must match the selected embedding model
+semantic_min_score = 0.55               # Reject weak semantic-only matches
 
 [commands]
 # Override binary paths if installed in custom locations:

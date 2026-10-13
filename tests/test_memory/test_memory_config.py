@@ -36,7 +36,7 @@ class MemoryConfigTests(unittest.TestCase):
         self.assertEqual(self.load(values).memory, MemoryConfig(**values))
 
     def test_example_toml(self):
-        example = Path(__file__).with_name('config.toml.example')
+        example = Path(__file__).resolve().parents[2] / 'config.toml.example'
         self.path = Path(self.directory.name) / 'config.toml'
         self.path.write_text(example.read_text(encoding='utf-8'), encoding='utf-8')
         self.assertEqual(load_config(self.path).memory, MemoryConfig())
@@ -57,7 +57,7 @@ class MemoryConfigTests(unittest.TestCase):
 
     def test_invalid_field_types_and_limits(self):
         cases = [('enabled', 'false'), ('record_sessions', 1), ('auto_capture', 'true'),
-                 ('structured_capture', 'true'),
+                 ('structured_capture', 'true'), ('semantic_retrieval', 1),
                  ('path', None), ('extraction_model', 1), ('extraction_url', False)]
         cases += [(name, value) for name in ('max_facts', 'context_max_chars')
                   for value in (0, -1, True, 1.5, '100')]
@@ -75,6 +75,20 @@ class MemoryConfigTests(unittest.TestCase):
                     self.load({'auto_capture': True, 'extraction_model': model})
         self.assertFalse(self.load({'extraction_model': ''}).memory.auto_capture)
 
+    def test_semantic_retrieval_requires_valid_local_configuration(self):
+        with self.assertRaisesRegex(ValueError, 'semantic_model'):
+            self.load({'semantic_retrieval': True})
+        with self.assertRaisesRegex(ValueError, 'semantic_provider'):
+            self.load({'semantic_provider': 'cloud'})
+        for value in (-0.1, 1.1, True, '0.5'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'semantic_min_score'):
+                self.load({'semantic_min_score': value})
+        for value in (0, 65537, True, 1.5, '768'):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'semantic_dimension'):
+                self.load({'semantic_dimension': value})
+        config = self.load({'semantic_retrieval': True, 'semantic_model': 'local-embed'})
+        self.assertTrue(config.memory.semantic_retrieval)
+
     def test_obsidian_timezone_validation(self):
         for value in ('Invalid/Timezone', '', 1):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'memory.obsidian_timezone'):
@@ -82,7 +96,10 @@ class MemoryConfigTests(unittest.TestCase):
         self.assertEqual(self.load({'obsidian_timezone': 'UTC'}).memory.obsidian_timezone, 'UTC')
 
     def test_manifest_contract(self):
-        manifest = Path(__file__).with_name('skill_manifests') / 'memory.json'
+        root = Path(__file__).resolve().parents[2]
+        manifest = root / 'skills' / 'manifests' / 'memory.json'
+        if not manifest.is_file():
+            manifest = root / 'skill_manifests' / 'memory.json'
         skills = json.loads(manifest.read_text(encoding='utf-8'))['skills']
         self.assertEqual({item['adapter'] for item in skills}, {
             'memory.remember', 'memory.recall', 'memory.forget', 'memory.clear',

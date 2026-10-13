@@ -12,8 +12,9 @@ from types import SimpleNamespace as NS
 class StandaloneTests(unittest.TestCase):
     def test_cli_runs_from_an_unrelated_directory(self):
         with tempfile.TemporaryDirectory() as directory:
+            agent_path = Path(__file__).resolve().parents[2] / 'agent.py'
             result = subprocess.run(
-                [sys.executable, str(Path(__file__).with_name('agent.py').resolve()), '--help'],
+                [sys.executable, str(agent_path.resolve()), '--help'],
                 cwd=directory, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--microphone', result.stdout)

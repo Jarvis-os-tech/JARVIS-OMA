@@ -6,62 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from agent_orchestrator import AGENTS, AgentOrchestrator, OrchestrationError, command_for, computer_command
+from agent_orchestrator import AGENTS, AgentOrchestrator, OrchestrationError, command_for
 from skills import DesktopSkills
 from agent import LiveVoice
 
 
 class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_computer_command_keeps_permissions_and_toolset(self):
-        args = computer_command('/installed/hermes', '--evil $(touch /tmp/nope)')
-        self.assertEqual(args[:5], ['/installed/hermes', 'chat', '-t', 'computer_use', '-q'])
-        self.assertNotIn('-z', args)
-        self.assertNotIn('--yolo', args)
-        self.assertIn('--evil $(touch /tmp/nope)', args[-1])
-
-    async def test_computer_task_routing_global_reservation_and_completion(self):
-        runner = self.runner("print('ordinary agent')")
-        skills = DesktopSkills()
-        skills._agent_orchestrator = runner
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
-            with patch.object(runner, 'computer_status', AsyncMock(return_value={'ready': True})), \
-                 patch('agent_orchestrator.computer_command', return_value=[sys.executable, '-u', '-c', "print('CUA observed'); import time; time.sleep(.1)"]):
-                # Route through the actual adapter, independently of host availability.
-                result = await skills._adapter_hermes_computer_task('Inspect app', first)
-                key = result['job']['id']
-                self.assertTrue(result['job']['computer_use'])
-                with self.assertRaisesRegex(OrchestrationError, 'computer task'):
-                    runner.delegate_computer('Conflicting UI work', second)
-                await runner.workers[key]
-                self.assertIn('CUA observed', runner.status(key)['job']['output'])
-                self.assertEqual(runner.status(key)['job']['state'], 'completed')
-
-    async def test_computer_task_not_started_when_backend_unready(self):
-        skills = DesktopSkills()
-        runner = self.runner("print('must not run')")
-        skills._agent_orchestrator = runner
-        readiness = {'ready': False, 'status': 'warning', 'summary': 'needs setup'}
-        with patch.object(runner, 'computer_status', AsyncMock(return_value=readiness)):
-            self.assertEqual(await skills._adapter_hermes_computer_task('Inspect app', '/tmp'), readiness)
-        self.assertEqual(runner.jobs, {})
-
-    async def test_computer_status_missing_executable(self):
-        runner = AgentOrchestrator({'hermes': None})
-        self.addAsyncCleanup(runner.close)
-        self.assertFalse((await runner.computer_status())['ready'])
-
-    async def test_computer_status_valid_and_failed_payloads(self):
-        runner = self.runner('')
-        for code, output, ready in [(0, b'{"ready":true,"checks":[]}', True),
-                                    (1, b'{"ready":true}', False),
-                                    (0, b'not json', False),
-                                    (0, b'{"ready":"false"}', False)]:
-            process = AsyncMock()
-            process.returncode = code
-            process.communicate.return_value = (output, b'')
-            with patch('asyncio.create_subprocess_exec', AsyncMock(return_value=process)):
-                self.assertEqual((await runner.computer_status())['ready'], ready)
-
     def runner(self, code):
         runner = AgentOrchestrator({name: sys.executable for name in AGENTS},
             lambda agent, executable, prompt: [executable, '-u', '-c', code])

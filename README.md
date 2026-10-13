@@ -77,6 +77,8 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 - **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
 - **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
 - **Desktop awareness & perception**: `inspect_screen` (Wayland capture + fast local OCR), `list_windows` (open apps across all workspaces), `focus_window` (bring apps to foreground), `list_workspaces`, and `get_system_resources` (real-time CPU, RAM, disk, and process monitoring)
+- **Voice-controlled input bar**: say “open the input bar” to type, paste, or attach text, images, audio, PDFs, and files into the active conversation; say “close the input bar” to dismiss it
+- **Proactive autonomy runtime**: persistent events and activity ledger, bounded planning and agent routing, monitored background delegation, plus global “pause Jarvis”, “resume Jarvis”, and “stop all Jarvis work” voice controls
 - **Filesystem (Full Autonomy)**: `list_files`, `read_file` (with offset and pagination), `write_file`, `append_file`, `edit_file`, `make_directory`, `move_path`, `copy_path`, `trash_path`, `delete_path` (permanent removal with safety guards), `inspect_file` (file/directory metadata and line count), `search_files` (filename search), and `search_file_content` (content grep with line numbers and snippets)
 - **Multi-step tasks**: `start_task`, `task_status`, `list_tasks`, and `cancel_task` for bounded background file jobs with per-step results
 - **System agent orchestration**: discover and delegate to Codex, Claude Code, OpenCode, Gemini CLI, Hermes, and OMP; inspect progress and stop owned jobs
@@ -115,7 +117,9 @@ Use “remember that I prefer English”, “what do you remember about me?”, 
 that fact”. `clear_memory` clears facts only; it preserves profiles and documents.
 
 Text-document search uses the supplied chunker with a Python SQLite FTS5 adapter.
-The original Rust vector/graph extension is not installed or enabled. Persistent
+The original Rust vector/graph extension is not installed. JARVIS now also has an
+optional semantic layer using the same in-memory Gemini API key as voice, a private
+local SQLite vector cache, and deterministic lexical/semantic fusion. Persistent
 conversation text is retained continuously by default (`record_sessions = true`),
 without age-based resets or automatic transcript pruning. Set it to false to stop
 new transcript storage and history recall. Recent context is loaded at startup;
@@ -134,11 +138,16 @@ facts are not guessed to conflict. `correct_memory` uses a recalled memory ID,
 and `memory_history` shows earlier revisions. Forget/clear also remove active
 structured entries; transcripts and profiles remain intact.
 
-Recall now ranks facts, active structured memories, history and documents using
+Recall ranks facts, active structured memories, history and documents using
 normalized words, phrases and conservative concept expansion, with scores and
-match explanations. This improves simple paraphrase recall but is not embedding
-search and cannot understand arbitrary meaning or contradictions. `memory_status`
-reports the backend and ledger counts. Summaries are separately exported under
+match explanations. To enable stronger paraphrase recall, configure Gemini with
+`semantic_retrieval = true`, `semantic_provider = "gemini"`, `semantic_model`, and
+the model's `semantic_dimension`. Candidate memory text is sent to Gemini for its
+first embedding; unchanged vectors are reused from the local cache. If the API is
+unavailable, recall safely continues with lexical ranking and
+`memory_status` reports a degraded semantic state. Exact lexical evidence remains
+ahead of semantic-only matches; active corrections, trust filtering, and injection
+scanning run before embedding. Summaries are separately exported under
 `JARVIS-OMA Memory/Summaries`, with source message IDs and unverified assistant
 outcome labels; they never replace the continuous transcript.
 
@@ -158,19 +167,6 @@ connected; “sync my memory vault” forces a refresh. Source memory remains in
 local stores; vault edits are not imported as instructions. Manual edits are
 preserved and reported as conflicts. Forgotten, unchanged generated facts are
 removed from the vault during sync. Keep personal notes outside the managed folder.
-
-Hermes computer control is available through `hermes_computer_status` and
-`hermes_computer_task`. The latter checks the installed CUA backend before
-launching `hermes chat -t computer_use -q` with the requested desktop task.
-It returns an agent job ID: use `check_agent_job`, `list_agent_jobs`, and
-`cancel_agent_job` for progress and cancellation. Only one JARVIS CUA job may
-run at a time, even across different workspaces. This coordinates JARVIS jobs,
-not separate Hermes sessions launched elsewhere. No `-z`/`--yolo` approval bypass
-is added; Hermes retains its configured permissions, and unavailable approvals
-can block a task. Driver readiness is not proof that every application supports
-interaction. Screenshots and GUI observations used by Hermes may be sent to its
-configured model provider. Say, for example, “Check Hermes computer control” or
-“Use Hermes to inspect the Calculator window without changing anything.”
 
 The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
 their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,
@@ -239,26 +235,95 @@ recordings are written. Continuous conversation text is stored locally when
 LIVE. Transcript fragments are printed only with `--transcripts`; your terminal
 may retain scrollback. A cloud connection and its usage costs are required.
 
-## Files and extension points
+## Project Structure
 
-- `agent.py`: settings, capture, provider connection, Gemini tool-call routing,
-  event processing, playback, interruption, retry and cleanup.
-- `skills.py`: manifest validation, runtime argument validation, safe Omarchy
-  adapters, application discovery, bounded command execution and URL policy.
-- `skill_manifests/omarchy-defaults.json`: bundled dynamic skill declarations.
-- `echo_cancel.py`: session-owned PipeWire routing adapted from the existing
-  Omarchy voice code. Includes optional gain management, unused by the default CLI.
-- `config.py`: dynamic configuration loader supporting TOML, JSON, and `JARVIS_*` environment variables.
-- `requirements.txt`: the tested Google GenAI SDK version.
-- `run.sh`: starts this folder's virtual environment when present.
-- `test_agent.py`, `test_echo_cancel.py`, `test_skills.py`, `test_config.py`: offline unit and regression tests.
-- `LICENSE`: original MIT notice retained for reused audio code.
+JARVIS-OMA is modularized into dedicated feature packages:
+
+```text
+JARVIS-OMA/
+├── run.sh                          # Main CLI launcher
+├── agent.py                        # Root CLI entrypoint (forwards to core.agent)
+├── config.py                       # Root config shim (forwards to core.config)
+├── echo_cancel.py                  # Root audio shim (forwards to audio.echo_cancel)
+├── task_runner.py                  # Root task runner shim (forwards to filesystem.task_runner)
+├── agent_orchestrator.py           # Root orchestrator shim (forwards to orchestration.agent_orchestrator)
+├── system_control.py               # Root system control shim (forwards to skills.system_control)
+├── config.toml.example             # Configuration template
+├── requirements.txt                # Package dependencies
+├── README.md                       # Repository guide
+│
+├── core/                           # Feature: Core Voice Agent Runtime & Config
+│   ├── agent.py                    # Gemini Live full-duplex session loop & workers
+│   ├── config.py                   # Unified configuration loader (TOML, JSON, env)
+│   └── README.md
+│
+├── audio/                          # Feature: PipeWire Audio & Echo Cancellation
+│   ├── echo_cancel.py              # PipeWire WebRTC AEC setup & node lifecycle
+│   └── README.md
+│
+├── skills/                         # Feature: Dynamic Desktop Skills Engine
+│   ├── skills.py                   # Skill manifest loader & execution dispatcher
+│   ├── input_bar.py                # Loopback multimodal input bar web interface
+│   ├── system_control.py           # Wayland & Omarchy input simulation
+│   ├── manifests/                  # Declarative JSON skill manifests
+│   └── README.md
+│
+├── filesystem/                     # Feature: Filesystem Autonomy & Task Runner
+│   ├── filesystem.py               # Sandboxed desktop filesystem security & ops
+│   ├── task_runner.py              # Multi-step filesystem plan executor
+│   └── README.md
+│
+├── orchestration/                  # Feature: Multi-Agent Delegation
+│   ├── agent_orchestrator.py       # Sub-agent process supervisor (Codex, Claude, etc.)
+│   └── README.md
+│
+├── jarvis_memory/                  # Feature: Persistent & Semantic Memory Subsystem
+│   ├── bridge.py                   # Main bridge to SQLite ledger & vector stores
+│   ├── embeddings.py               # Gemini embedding client & dimension caching
+│   ├── hybrid.py                   # Lexical + semantic fused ranking engine
+│   ├── vector_store.py             # Local SQLite vector cache
+│   └── README.md
+│
+├── proactive/                      # Feature: Proactive Background Autonomy
+│   ├── events.py                   # Event ledger & models
+│   ├── monitor.py                  # Background activity & idle monitor
+│   ├── planner.py                  # Autonomous task planner
+│   ├── policy.py                   # User safety & interruption policy
+│   ├── runtime.py                  # Proactive daemon loop & worker manager
+│   ├── storage.py                  # Persistent event database
+│   └── README.md
+│
+├── scripts/                        # Feature: Maintenance & Diagnostic Scripts
+│   ├── register_obsidian_vault.py  # Vault registration script
+│   ├── sync_obsidian_memory.py     # Manual Obsidian memory sync trigger
+│   ├── test_agent_delegation.py    # Subagent delegation diagnostic harness
+│   └── README.md
+│
+├── docs/                           # Feature: Architecture & Technical Documentation
+│   ├── architecture.md             # Complete system architectural design
+│   ├── proactive-runtime.md        # Background intelligence & safety specs
+│   ├── memory-upgrade.md           # Persistent memory specifications
+│   ├── semantic-memory-board.md    # Semantic vector cache benchmarks
+│   ├── TEST_RESULTS.txt            # Test execution logs
+│   └── README.md
+│
+└── tests/                          # Feature-Aligned Test Suite (239 tests)
+    ├── test_core/                  # Core voice loop & configuration tests
+    ├── test_audio/                 # PipeWire AEC & audio routing tests
+    ├── test_skills/                # Skills, input bar, and awareness tests
+    ├── test_filesystem/            # Filesystem & task runner tests
+    ├── test_orchestration/         # Sub-agent delegation tests
+    ├── test_memory/                # Memory, SQLite, and Obsidian tests
+    ├── test_proactive/             # Proactive engine & event loop tests
+    └── README.md
+```
 
 ## Verification
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s . -p 'test_*.py' -v
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 ./run.sh --check
+./run.sh --list-skills
 ```
 
 The tests simulate external processes and cloud events. They cover simultaneous
@@ -268,7 +333,7 @@ resumption state, dynamic manifest validation, strict tool arguments, safe adapt
 routing, URL policy and echo route cleanup. `--check` validates commands and SDK
 configuration without capturing audio or opening a network connection.
 
-See `TEST_RESULTS.txt` for the actual test run. A real Gemini conversation,
+See `docs/TEST_RESULTS.txt` for the actual test run. A real Gemini conversation,
 echo rejection, end-to-end interruption timing, connection expiry and sustained
 CPU/RAM usage have **not** been tested on live hardware for this new agent.
 

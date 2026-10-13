@@ -27,6 +27,9 @@ from .paths import get_config_dir
 from .knowledge import KnowledgeStore
 from .capture import extract_memories
 from .retrieval import rank_candidates
+from .embeddings import GeminiEmbeddingProvider, OllamaEmbeddingProvider
+from .hybrid import fuse_results
+from .vector_store import VectorStore
 
 
 class MemoryError(ValueError):
@@ -73,7 +76,7 @@ class OllamaExtractorEngine:
 
 
 class MemoryBridge:
-    def __init__(self, config):
+    def __init__(self, config, embedding_provider=None, api_key=''):
         config.validate()
         self.config = config
         self.enabled = config.enabled
@@ -87,6 +90,24 @@ class MemoryBridge:
         self._vault_sync_result = None
         self._vault_fingerprint = None
         self._vault_sync_lock = threading.Lock()
+        self.semantic_enabled = bool(config.semantic_retrieval or embedding_provider is not None)
+        self.embedding_provider = embedding_provider
+        if self.semantic_enabled and self.embedding_provider is None:
+            if config.semantic_provider == 'gemini':
+                self.embedding_provider = GeminiEmbeddingProvider(
+                    api_key or os.getenv('GEMINI_API_KEY', ''), config.semantic_model,
+                    config.semantic_dimension)
+            else:
+                self.embedding_provider = OllamaEmbeddingProvider(
+                    config.semantic_url, config.semantic_model, config.semantic_dimension)
+        if self.embedding_provider is not None and not getattr(self.embedding_provider, 'identity', None):
+            dimension = (getattr(self.embedding_provider, 'dimension', None) or
+                         getattr(self.embedding_provider, 'dimensions', None))
+            self.embedding_provider.identity = (self.embedding_provider.__class__.__module__ + '.' +
+                                                self.embedding_provider.__class__.__name__ + ':' + str(dimension))
+        self.vectors = VectorStore(self.root / 'semantic_vectors.db')
+        self._semantic_state = 'ready' if self.semantic_enabled else 'disabled'
+        self._semantic_error = None
 
     def _require(self):
         if not self.enabled:
@@ -143,16 +164,89 @@ class MemoryBridge:
         entries = self.knowledge.list(active_only=False)
         retired = {entry['text'].casefold() for entry in entries if entry['status'] != 'active'}
         active = {entry['text'].casefold() for entry in entries if entry['status'] == 'active'}
-        memories = rank_all(query, (entry for entry in entries if entry['status'] == 'active'
-                                    and self.scanner.scan(entry['text']).is_clean), limit)
+        memory_candidates = [dict(entry, canonical_key='memory:' + str(entry['id']),
+                                  memory_id=entry['id'], source_type='memory')
+                             for entry in entries if entry['status'] == 'active'
+                             and self.scanner.scan(entry['text']).is_clean]
+        memories = rank_all(query, memory_candidates, limit)
         facts = [asdict(fact) for fact in reversed(self.store.list())
                  if fact.trusted_for_recall and self.scanner.scan(fact.text).is_clean
                  and (fact.text.casefold() not in retired or fact.text.casefold() in active)]
+        for fact in facts:
+            fact['canonical_key'] = 'fact:' + sha256(fact['text'].casefold().encode()).hexdigest()
+            fact['source_type'] = 'fact'
         ranked_facts = rank_all(query, facts, limit)
-        return {'facts': ranked_facts, 'memories': memories, 'documents': self._search_documents(query, limit),
-                'conversation': self.recall_history(query, limit),
+        documents = self._search_documents(query, limit)
+        conversation = self.recall_history(query, limit)
+        if query and self.semantic_enabled:
+            semantic = self._semantic_search(query, memory_candidates, facts)
+            memories = fuse_results(memories, semantic['memory'], limit, self.config.semantic_min_score)
+            ranked_facts = fuse_results(ranked_facts, semantic['fact'], limit, self.config.semantic_min_score)
+            documents = fuse_results(documents, semantic['document'], limit, self.config.semantic_min_score)
+            conversation = fuse_results(conversation, semantic['conversation'], limit, self.config.semantic_min_score)
+            for item in documents + conversation:
+                if 'text' in item:
+                    item['content'] = item['text'][:4000]
+        return {'facts': ranked_facts, 'memories': memories, 'documents': documents,
+                'conversation': conversation,
                 'count': len(ranked_facts) + len(memories), 'truncated': len(facts) > limit,
-                'retrieval_backend': 'local-ranked-lexical-concept'}
+                'retrieval_backend': ('local-hybrid-semantic-lexical' if self._semantic_state == 'available'
+                                      else 'local-ranked-lexical-concept')}
+
+    def _semantic_search(self, query, memories, facts):
+        grouped = {name: [] for name in ('memory', 'fact', 'document', 'conversation')}
+        try:
+            records = {'memory': [], 'fact': [], 'document': [], 'conversation': []}
+            for item in memories + facts:
+                kind = item['source_type']
+                records[kind].append({'id': item['canonical_key'], 'text': item['text'][:8192],
+                                      'metadata': dict(item)})
+            records['document'] = self._semantic_document_records()
+            records['conversation'] = self._semantic_conversation_records()
+            for namespace, items in records.items():
+                self.vectors.sync(namespace, items, self.embedding_provider)
+            query_vector = self.embedding_provider.embed_texts([query])[0]
+            results = self.vectors.search(records.keys(), query_vector, self.embedding_provider.identity,
+                                          limit=200, min_score=self.config.semantic_min_score)
+            for item in results:
+                item['text'] = item.get('text', item.get('content', ''))
+                grouped[item['source_type']].append(item)
+            self._semantic_state, self._semantic_error = 'available', None
+        except Exception as error:
+            self._semantic_state, self._semantic_error = 'degraded', str(error)[:500]
+        return grouped
+
+    def _semantic_document_records(self):
+        path = self.root / 'jarvis_documents.db'
+        if not path.is_file():
+            return []
+        connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
+        try:
+            rows = connection.execute("SELECT rowid,content,source FROM chunks WHERE trust='trusted'")
+            return [{'id': 'document:' + str(identifier), 'text': content[:8192],
+                     'metadata': {'canonical_key': 'document:' + str(identifier), 'source_type': 'document',
+                                  'source': source, 'text': content[:4000]}}
+                    for identifier, content, source in rows if self.scanner.scan(content).is_clean]
+        finally:
+            connection.close()
+
+    def _semantic_conversation_records(self):
+        path = self.root / 'sessions.db'
+        if not self.config.record_sessions or not path.is_file():
+            return []
+        connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
+        try:
+            rows = connection.execute('SELECT m.id,m.role,m.content,m.timestamp FROM session_messages m '
+                                      'JOIN sessions s ON s.session_id=m.session_id WHERE s.user_id=?',
+                                      ('local-user',))
+            return [{'id': 'conversation:' + str(identifier), 'text': content[:8192],
+                     'metadata': {'canonical_key': 'conversation:' + str(identifier),
+                                  'source_type': 'conversation', 'source': 'conversation',
+                                  'role': role, 'timestamp': timestamp, 'message_id': identifier,
+                                  'text': content[:4000]}}
+                    for identifier, role, content, timestamp in rows if self.scanner.scan(content).is_clean]
+        finally:
+            connection.close()
 
     def recall_history(self, query='', limit=20):
         if not self.enabled or not self.config.record_sessions:
@@ -175,12 +269,15 @@ class MemoryBridge:
                 ('local-user',))
             best = []
             while rows := cursor.fetchmany(256):
-                candidates = [{'id': identifier, 'role': role, 'text': content, 'timestamp': timestamp,
-                               'source': 'conversation'} for identifier, role, content, timestamp in rows
+                candidates = [{'id': identifier, 'canonical_key': 'conversation:' + str(identifier),
+                               'source_type': 'conversation', 'role': role, 'text': content,
+                               'timestamp': timestamp, 'source': 'conversation'} for identifier, role, content, timestamp in rows
                               if self.scanner.scan(content).is_clean]
                 best = rank_candidates(query, [*best, *candidates], limit)
             return [{'role': item['role'], 'content': item['text'][:4000], 'timestamp': item['timestamp'],
-                     'message_id': item['id'], 'score': item['score'], 'match_reason': item['match_reason']}
+                     'text': item['text'][:4000], 'message_id': item['id'],
+                     'canonical_key': item['canonical_key'], 'source_type': 'conversation',
+                     'source': 'conversation', 'score': item['score'], 'match_reason': item['match_reason']}
                     for item in best]
         finally:
             connection.close()
@@ -195,13 +292,16 @@ class MemoryBridge:
             for revision in self.knowledge.history(entry['id']):
                 removed_facts += self.store.forget(revision['text'])
             self.knowledge.forget(entry['id'])
+        self.vectors.clear(('memory', 'fact'))
         return {'status': 'forgotten', 'removed': removed_facts, 'removed_memories': len(matches)}
 
     def clear(self):
         self._require()
         removed = len(self.knowledge.list())
         self.knowledge.clear()
-        return {'status': 'cleared', 'removed_facts': self.store.clear(), 'removed_memories': removed}
+        result = {'status': 'cleared', 'removed_facts': self.store.clear(), 'removed_memories': removed}
+        self.vectors.clear(('memory', 'fact'))
+        return result
 
     def correct(self, memory_id, text, reason=''):
         self._require()
@@ -284,7 +384,8 @@ class MemoryBridge:
                 best = rank_candidates(query, [*best, *candidates], limit)
         finally:
             connection.close()
-        return [{'content': item['text'][:4000], 'source': item['source'],
+        return [{'content': item['text'][:4000], 'text': item['text'][:4000], 'source': item['source'],
+                 'canonical_key': 'document:' + str(item['id']), 'source_type': 'document',
                  'score': item['score'], 'match_reason': item['match_reason']} for item in best]
 
     def context(self, query=''):
@@ -352,7 +453,13 @@ class MemoryBridge:
                 'auto_capture_running': bool(self.service and self.service.is_running),
                 'structured_capture': self.config.structured_capture,
                 'structured_memory': self.knowledge.stats(),
-                'retrieval_backend': 'local-ranked-lexical-concept',
+                'retrieval_backend': ('local-hybrid-semantic-lexical' if self.semantic_enabled
+                                      else 'local-ranked-lexical-concept'),
+                'semantic_status': self._semantic_state,
+                'semantic_retrieval': {'enabled': self.semantic_enabled, 'status': self._semantic_state,
+                                       'provider': getattr(self.embedding_provider, 'identity', None),
+                                       'last_error': self._semantic_error,
+                                       'cache': str(self.vectors.path)},
                 'documents_backend': 'python-sqlite-fts5',
                 'obsidian_vault': self.config.obsidian_vault,
                 'obsidian_last_sync': self._vault_sync_result,

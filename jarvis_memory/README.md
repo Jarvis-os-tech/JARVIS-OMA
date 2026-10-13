@@ -18,10 +18,20 @@ and runs against a configured local Ollama endpoint.
 
 The provided retrieval wrappers require a Rust extension absent from this
 environment. The bridge exposes a distinctly named Python SQLite FTS5 document
-port using the bundled chunker. It neither loads nor claims to implement FAISS,
-ColBERT, hybrid vector retrieval, or the native knowledge graph. `memory_status`
-reports this distinction. Existing OpenJarvis `memory.db` files are not migrated;
-indexed documents use `jarvis_documents.db`.
+port using the bundled chunker plus an optional dependency-free semantic cache.
+Semantic mode supports Gemini API-key embeddings and an optional loopback Ollama
+provider, validates bounded vectors, stores its cache with private permissions,
+and fuses results with lexical evidence.
+It does not implement FAISS, ColBERT, or the native knowledge graph. Existing
+OpenJarvis `memory.db` files are not migrated; indexed documents use
+`jarvis_documents.db` and embeddings use `semantic_vectors.db`.
+
+Semantic retrieval is disabled by default. Set `semantic_retrieval = true`,
+`semantic_provider = "gemini"`, `semantic_model`, and the model's
+`semantic_dimension` under `[memory]`. The runtime reuses the voice session's
+in-memory API key and never stores it in memory state or the vector cache. Provider
+failure never blocks recall: the bridge records a degraded status and returns the
+lexical/concept results. Quarantined content is filtered before provider calls.
 
 JARVIS startup and checks do not create memory files unless a write, document
 index, or explicitly enabled session/extraction service requires them. Recalled
