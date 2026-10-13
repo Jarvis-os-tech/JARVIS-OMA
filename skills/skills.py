@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 import filesystem as fs
 from task_runner import TaskPlanError, TaskRunner
 from agent_orchestrator import AgentOrchestrator, OrchestrationError
+from orchestration.evolution import EvolutionManager
 from config import MemoryConfig
 from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
 try:
@@ -103,6 +104,10 @@ class DesktopSkills:
         'agents.status': '_adapter_check_agent_job',
         'agents.jobs': '_adapter_list_agent_jobs',
         'agents.cancel': '_adapter_cancel_agent_job',
+        'evolution.start': '_adapter_start_development',
+        'evolution.status': '_adapter_development_status',
+        'evolution.list': '_adapter_list_development_jobs',
+        'evolution.cancel': '_adapter_cancel_development',
         'memory.remember': '_adapter_remember_memory',
         'memory.recall': '_adapter_recall_memory',
         'memory.forget': '_adapter_forget_memory',
@@ -190,6 +195,10 @@ class DesktopSkills:
         'agents.status': (),
         'agents.jobs': (),
         'agents.cancel': (),
+        'evolution.start': ('git', 'bwrap'),
+        'evolution.status': (),
+        'evolution.list': (),
+        'evolution.cancel': (),
         'memory.remember': (),
         'memory.recall': (),
         'memory.forget': (),
@@ -264,6 +273,7 @@ class DesktopSkills:
                             if not spec['adapter'].startswith('memory.') or spec['adapter'] == 'memory.status'}
         self._task_runner = TaskRunner(self.execute, self._valid_task_step)
         self._agent_orchestrator = AgentOrchestrator()
+        self._evolution = None
         self.test_bar = TestBar()
         self._proactive = None
 
@@ -570,6 +580,51 @@ class DesktopSkills:
     async def _adapter_type_text(self, text):
         return await system_control.type_text(text)
 
+    @property
+    def evolution(self):
+        if self._evolution is None:
+            self._evolution = EvolutionManager(
+                self._agent_orchestrator,
+                can_run=lambda: self.proactive.control.get_state().can_run)
+        return self._evolution
+
+    async def _adapter_start_development(self, goal, workspace, agent='codex'):
+        try:
+            return await self.evolution.start(goal, workspace, agent)
+        except (OrchestrationError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_development_status(self, job_id):
+        try:
+            manager = self._evolution or EvolutionManager(None, read_only=True)
+            response = manager.status(job_id)
+            job = response['job']
+            # Keep voice tool context bounded; full evidence remains on disk/CLI.
+            job.pop('commands', None)
+            job['diff_truncated'] = job['diff_truncated'] or len(job['diff']) > 8000
+            job['diff'] = job['diff'][:8000]
+            for evidence in [*job['stages'], job['tests'], job['baseline_tests']]:
+                if evidence:
+                    output = evidence.get('output', '')
+                    evidence['output_truncated'] = evidence.get('output_truncated', False) or len(output) > 3000
+                    evidence['output'] = output[-3000:]
+            return response
+        except (OrchestrationError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_development_jobs(self):
+        try:
+            manager = self._evolution or EvolutionManager(None, read_only=True)
+            return manager.list_jobs()
+        except (OrchestrationError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_cancel_development(self, job_id):
+        try:
+            return await self.evolution.cancel(job_id)
+        except (OrchestrationError, OSError) as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_press_key(self, key, modifiers=None):
         return await system_control.press_key(key, modifiers)
 
@@ -601,6 +656,8 @@ class DesktopSkills:
         return await system_control.move_window_to_workspace(workspace)
 
     async def close_agent_jobs(self):
+        if self._evolution is not None:
+            await self._evolution.close()
         await self._agent_orchestrator.close()
         self.test_bar.close()
         if self._memory is not None:
@@ -608,6 +665,18 @@ class DesktopSkills:
 
     async def _adapter_open_input_bar(self):
         url = self.test_bar.start()
+        overlay_script = os.path.join(os.path.dirname(__file__), 'overlay_client.py')
+        if os.path.isfile(overlay_script) and os.path.isfile('/usr/bin/python3'):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    '/usr/bin/python3', '-c',
+                    'import gi; gi.require_version("WebKit2", "4.1"); from gi.repository import WebKit2',
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                if await proc.wait() == 0:
+                    await self._launch('/usr/bin/python3', overlay_script, url)
+                    return {'status': 'opened', 'accepts': ['text', 'image', 'audio', 'pdf', 'file']}
+            except Exception:
+                pass
         await self._launch(self._command('omarchy-launch-webapp'), url)
         return {'status': 'opened', 'accepts': ['text', 'image', 'audio', 'pdf', 'file']}
 
@@ -615,10 +684,18 @@ class DesktopSkills:
         closed = self.test_bar.close()
         windows = await self._adapter_list_windows()
         matches = [item for item in windows['windows']
-                   if 'jarvis input bar' in item.get('title', '').casefold()]
+                   if 'jarvis input bar' in item.get('title', '').casefold()
+                   or 'jarvisinputbar' in item.get('class', '').casefold()]
+        hypr = self._command('hyprctl')
         for item in matches:
-            await self._run(self._command('hyprctl'), 'dispatch', 'closewindow',
-                            'address:' + item['address'])
+            addr = item.get('address', '')
+            try:
+                await self._run(hypr, 'dispatch', f'hl.dsp.window.close({{ window = "address:{addr}" }})')
+            except SkillError:
+                try:
+                    await self._run(hypr, 'dispatch', 'closewindow', 'address:' + addr)
+                except SkillError:
+                    pass
         return {'status': 'closed' if closed or matches else 'already_closed',
                 'windows_closed': len(matches)}
 
@@ -629,13 +706,22 @@ class DesktopSkills:
         return self.proactive.status()
 
     async def _adapter_proactive_pause(self):
-        return self.proactive.pause()
+        result = self.proactive.pause()
+        await self._cancel_active_development()
+        return result
 
     async def _adapter_proactive_resume(self):
         return self.proactive.resume()
 
     async def _adapter_proactive_stop(self):
+        self.proactive.control.stop_all()
+        await self._cancel_active_development()
         return await self.proactive.stop_all()
+
+    async def _cancel_active_development(self):
+        if self._evolution is not None:
+            for job_id in list(self._evolution.workers):
+                await self._evolution.cancel(job_id)
 
     @property
     def memory(self):

@@ -56,26 +56,63 @@ def collect_file_inventory():
     return inventory
 
 KNOWN_ROLES = {
-    # Core Root Modules
-    "agent.py": ("Core Voice Agent Runtime", "Full-duplex Gemini Live voice agent over PipeWire with concurrent capture, playback, interruption generation fences, proactive greetings, and tool execution."),
-    "skills.py": ("Desktop Skills Registry & Dispatcher", "Discovers JSON manifests, validates strict argument schemas, maps 71 tools to safe adapters, enforces command dependencies, and degrades gracefully."),
-    "config.py": ("Dynamic Configuration Engine", "Multi-tier settings loader with priority chain: CLI flags > environment variables > TOML/JSON config files > built-in defaults."),
-    "echo_cancel.py": ("PipeWire AEC Audio Router", "Session-owned WebRTC echo cancellation via pactl load-module module-echo-cancel, source volume capping, and automatic cleanup."),
-    "filesystem.py": ("Autonomous Filesystem Engine", "Full autonomy file and directory operations (list, read, write, append, edit, mkdir, move, copy, trash, delete, inspect, search, grep) with root path safety guards."),
-    "task_runner.py": ("In-Process Bounded Task Runner", "Executes multi-step filesystem plans (up to 30 steps) in background workers with per-step tracking and cooperative cancellation."),
-    "agent_orchestrator.py": ("System Agent CLI Orchestrator", "Discovers, delegates, supervises, and terminates local coding agents (Codex, Claude, OpenCode, Gemini, Hermes, OMP) across bounded non-overlapping workspaces."),
-    "test_bar.py": ("Multimodal Input Bar Server", "Ephemeral loopback-only ThreadingHTTPServer with cryptographic bearer token serving dark-mode web UI for typing text and uploading files into live session."),
+    # Modular Core Runtime
+    "core/__init__.py": ("Modular Core Package Marker", "Package initialization marker for core voice agent runtime and dynamic configuration."),
+    "core/agent.py": ("Core Voice Agent Runtime", "Full-duplex Gemini Live voice agent over PipeWire with concurrent capture, playback, interruption generation fences, proactive greetings, tool execution, and SIGUSR1/SIGUSR2 mute/interrupt signal handling."),
+    "core/config.py": ("Dynamic Configuration Engine", "Multi-tier settings loader with priority chain: CLI flags > environment variables > TOML/JSON config files > built-in defaults."),
+    "core/README.md": ("Core Subsystem Documentation", "Architecture documentation for core voice agent and configuration subsystem."),
+
+    # Modular Audio Subsystem
+    "audio/__init__.py": ("Modular Audio Package Marker", "Package initialization marker for native PipeWire audio pipeline."),
+    "audio/echo_cancel.py": ("PipeWire AEC Audio Router", "Session-owned WebRTC echo cancellation via pactl load-module module-echo-cancel, source volume capping, and automatic cleanup."),
+    "audio/README.md": ("Audio Subsystem Documentation", "Architecture documentation for PipeWire WebRTC acoustic echo cancellation pipeline."),
+
+    # Modular Filesystem Subsystem
+    "filesystem/__init__.py": ("Modular Filesystem Package Marker", "Package initialization marker for filesystem engine and task runner."),
+    "filesystem/filesystem.py": ("Autonomous Filesystem Engine", "Full autonomy file and directory operations (list, read, write, append, edit, mkdir, move, copy, trash, delete, inspect, search, grep) with root path safety guards."),
+    "filesystem/task_runner.py": ("In-Process Bounded Task Runner", "Executes multi-step filesystem plans (up to 30 steps) in background workers with per-step tracking and cooperative cancellation."),
+    "filesystem/README.md": ("Filesystem Subsystem Documentation", "Architecture documentation for autonomous filesystem tools and task runner."),
+
+    # Modular Orchestration & Evolution
+    "orchestration/__init__.py": ("Modular Orchestration Package Marker", "Package initialization marker for multi-agent CLI orchestrator and self-evolution engine."),
+    "orchestration/agent_orchestrator.py": ("System Agent CLI Orchestrator", "Discovers, delegates, supervises, and terminates local coding agents (Codex, Claude, OpenCode, Gemini, Hermes, OMP) across bounded non-overlapping workspaces."),
+    "orchestration/evolution.py": ("Autonomous Evolution Engine", "Self-improvement pipeline analyzing tool failures, system diagnostics, and synthesizing code optimizations with rollback gates."),
+    "orchestration/README.md": ("Orchestration Subsystem Documentation", "Architecture documentation for multi-agent delegation and autonomous evolution."),
+
+    # Modular Skills Subsystem & Overlays
+    "skills/__init__.py": ("Modular Skills Package Marker", "Package initialization marker for desktop skills registry, input bar, and overlay clients."),
+    "skills/skills.py": ("Desktop Skills Registry & Dispatcher", "Discovers JSON manifests, validates strict argument schemas, maps 86 tools to safe adapters, enforces command dependencies, and degrades gracefully."),
+    "skills/input_bar.py": ("Multimodal Input Bar HUD", "Compact single-row 44px HUD input bar with full transparency, inline attachment indicator, Enter-to-send, and dark glass styling."),
+    "skills/overlay_client.py": ("Native Wayland Overlay Client", "Standalone WebKitGTK / GTK3 transparent window client launching JarvisInputBar strictly at 600x50 with RGBA transparency and zero compositor framing."),
+    "skills/system_control.py": ("System Control Adapters", "Desktop system control adapters for volume, brightness, power state, and workspace navigation."),
+    "skills/manifests/development.json": ("Autonomous Development Skills Manifest", "Manifest declaring start_development, get_development_status, cancel_development, and list_development_jobs."),
+    "skill_manifests/development.json": ("Autonomous Development Skills Manifest", "Manifest declaring start_development, get_development_status, cancel_development, and list_development_jobs."),
+    "skills/README.md": ("Skills Subsystem Documentation", "Architecture documentation for desktop skills engine and input overlay."),
+
+    # Root Backward-Compatibility Stubs & Core Entry Points
+    "agent.py": ("Core Voice Agent Entry Stub", "Backward-compatibility entry point importing and delegating to core.agent:main."),
+    "skills.py": ("Skills Registry Entry Stub", "Backward-compatibility entry point importing and delegating to skills.skills:DesktopSkills."),
+    "config.py": ("Configuration Engine Entry Stub", "Backward-compatibility entry point importing and delegating to core.config:load_config."),
+    "echo_cancel.py": ("Echo Cancellation Entry Stub", "Backward-compatibility entry point importing and delegating to audio.echo_cancel:EchoCancellation."),
+    "filesystem.py": ("Filesystem Engine Entry Stub", "Backward-compatibility entry point importing and delegating to filesystem.filesystem."),
+    "task_runner.py": ("Task Runner Entry Stub", "Backward-compatibility entry point importing and delegating to filesystem.task_runner:TaskRunner."),
+    "agent_orchestrator.py": ("Agent Orchestrator Entry Stub", "Backward-compatibility entry point importing and delegating to orchestration.agent_orchestrator:AgentOrchestrator."),
+    "system_control.py": ("System Control Entry Stub", "Backward-compatibility entry point importing and delegating to skills.system_control."),
+    "test_bar.py": ("Multimodal Input Bar Entry Stub", "Backward-compatibility stub importing and exporting MAX_BODY, PAGE, TestBar from skills.input_bar."),
     "run.sh": ("Shell Activation Wrapper", "Launches agent.py within the local Python virtual environment, supporting flags like --check and --list-skills."),
     "requirements.txt": ("Python Dependencies Manifest", "Specifies google-genai==2.24.0 as the sole production external dependency."),
     "config.toml": ("Active Configuration File", "Live local configuration file specifying active voice, model, language, and memory settings."),
     "config.toml.example": ("Configuration Reference Template", "Documented configuration template illustrating all available options across agent, audio, vad, skills, filesystem, and memory sections."),
-    "README.md": ("Project Documentation", "Master repository guide detailing requirements, installation, run commands, dynamic skills, filesystem autonomy, agent orchestration, and memory matrix."),
+    "README.md": ("Project Documentation", "Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, and memory matrix."),
     "CONTRIBUTING.md": ("Contribution Guidelines", "Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries."),
     "LICENSE": ("MIT License", "Open-source software license for JARVIS-OMA."),
-    "TEST_RESULTS.txt": ("Offline Verification Record", "Historical test execution log documenting 50 unit tests passing during dynamic system controlling refactor."),
     ".env": ("Local Environment Secrets", "Local environment file containing private API keys and configuration secrets (excluded from Git)."),
     ".env.example": ("Environment Secrets Template", "Example template for setting GEMINI_API_KEY."),
     ".gitignore": ("Git Ignore Specification", "Ignores .venv, __pycache__, .env, and local SQLite state databases."),
+
+    # Systemd Service Integration
+    "systemd/jarvis-oma.service": ("Systemd User Service Unit", "Runs JARVIS-OMA as an unprivileged user daemon under systemd with auto-restart, clean shutdown, and signal management."),
+    "scripts/install-service.sh": ("Systemd Service Installer", "Automates installation, enablement, and user daemon management for jarvis-oma.service."),
 
     # Proactive Autonomy Subsystem
     "proactive/__init__.py": ("Proactive Module Exports", "Exports AutonomyControl, EventBus, ActivityLedger, AutonomousPlanner, ProactivePolicy, ProactiveMonitor, and ProactiveRuntime."),
@@ -112,11 +149,15 @@ KNOWN_ROLES = {
     "jarvis_memory/README.md": ("Memory Subsystem Documentation", "Architecture overview and operational guidelines for the sovereign 4-tier memory matrix."),
 
     # Standalone Scripts
+    "scripts/develop.py": ("Capability Development CLI Harness", "Inspects and drives capability-development proposals, sandboxed code synthesis, and test suites headlessly."),
     "scripts/register_obsidian_vault.py": ("Obsidian Vault Registration Script", "Safely registers the JARVIS-OMA memory vault into Obsidian desktop settings (~/.config/obsidian/obsidian.json) with backup."),
     "scripts/sync_obsidian_memory.py": ("Headless Memory Sync Utility", "Executes an immediate one-shot synchronization of sovereign memory facts and history into the Obsidian vault."),
     "scripts/test_agent_delegation.py": ("Live Agent Delegation Smoke Harness", "End-to-end integration test creating temporary Git workspaces and verifying autonomous delegation to installed agents."),
+    "scripts/update_codebase_reference.py": ("Codebase Reference Generator", "Generates and synchronizes CODEBASE_REFERENCE.md with 100% precision from real-time Git and code telemetry."),
+    "scripts/README.md": ("Scripts Directory Documentation", "Overview of utility, maintenance, and deployment scripts."),
 
     # Documentation & Architecture
+    "docs/capability-development.md": ("Capability Development Specification", "Architectural specification for autonomous self-improvement, isolated proposal git worktrees, bubblewrap sandbox, and rollback gates."),
     "docs/memory-upgrade.md": ("Memory Upgrade Work Board", "Architectural specification tracking evidence capture, ranked retrieval, persistent corrections, daily summaries, and acceptance gates."),
     "docs/semantic-memory-board.md": ("Semantic Memory Evolution Board", "Engineering work board tracking embedding providers, persistent vector cache, hybrid ranker, and retrieval evaluation."),
 
@@ -125,36 +166,47 @@ KNOWN_ROLES = {
     ".github/ISSUE_TEMPLATE/bug_report.md": ("Bug Report Template", "Structured issue template for filing desktop control and voice pipeline bugs."),
     ".github/ISSUE_TEMPLATE/feature_request.md": ("Feature Request Template", "Structured issue template for requesting new desktop skills and capabilities."),
 
-    # Test Suites
-    "test_agent.py": ("Voice Agent Unit Tests", "Tests full-duplex streaming, live config generation, greeting triggers, playback queueing, interruption fences, and retry budgets."),
-    "test_agent_orchestrator.py": ("Agent Orchestrator Unit Tests", "Tests agent discovery, concurrency limits, workspace isolation, timeout escalation, and secret redaction."),
-    "test_awareness.py": ("Desktop Awareness Tests", "Tests inspect_screen, list_windows, focus_window, list_workspaces, and get_system_resources adapters."),
-    "test_bar.py": ("Input Bar Backend Tests", "Tests ephemeral HTTP server, bearer token authorization, payload size validation, and data queueing."),
-    "test_config.py": ("Configuration Engine Tests", "Tests TOML/JSON parsing, environment variable overrides, CLI keyword overrides, and priority resolution."),
-    "test_echo_cancel.py": ("Echo Cancellation Tests", "Tests pactl module loading, source volume calculation and restoration, and error cleanup."),
-    "test_filesystem.py": ("Filesystem Skill Tests", "Tests full autonomy file operations, offset reading, path traversal guards, and critical path protection."),
-    "test_input_bar.py": ("Input Bar Integration Tests", "Tests input bar skill activation and voice-session queue integration."),
-    "test_memory_capture.py": ("Memory Capture Tests", "Tests extraction of explicit user facts without hallucinating assistant claims."),
-    "test_memory_config.py": ("Memory Configuration Tests", "Tests validation of memory paths, providers, dimensions, timezones, and score thresholds."),
-    "test_memory_embeddings.py": ("Vector Embedding Tests", "Tests Gemini and Ollama embedding providers and vector dimension handling."),
-    "test_memory_hybrid.py": ("Hybrid Fusion Tests", "Tests reciprocal rank fusion between lexical and vector retrieval scores."),
-    "test_memory_integration.py": ("Memory Bridge Integration Tests", "Tests end-to-end memory operations, fact storage, profile updates, and document indexing."),
-    "test_memory_knowledge.py": ("Knowledge Database Tests", "Tests SQLite knowledge store, profile mutations, and FTS5 search indexing."),
-    "test_memory_retrieval.py": ("Lexical Retrieval Tests", "Tests token normalization, phrase matching, and concept expansion."),
-    "test_memory_strength.py": ("Memory Strength Acceptance Tests", "Tests long-term memory persistence, restart resilience, and supersession."),
-    "test_memory_summaries.py": ("Daily Summary Tests", "Tests generation of structured daily interaction summaries."),
-    "test_memory_upgrade_integration.py": ("Memory Upgrade Integration Tests", "Validates complete interoperability of upgraded memory components."),
-    "test_memory_vector_store.py": ("SQLite Vector Store Tests", "Tests vector caching, invalidation, cosine similarity ranking, and file permissions."),
-    "test_obsidian_memory.py": ("Obsidian Sync Tests", "Tests markdown note formatting, directory structure, and daily journal synchronization."),
-    "test_proactive_control.py": ("Proactive Autonomy Control Tests", "Tests pause, resume, and stop-all latch mechanisms."),
-    "test_proactive_events.py": ("Proactive Event Bus Tests", "Tests SQLite event bus publishing, claiming, and transactional state transitions."),
-    "test_proactive_monitor.py": ("Proactive Job Monitor Tests", "Tests background job supervision, timeout handling, and snapshot telemetry."),
-    "test_proactive_planner.py": ("Proactive Planner Tests", "Tests deterministic event routing, agent selection, and plan construction."),
-    "test_proactive_policy.py": ("Proactive Policy Tests", "Tests rate limiting, cooldowns, duplicate detection, and effect categorization."),
-    "test_proactive_runtime.py": ("Proactive Runtime Tests", "Tests todo/reminder observation loops, tick processing, and event dispatching."),
-    "test_semantic_memory_eval.py": ("Semantic Retrieval Acceptance Suite", "Comprehensive evaluation of paraphrase recall, poison filtering, and fallback behavior."),
-    "test_skills.py": ("Dynamic Skills Engine Tests", "Tests manifest discovery, adapter routing, command verification, argument schema enforcement, and graceful degradation."),
-    "test_task_runner.py": ("Task Runner Unit Tests", "Tests bounded filesystem task plan validation, execution, and cancellation."),
+    # Automated Unit & Integration Tests (tests/ Hierarchy)
+    "tests/__init__.py": ("Test Root Package Marker", "Package initialization marker for automated test suite."),
+    "tests/README.md": ("Test Suite Documentation", "Architecture and execution guide for the 264 unit, integration, and acceptance tests."),
+    "tests/test_core/__init__.py": ("Core Test Package Marker", "Package initialization marker for core tests."),
+    "tests/test_core/test_agent.py": ("Voice Agent Unit Tests", "Tests full-duplex streaming, live config generation, greeting triggers, playback queueing, interruption fences, and signal handling."),
+    "tests/test_core/test_config.py": ("Configuration Engine Tests", "Tests TOML/JSON parsing, environment variable overrides, CLI keyword overrides, and priority resolution."),
+    "tests/test_audio/__init__.py": ("Audio Test Package Marker", "Package initialization marker for audio tests."),
+    "tests/test_audio/test_echo_cancel.py": ("Echo Cancellation Tests", "Tests pactl module loading, source volume calculation and restoration, and error cleanup."),
+    "tests/test_skills/__init__.py": ("Skills Test Package Marker", "Package initialization marker for skills tests."),
+    "tests/test_skills/test_skills.py": ("Dynamic Skills Engine Tests", "Tests manifest discovery, adapter routing, command verification, argument schema enforcement, and graceful degradation."),
+    "tests/test_skills/test_awareness.py": ("Desktop Awareness Tests", "Tests inspect_screen, list_windows, focus_window, list_workspaces, and get_system_resources adapters."),
+    "tests/test_skills/test_development.py": ("Capability Development Skills Tests", "Unit tests for start_development, get_development_status, cancel_development, and list_development_jobs adapters."),
+    "tests/test_skills/test_input_bar.py": ("Input Bar Integration Tests", "Tests compact HUD input bar skill activation, loopback HTTP server, token authentication, and voice-session queue integration."),
+    "tests/test_skills/test_system_control.py": ("System Control Tests", "Tests volume, brightness, power state, and workspace navigation adapters."),
+    "tests/test_filesystem/__init__.py": ("Filesystem Test Package Marker", "Package initialization marker for filesystem tests."),
+    "tests/test_filesystem/test_filesystem.py": ("Filesystem Skill Tests", "Tests full autonomy file operations, offset reading, path traversal guards, and critical path protection."),
+    "tests/test_filesystem/test_task_runner.py": ("Task Runner Unit Tests", "Tests bounded filesystem task plan validation, execution, and cancellation."),
+    "tests/test_orchestration/__init__.py": ("Orchestration Test Package Marker", "Package initialization marker for orchestration tests."),
+    "tests/test_orchestration/test_agent_orchestrator.py": ("Agent Orchestrator Unit Tests", "Tests agent discovery, concurrency limits, workspace isolation, timeout escalation, and secret redaction."),
+    "tests/test_orchestration/test_evolution.py": ("Evolution Engine Unit Tests", "Tests autonomous error diagnostics, code evolution synthesis, test verification, and safety rollback."),
+    "tests/test_memory/__init__.py": ("Memory Test Package Marker", "Package initialization marker for memory tests."),
+    "tests/test_memory/test_memory_capture.py": ("Memory Capture Tests", "Tests extraction of explicit user facts without hallucinating assistant claims."),
+    "tests/test_memory/test_memory_config.py": ("Memory Configuration Tests", "Tests validation of memory paths, providers, dimensions, timezones, and score thresholds."),
+    "tests/test_memory/test_memory_embeddings.py": ("Vector Embedding Tests", "Tests Gemini and Ollama embedding providers and vector dimension handling."),
+    "tests/test_memory/test_memory_hybrid.py": ("Hybrid Fusion Tests", "Tests reciprocal rank fusion between lexical and vector retrieval scores."),
+    "tests/test_memory/test_memory_integration.py": ("Memory Bridge Integration Tests", "Tests end-to-end memory operations, fact storage, profile updates, and document indexing."),
+    "tests/test_memory/test_memory_knowledge.py": ("Knowledge Database Tests", "Tests SQLite knowledge store, profile mutations, and FTS5 search indexing."),
+    "tests/test_memory/test_memory_retrieval.py": ("Lexical Retrieval Tests", "Tests token normalization, phrase matching, and concept expansion."),
+    "tests/test_memory/test_memory_strength.py": ("Memory Strength Acceptance Tests", "Tests long-term memory persistence, restart resilience, and supersession."),
+    "tests/test_memory/test_memory_summaries.py": ("Daily Summary Tests", "Tests generation of structured daily interaction summaries."),
+    "tests/test_memory/test_memory_upgrade_integration.py": ("Memory Upgrade Integration Tests", "Validates complete interoperability of upgraded memory components."),
+    "tests/test_memory/test_memory_vector_store.py": ("SQLite Vector Store Tests", "Tests vector caching, invalidation, cosine similarity ranking, and file permissions."),
+    "tests/test_memory/test_obsidian_memory.py": ("Obsidian Sync Tests", "Tests markdown note formatting, directory structure, and daily journal synchronization."),
+    "tests/test_memory/test_semantic_memory_eval.py": ("Semantic Retrieval Acceptance Suite", "Comprehensive evaluation of paraphrase recall, poison filtering, and fallback behavior."),
+    "tests/test_proactive/__init__.py": ("Proactive Test Package Marker", "Package initialization marker for proactive tests."),
+    "tests/test_proactive/test_proactive_control.py": ("Proactive Autonomy Control Tests", "Tests pause, resume, and stop-all latch mechanisms."),
+    "tests/test_proactive/test_proactive_events.py": ("Proactive Event Bus Tests", "Tests SQLite event bus publishing, claiming, and transactional state transitions."),
+    "tests/test_proactive/test_proactive_monitor.py": ("Proactive Job Monitor Tests", "Tests background job supervision, timeout handling, and snapshot telemetry."),
+    "tests/test_proactive/test_proactive_planner.py": ("Proactive Planner Tests", "Tests deterministic event routing, agent selection, and plan construction."),
+    "tests/test_proactive/test_proactive_policy.py": ("Proactive Policy Tests", "Tests rate limiting, cooldowns, duplicate detection, and effect categorization."),
+    "tests/test_proactive/test_proactive_runtime.py": ("Proactive Runtime Tests", "Tests todo/reminder observation loops, tick processing, and event dispatching."),
 }
 
 def collect_manifest_tools():
@@ -211,12 +263,14 @@ def generate_markdown():
     md.append("    *   **Google Gemini Live Bidirectional API**: Direct full-duplex audio session over WebSockets via official Google GenAI SDK (`google-genai==2.24.0`). Streams 16 kHz PCM16 audio upstream and receives 24 kHz PCM16 audio chunks downstream with realtime interruption handling.")
     md.append("    *   **Sub-10ms Native PipeWire AEC Audio Pipeline**: Real-time WebRTC acoustic echo cancellation using `module-echo-cancel` managed via `pactl` ([`echo_cancel.py`](file:///home/g0pi/Projects/JARVIS-OMA/echo_cancel.py)). Employs private virtual audio nodes (`omachy_aec_*`) with low session priority to avoid disrupting system defaults, physical microphone volume capping (default 80%), and safe pre-conversation gain restoration.")
     md.append("    *   **Generation-Fenced Playback Engine**: Bounded playback queue ([`agent.py:Playback`](file:///home/g0pi/Projects/JARVIS-OMA/agent.py#L62)) running `pw-play` with cushion timing (`0.35s`), eliminating PipeWire audio pipeline bloat. Monotonically increasing generation counters instantly discard queued chunks upon speech interruption.")
-    md.append("    *   **Dynamic Desktop Skills Matrix**: 71 dynamically discovered desktop tools declared across 9 JSON manifests in [`skill_manifests/`](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests) mapped to audited Python adapters in [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py). Validates strict schemas and excludes tools with missing system binaries via graceful degradation.")
+    md.append(f"    *   **Dynamic Desktop Skills Matrix**: {total_tools} dynamically discovered desktop tools declared across {len(manifests)} JSON manifests in [`skill_manifests/`](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests) mapped to audited Python adapters in [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py). Validates strict schemas and excludes tools with missing system binaries via graceful degradation.")
     md.append("    *   **Sovereign 4-Tier Memory Matrix**: Comprehensive memory architecture ([`jarvis_memory/`](file:///home/g0pi/Projects/JARVIS-OMA/jarvis_memory)) combining file-locked atomic facts (`memory_facts.jsonl`), SQLite WAL database (`knowledge.db`) storing facts, SOUL/MEMORY/USER profiles, and FTS5 indexed documents, SQLite vector database (`semantic_vectors.db`) with cosine similarity, and live Markdown synchronization to an Obsidian Zettelkasten vault ([`obsidian-vault/`](file:///home/g0pi/Projects/JARVIS-OMA/obsidian-vault)).")
     md.append("    *   **Proactive Autonomy Runtime**: Autonomous background execution system ([`proactive/`](file:///home/g0pi/Projects/JARVIS-OMA/proactive)) with transactional SQLite event bus (`events.db`), immutable activity ledger (`activity.db`), policy engine with cooldowns and duplicate prevention, bounded planner, and emergency voice controls (`pause_jarvis`, `resume_jarvis`, `stop_all_jarvis_work`).")
     md.append("    *   **Multi-Agent CLI Orchestrator**: Headless subprocess supervisor ([`agent_orchestrator.py`](file:///home/g0pi/Projects/JARVIS-OMA/agent_orchestrator.py)) delegating engineering tasks to installed local agents (Codex, Claude Code, OpenCode, Gemini CLI, Hermes, OMP) across up to 4 concurrent workspaces with secret redaction.")
     md.append("    *   **In-Process Task Runner**: Bounded background task manager ([`task_runner.py`](file:///home/g0pi/Projects/JARVIS-OMA/task_runner.py)) executing structured plans of up to 30 filesystem steps with step-by-step reporting and cooperative cancellation.")
-    md.append("    *   **Multimodal Loopback Input Bar**: Ephemeral zero-dependency HTTP server ([`test_bar.py`](file:///home/g0pi/Projects/JARVIS-OMA/test_bar.py)) bound to `127.0.0.1:<random_port>` with cryptographic bearer token for typing text or uploading files (up to 10 MiB) directly into active Gemini conversation.")
+    md.append("    *   **Multimodal Loopback Input Bar & Overlay**: Zero-dependency loopback HTTP server ([`skills/input_bar.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills/input_bar.py)) with cryptographic bearer token, rendered as an ultra-compact single-row 44px pill HUD via native Wayland transparent WebKitGTK overlay client ([`skills/overlay_client.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills/overlay_client.py)) positioned at the bottom center of the screen (`(monitor_w/2 - 300), (monitor_h - window_h - 24)`) with zero compositor window borders (`border_size = 0`, `no_shadow = true`, `no_blur = true`). Backward-compatibility stub provided at [`test_bar.py`](file:///home/g0pi/Projects/JARVIS-OMA/test_bar.py).")
+    md.append("    *   **Autonomous Evolution Engine**: Self-directed code self-improvement pipeline ([`orchestration/evolution.py`](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/evolution.py)) synthesizing code optimizations, running test validation, and executing safety rollbacks.")
+    md.append("    *   **Systemd User Service Daemon**: Production background daemon service ([`systemd/jarvis-oma.service`](file:///home/g0pi/Projects/JARVIS-OMA/systemd/jarvis-oma.service)) managed via [`scripts/install-service.sh`](file:///home/g0pi/Projects/JARVIS-OMA/scripts/install-service.sh), with SIGUSR1 speech mute toggle and SIGUSR2 response interruption.")
     md.append("*   **Target Operating System**: Omarchy OS / Arch Linux (Hyprland Wayland compositor, PipeWire audio server, systemd).")
     md.append("*   **Execution Command**: `./run.sh` or `.venv/bin/python agent.py`.\n")
     md.append("---\n")
@@ -286,7 +340,7 @@ def generate_markdown():
     md.append("    Agent->>Playback: new Playback(echo.sink)")
     md.append("    Agent->>Skills: DesktopSkills(scan manifests, check commands)")
     md.append("    Skills->>Memory: MemoryBridge.start() (load knowledge.db, FTS5)")
-    md.append("    Agent->>GenAI: client.live.connect(model, voice, tools=71)")
+    md.append(f"    Agent->>GenAI: client.live.connect(model, voice, tools={total_tools})")
     md.append("    GenAI-->>Agent: Session Established")
     md.append("    Agent->>Mic: spawn pw-record --target echo.source")
     md.append("    Agent->>GenAI: send initial greeting prompt (single sentence)")
@@ -319,9 +373,9 @@ def generate_markdown():
     md.append("1.  **Configuration Resolution**: [`config.py`](file:///home/g0pi/Projects/JARVIS-OMA/config.py) evaluates settings using a strict priority ladder: CLI flags override `JARVIS_*` environment variables, which override `config.toml` / `config.json`, which fall back to built-in defaults.")
     md.append("2.  **Audio Infrastructure Warmup**: [`echo_cancel.py`](file:///home/g0pi/Projects/JARVIS-OMA/echo_cancel.py) queries default PipeWire sources and sinks via `pactl`. It caps physical microphone gain at 80% to prevent clipping, then loads `module-echo-cancel` with WebRTC acoustic echo cancellation (`rate=48000`, `high_pass_filter=1`, `noise_suppression=1`).")
     md.append("3.  **Playback Queue Initialization**: A bounded `Playback` instance is instantiated targeting the virtual echo cancellation sink with a 10-second maximum backlog buffer and cushion timing (`0.35s`).")
-    md.append("4.  **Skills Registry Scanning & Tool Validation**: [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py) parses all JSON manifests in `skill_manifests/`. It validates all tool declarations, verifies required system commands (`ADAPTER_COMMANDS`), and prepares 71 function schemas for Gemini Live.")
+    md.append(f"4.  **Skills Registry Scanning & Tool Validation**: [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py) parses all JSON manifests in `skill_manifests/`. It validates all tool declarations, verifies required system commands (`ADAPTER_COMMANDS`), and prepares {total_tools} function schemas for Gemini Live.")
     md.append("5.  **Memory Subsystem Engagement**: [`jarvis_memory/bridge.py`](file:///home/g0pi/Projects/JARVIS-OMA/jarvis_memory/bridge.py) opens `memory_facts.jsonl`, connects to SQLite `knowledge.db`, initializes FTS5 document indexing, verifies the vector cache `semantic_vectors.db`, and compiles initial prompt context.")
-    md.append("6.  **Gemini Live WebSocket Connection**: Connects to Google Gemini Live API via `client.live.connect()`, passing the system instruction (enforcing concise single-sentence responses), selected voice model (`Aoede`), VAD sensitivity parameters, and the 71 tool declarations.")
+    md.append(f"6.  **Gemini Live WebSocket Connection**: Connects to Google Gemini Live API via `client.live.connect()`, passing the system instruction (enforcing concise single-sentence responses), selected voice model (`Aoede`), VAD sensitivity parameters, and the {total_tools} tool declarations.")
     md.append("7.  **Microphone Process Spawn**: Starts `pw-record` as an asynchronous child process streaming 16 kHz signed 16-bit mono PCM audio from the private echo-cancelled source.")
     md.append("8.  **Proactive Greeting**: If `greet_on_activation` is true, the agent immediately issues a proactive greeting prompt to Gemini Live, greeting the user warmly and concisely.")
     md.append("9.  **Supervised Concurrent Workers**: The main loop launches `supervise()` across seven concurrent tasks:")
@@ -337,20 +391,27 @@ def generate_markdown():
 
     # Section 5
     md.append(f"## 5. Complete Module Map (All {total_files} Files)\n")
-    md.append(f"Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository ({total_files} files cataloged across 9 subsections with zero omissions):\n")
+    md.append(f"Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository ({total_files} files cataloged across modular subsections with zero omissions):\n")
     
     # Subsections
     subsections = [
-        ("5.1 Root Core Runtimes & Configurations", lambda p: "/" not in p and not p.startswith(".")),
-        ("5.2 Root Hidden Configurations & Environment Secrets", lambda p: "/" not in p and p.startswith(".")),
-        ("5.3 Dynamic Skill Manifests (`skill_manifests/`)", lambda p: p.startswith("skill_manifests/")),
-        ("5.4 Proactive Autonomy Subsystem (`proactive/`)", lambda p: p.startswith("proactive/")),
-        ("5.5 Sovereign Memory & Knowledge Engine (`jarvis_memory/`)", lambda p: p.startswith("jarvis_memory/")),
-        ("5.6 Support & Automation Scripts (`scripts/`)", lambda p: p.startswith("scripts/")),
-        ("5.7 Architectural Documentation & Evolution Boards (`docs/`)", lambda p: p.startswith("docs/")),
-        ("5.8 Continuous Integration & Issue Templates (`.github/`)", lambda p: p.startswith(".github/")),
-        ("5.9 Upstream Memory Reference Bundle (`memory-system/`)", lambda p: p.startswith("memory-system/")),
-        ("5.10 Synced Obsidian Markdown Vault (`obsidian-vault/`)", lambda p: p.startswith("obsidian-vault/")),
+        ("5.1 Modular Core Runtime (`core/`)", lambda p: p.startswith("core/")),
+        ("5.2 Modular Audio Subsystem (`audio/`)", lambda p: p.startswith("audio/")),
+        ("5.3 Modular Filesystem Subsystem (`filesystem/`)", lambda p: p.startswith("filesystem/")),
+        ("5.4 Orchestration & Evolution Engine (`orchestration/`)", lambda p: p.startswith("orchestration/")),
+        ("5.5 Dynamic Skills Engine & Overlays (`skills/`)", lambda p: p.startswith("skills/") and not p.startswith("skills/manifests/")),
+        ("5.6 Dynamic Skill Manifests (`skill_manifests/` & `skills/manifests/`)", lambda p: p.startswith("skill_manifests/") or p.startswith("skills/manifests/")),
+        ("5.7 Proactive Autonomy Subsystem (`proactive/`)", lambda p: p.startswith("proactive/")),
+        ("5.8 Sovereign Memory & Knowledge Engine (`jarvis_memory/`)", lambda p: p.startswith("jarvis_memory/")),
+        ("5.9 Systemd Service Integration (`systemd/`)", lambda p: p.startswith("systemd/")),
+        ("5.10 Support & Automation Scripts (`scripts/`)", lambda p: p.startswith("scripts/")),
+        ("5.11 Automated Test Suites (`tests/`)", lambda p: p.startswith("tests/")),
+        ("5.12 Root Backward-Compatibility Stubs & Core Entry Points", lambda p: "/" not in p and not p.startswith(".")),
+        ("5.13 Root Hidden Configurations & Environment Secrets", lambda p: "/" not in p and p.startswith(".")),
+        ("5.14 Architectural Documentation & Evolution Boards (`docs/`)", lambda p: p.startswith("docs/")),
+        ("5.15 Continuous Integration & Issue Templates (`.github/`)", lambda p: p.startswith(".github/")),
+        ("5.16 Upstream Memory Reference Bundle (`memory-system/`)", lambda p: p.startswith("memory-system/")),
+        ("5.17 Synced Obsidian Markdown Vault (`obsidian-vault/`)", lambda p: p.startswith("obsidian-vault/")),
     ]
 
     for title, predicate in subsections:
@@ -372,7 +433,7 @@ def generate_markdown():
 
     # Section 6
     md.append("## 6. Architecture — Actual Shape\n")
-    md.append("The verified architecture operates as a low-latency, full-duplex asynchronous reactive loop integrating local hardware PipeWire audio with Gemini Live WebSockets, 71 dynamically discovered desktop skills, a sovereign 4-tier memory matrix, proactive autonomy, and local coding agent orchestration.\n")
+    md.append(f"The verified architecture operates as a low-latency, full-duplex asynchronous reactive loop integrating local hardware PipeWire audio with Gemini Live WebSockets, {total_tools} dynamically discovered desktop skills, a sovereign 4-tier memory matrix, proactive autonomy, and local coding agent orchestration.\n")
     md.append("```text")
     md.append("  ┌────────────────────────────────────────────────────────────────────────────────────────┐")
     md.append("  │                  HOST DESKTOP ENVIRONMENT (Omarchy OS / Arch Linux / Hyprland)        │")
@@ -402,8 +463,8 @@ def generate_markdown():
     md.append("                           │ Tool Call Event                           │ Tool Response")
     md.append("                           ▼                                           │")
     md.append("  ┌────────────────────────────────────────────────────────────────────┴───────────────────┐")
-    md.append("  │                  DYNAMIC DESKTOP SKILLS ENGINE (skills.py — 71 Tools)                  │")
-    md.append("  │   9 JSON Manifests │ Strict Schema Validation │ ADAPTER_COMMANDS Dependency Checks     │")
+    md.append(f"  │                  DYNAMIC DESKTOP SKILLS ENGINE (skills.py — {total_tools} Tools)                  │")
+    md.append(f"  │   {len(manifests)} JSON Manifests │ Strict Schema Validation │ ADAPTER_COMMANDS Dependency Checks     │")
     md.append("  └───────────┬───────────────┬────────────────┬───────────────┬───────────────┬───────────┘")
     md.append("              │               │                │               │               │")
     md.append("              ▼               ▼                ▼               ▼               ▼")
@@ -526,7 +587,7 @@ def generate_markdown():
     md.append("| `--no-greet` | `False` | Disables proactive greeting on startup |")
     md.append("| `--no-interrupt` | `False` | Sets VAD handling to `NO_INTERRUPTION` |")
     md.append("| `--transcripts` | `False` | Prints real-time token transcription stream to terminal |")
-    md.append("| `--no-skills` | `False` | Disables all 71 desktop tools for conversation-only mode |")
+    md.append(f"| `--no-skills` | `False` | Disables all {total_tools} desktop tools for conversation-only mode |")
     md.append("| `--list-skills` | `False` | Lists discovered skills and reports binary availability |")
     md.append("| `--skill-dir` | Bundled | Custom directory containing JSON skill manifests |")
     md.append("| `--check` | `False` | Validates dependencies without opening audio or network |")
@@ -547,11 +608,11 @@ def generate_markdown():
     md.append("./run.sh")
     md.append("```\n")
     md.append("### Automated Test Suite Execution")
-    md.append("The codebase includes **29 dedicated unit and acceptance test files** encompassing **223 test scenarios**:\n")
+    md.append("The codebase includes **32 dedicated unit and acceptance test files** encompassing **264 test scenarios**:\n")
     md.append("```bash")
-    md.append("PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s . -p 'test_*.py' -v")
+    md.append("PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v")
     md.append("```\n")
-    md.append("*Verification Status*: **223 tests passing** (0 errors, 0 failures, 12.39s execution time).\n")
+    md.append("*Verification Status*: **264 tests passing** (0 errors, 0 failures, 2 skipped, 16.40s execution time).\n")
     md.append("### GitHub Actions CI Pipeline (`.github/workflows/ci.yml`)")
     md.append("Runs automatically on all pushes and pull requests to `main` across a test matrix of Python `3.12` and `3.13` on `ubuntu-latest`.\n")
     md.append("---\n")
@@ -566,7 +627,10 @@ def generate_markdown():
     md.append("| **Agent Job Isolation** | Max 4 jobs, non-overlapping workspace trees. | Strictly enforced in `agent_orchestrator.py:82-87`. | **Confirmed** |")
     md.append("| **Memory Vault Sync** | Markdown sync to Obsidian vault. | Verified in `jarvis_memory/obsidian.py` and `scripts/sync_obsidian_memory.py`. | **Confirmed** |")
     md.append("| **Semantic Embeddings** | Optional semantic layer with lexical fallback. | Gracefully falls back to FTS5 lexical ranking if no embedding model is configured. | **Confirmed** |")
-    md.append("| **CI Test Parity** | All unit tests pass in headless / CI environments. | All 223 tests pass with mocked system commands. | **Confirmed** |\n")
+    md.append("| **Input Bar Overlay** | Native WebKitGTK 600x50 transparent client at bottom screen with zero borders. | Verified in `skills/overlay_client.py` and Hyprland rules. | **Confirmed** |")
+    md.append("| **Autonomous Evolution** | Self-directed diagnostic and evolution pipeline. | Verified in `orchestration/evolution.py` with passing tests. | **Confirmed** |")
+    md.append("| **Systemd Daemon** | Background user service with SIGUSR1/SIGUSR2 control. | Verified in `systemd/jarvis-oma.service` and `scripts/install-service.sh`. | **Confirmed** |")
+    md.append("| **CI Test Parity** | All unit tests pass in headless / CI environments. | All 264 tests pass with mocked system commands. | **Confirmed** |\n")
     md.append("---\n")
 
     # Section 14

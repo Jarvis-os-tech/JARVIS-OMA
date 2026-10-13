@@ -11,8 +11,9 @@ Omarchy/Arch Linux desktop. It has no imports from the original Omarchy AI app.
 
 `agent.py` is the conversation agent. `echo_cancel.py` provides the audio routing,
 and `skills.py` connects Gemini function calls to a dynamically discovered set of
-safe Omarchy desktop controls. There are no coding workers, arbitrary shell tools,
-other speech providers, wake models, mobile, or casting components.
+Omarchy desktop controls. Supervised local coding agents can develop capability
+proposals in separate checkouts, with baseline tests, research, implementation,
+sandboxed verification and review. See [capability development](docs/capability-development.md).
 
 ## Run
 
@@ -40,6 +41,24 @@ speak while Gemini is speaking. Press **Ctrl+C** to stop microphone capture, clo
 the connection, stop playback and release the private audio routes. This version
 uses stop/restart rather than a separate mute interface.
 
+## Run as a system service
+
+Install JARVIS as a per-user service so it starts with the graphical session and
+shuts down cleanly with the session:
+
+```bash
+./scripts/install-service.sh
+```
+
+The service receives `SIGTERM` during shutdown and releases microphone and
+PipeWire resources. `SIGUSR1` toggles JARVIS speech mute while leaving the
+conversation running; `SIGUSR2` stops only the currently speaking response:
+
+```bash
+systemctl --user kill --signal=SIGUSR1 jarvis-oma.service
+systemctl --user kill --signal=SIGUSR2 jarvis-oma.service
+```
+
 Optional settings and dynamic configuration:
 
 ```sh
@@ -65,6 +84,8 @@ variables (`JARVIS_AGENT_NAME`, `JARVIS_VOICE`, `JARVIS_MODEL`, `JARVIS_CONFIG`,
 Skills are enabled by default. At startup Jarvis reads JSON manifests from
 `skill_manifests/`, validates their names and strict argument schemas, and gives
 the discovered declarations to Gemini Live. The bundled manifests enable:
+
+- **Capability development**: `start_development`, `development_status`, `list_development_jobs`, and `cancel_development` turn a concrete improvement request into a persisted, tested code proposal; proposals are not automatically activated.
 
 - **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
 - **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)

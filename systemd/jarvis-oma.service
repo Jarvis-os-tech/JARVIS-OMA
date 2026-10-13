@@ -1,0 +1,17 @@
+[Unit]
+Description=JARVIS OMA voice assistant
+After=graphical-session.target pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/JARVIS-OMA
+ExecStart=%h/Projects/JARVIS-OMA/run.sh
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
