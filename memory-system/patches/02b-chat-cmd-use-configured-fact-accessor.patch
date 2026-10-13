@@ -1,0 +1,21 @@
+diff --git i/src/openjarvis/cli/chat_cmd.py w/src/openjarvis/cli/chat_cmd.py
+index 493d80c..bcc2140 100644
+--- i/src/openjarvis/cli/chat_cmd.py
++++ w/src/openjarvis/cli/chat_cmd.py
+@@ -439,10 +439,12 @@ def chat(
+                     inject_context,
+                 )
+ 
+-                if memory_service is not None and hasattr(memory_service, "list_facts"):
+-                    facts = memory_service.list_facts()
+-                else:
+-                    facts = load_configured_facts(config)
++                # Always go through load_configured_facts(): it drops
++                # quarantined facts, which the raw list_facts() passthrough
++                # would hand to inject_context(). Prefer the live service only
++                # to reuse an already-started extractor, never as the fact
++                # accessor itself.
++                facts = load_configured_facts(config)
+                 ctx_cfg = ContextConfig(
+                     top_k=config.memory.context_top_k,
+                     min_score=config.memory.context_min_score,

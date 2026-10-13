@@ -33,6 +33,9 @@ class AgentConfig:
     voice: str = 'Aoede'
     model: str = 'gemini-3.8-live'
     language: str = 'en'  # Primary language code (e.g. 'en', 'te', 'hi', or 'auto')
+    greet_on_activation: bool = True  # Proactively greet user when activated
+    greeting_prompt: str | None = None  # Custom greeting instruction if specified
+    single_sentence: bool = True  # Strictly enforce single-sentence responses
 
 
 @dataclass
@@ -46,7 +49,9 @@ class AudioConfig:
     playback_latency_ms: int = 60
     capture_latency_ms: int = 30
     command_timeout: int = 8
-    noise_suppression: bool = False
+    noise_suppression: bool = True
+    playback_cushion_s: float = 0.35
+    mic_volume_percent: int | None = 80
 
     @property
     def input_frame_bytes(self) -> int:
@@ -85,13 +90,61 @@ class SkillsConfig:
 
 
 @dataclass
+class FilesystemConfig:
+    """Filesystem autonomy and capability parameters."""
+    enabled: bool = True
+    autonomous: bool = True  # Full autonomy flag
+    allow_delete: bool = True  # Allow permanent deletion in addition to trash
+    max_read_chars: int = 50000
+    max_write_bytes: int = 5 * 1024 * 1024  # 5 MiB
+
+
+@dataclass
+class MemoryConfig:
+    """Persistent memory and optional local background extraction settings."""
+    enabled: bool = True
+    path: str = ''  # Bridge resolves XDG_STATE_HOME/jarvis-oma/memory
+    max_facts: int = 1000
+    context_max_chars: int = 6000
+    record_sessions: bool = True  # Continuous conversation memory across restarts
+    auto_capture: bool = False
+    extraction_model: str = ''
+    extraction_url: str = 'http://127.0.0.1:11434'
+    obsidian_vault: str = ''
+    obsidian_auto_sync: bool = True
+    obsidian_timezone: str = 'Asia/Kolkata'
+    structured_capture: bool = True  # Local evidence-grounded extraction; no model required
+
+    def validate(self):
+        for name in ('enabled', 'record_sessions', 'auto_capture', 'obsidian_auto_sync', 'structured_capture'):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f'memory.{name} must be a boolean')
+        for name in ('max_facts', 'context_max_chars'):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f'memory.{name} must be a positive integer')
+        for name in ('path', 'extraction_model', 'extraction_url', 'obsidian_vault', 'obsidian_timezone'):
+            if not isinstance(getattr(self, name), str):
+                raise ValueError(f'memory.{name} must be a string')
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(self.obsidian_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as error:
+            raise ValueError('memory.obsidian_timezone must be a valid IANA timezone') from error
+        if self.auto_capture and not self.extraction_model.strip():
+            raise ValueError('memory.auto_capture requires a nonempty memory.extraction_model')
+
+
+@dataclass
 class Config:
     """Root configuration container."""
     agent: AgentConfig = field(default_factory=AgentConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     vad: VADConfig = field(default_factory=VADConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    filesystem: FilesystemConfig = field(default_factory=FilesystemConfig)
     commands: dict[str, str] = field(default_factory=dict)  # command overrides
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -173,11 +226,47 @@ def _apply_env_overrides(config: Config):
         'JARVIS_LANGUAGE': ('agent', 'language'),
         'JARVIS_SYSTEM_INSTRUCTION': ('agent', 'system_instruction'),
         'GEMINI_LIVE_MODEL': ('agent', 'model'),  # backward compat
+        'JARVIS_FS_AUTONOMOUS': ('filesystem', 'autonomous'),
+        'JARVIS_FS_ALLOW_DELETE': ('filesystem', 'allow_delete'),
+        'JARVIS_FS_MAX_READ_CHARS': ('filesystem', 'max_read_chars'),
+        'JARVIS_GREET_ON_ACTIVATION': ('agent', 'greet_on_activation'),
+        'JARVIS_GREETING_PROMPT': ('agent', 'greeting_prompt'),
+        'JARVIS_SINGLE_SENTENCE': ('agent', 'single_sentence'),
+        'JARVIS_NOISE_SUPPRESSION': ('audio', 'noise_suppression'),
+        'JARVIS_MIC_VOLUME_PERCENT': ('audio', 'mic_volume_percent'),
+        'JARVIS_PLAYBACK_CUSHION_S': ('audio', 'playback_cushion_s'),
+        'JARVIS_VAD_ACTIVITY_HANDLING': ('vad', 'activity_handling'),
+        'JARVIS_MEMORY_ENABLED': ('memory', 'enabled'),
+        'JARVIS_MEMORY_PATH': ('memory', 'path'),
     }
     for env_key, (section, attr) in env_map.items():
         value = os.getenv(env_key)
         if value is not None:
-            setattr(getattr(config, section), attr, value.strip())
+            target_obj = getattr(config, section)
+            curr = getattr(target_obj, attr)
+            if env_key == 'JARVIS_MEMORY_ENABLED':
+                normalized = value.strip().lower()
+                if normalized not in ('true', '1', 'yes', 'false', '0', 'no'):
+                    raise ValueError('JARVIS_MEMORY_ENABLED must be a boolean (true/false, 1/0, yes/no)')
+                val = normalized in ('true', '1', 'yes')
+            elif isinstance(curr, bool):
+                val = value.strip().lower() in ('true', '1', 'yes')
+            elif isinstance(curr, int):
+                try:
+                    val = int(value.strip())
+                except ValueError:
+                    continue
+            elif isinstance(curr, float):
+                try:
+                    val = float(value.strip())
+                except ValueError:
+                    continue
+            else:
+                val = value.strip()
+            setattr(target_obj, attr, val)
+
+    if os.getenv('JARVIS_NO_INTERRUPT', '').strip().lower() in ('true', '1', 'yes'):
+        config.vad.activity_handling = 'NO_INTERRUPTION'
 
 
 def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
@@ -206,10 +295,19 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
             raise ValueError(f'Config file must be a mapping, got {type(data).__name__}')
 
         # Merge sections
-        for section_name in ('agent', 'audio', 'vad', 'skills'):
+        for section_name in ('agent', 'audio', 'vad', 'skills', 'filesystem', 'memory'):
             section_data = data.get(section_name)
+            if section_name == 'memory' and section_name in data and not isinstance(section_data, dict):
+                raise ValueError('memory section must be a mapping')
             if isinstance(section_data, dict):
-                _merge_section(getattr(config, section_name), section_data)
+                if section_name == 'memory':
+                    for key, value in section_data.items():
+                        if key in {f.name for f in fields(MemoryConfig)}:
+                            setattr(config.memory, key, value)
+                        else:
+                            log.warning('Unknown config key ignored: %s', key)
+                else:
+                    _merge_section(getattr(config, section_name), section_data)
 
         # Command overrides
         commands = data.get('commands')
@@ -232,9 +330,22 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
         'language': ('agent', 'language'),
         'system_instruction': ('agent', 'system_instruction'),
         'skills_enabled': ('skills', 'enabled'),
+        'fs_autonomous': ('filesystem', 'autonomous'),
+        'fs_allow_delete': ('filesystem', 'allow_delete'),
+        'greet_on_activation': ('agent', 'greet_on_activation'),
+        'greeting_prompt': ('agent', 'greeting_prompt'),
+        'single_sentence': ('agent', 'single_sentence'),
+        'noise_suppression': ('audio', 'noise_suppression'),
+        'mic_volume_percent': ('audio', 'mic_volume_percent'),
+        'playback_cushion_s': ('audio', 'playback_cushion_s'),
+        'activity_handling': ('vad', 'activity_handling'),
     }
     for key, (section, attr) in override_map.items():
         if key in overrides and overrides[key] is not None:
             setattr(getattr(config, section), attr, overrides[key])
 
+    if overrides.get('no_interrupt'):
+        config.vad.activity_handling = 'NO_INTERRUPTION'
+
+    config.memory.validate()
     return config

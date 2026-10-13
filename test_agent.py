@@ -235,7 +235,19 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         custom_instruction = 'You are a pirate assistant. Talk like a pirate.'
         cfg_custom = Config(agent=AgentConfig(name='Blackbeard', system_instruction=custom_instruction))
         res_custom = live_config('Aoede', skills=DesktopSkills(), config=cfg_custom)
-        self.assertEqual(res_custom['system_instruction'], custom_instruction)
+        self.assertTrue(res_custom['system_instruction'].startswith(custom_instruction))
+        self.assertIn('JARVIS has persistent memory', res_custom['system_instruction'])
+
+    async def test_live_config_includes_filesystem_autonomy(self):
+        from config import Config, FilesystemConfig
+        cfg_auto = Config(filesystem=FilesystemConfig(autonomous=True))
+        res_auto = live_config('Aoede', skills=DesktopSkills(), config=cfg_auto)
+        self.assertIn('full autonomous access', res_auto['system_instruction'])
+
+        cfg_non_auto = Config(filesystem=FilesystemConfig(autonomous=False))
+        res_non_auto = live_config('Aoede', skills=DesktopSkills(), config=cfg_non_auto)
+        self.assertIn('cannot run arbitrary shell commands', res_non_auto['system_instruction'])
+        self.assertNotIn('full autonomous access', res_non_auto['system_instruction'])
 
     async def test_live_config_custom_vad_settings(self):
         from config import Config, VADConfig
@@ -275,6 +287,111 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.responses[0].name, 'test_skill')
         self.assertEqual(session.responses[0].response['output']['args'], {'value': 3})
         await voice.cancel_tools()
+
+    async def test_greet_sends_client_content_prompt(self):
+        class Session:
+            def __init__(self):
+                self.contents = []
+
+            async def send_client_content(self, *, turns, turn_complete=True):
+                self.contents.append((turns, turn_complete))
+
+        voice = LiveVoice(Playback('sink'))
+        session = Session()
+        await voice.greet(session)
+        self.assertEqual(len(session.contents), 1)
+        turns, turn_complete = session.contents[0]
+        self.assertTrue(turn_complete)
+        self.assertIn('Jarvis', turns.parts[0].text)
+        self.assertTrue(voice.has_greeted)
+
+        # Subsequent call does not send again
+        await voice.greet(session)
+        self.assertEqual(len(session.contents), 1)
+
+    async def test_greet_disabled_by_config(self):
+        from config import Config, AgentConfig
+
+        class Session:
+            def __init__(self):
+                self.contents = []
+
+            async def send_client_content(self, *, turns, turn_complete=True):
+                self.contents.append((turns, turn_complete))
+
+        cfg = Config(agent=AgentConfig(greet_on_activation=False))
+        voice = LiveVoice(Playback('sink'), config=cfg)
+        session = Session()
+        await voice.greet(session)
+        self.assertEqual(len(session.contents), 0)
+        self.assertFalse(voice.has_greeted)
+
+    async def test_greet_custom_prompt_and_language(self):
+        from config import Config, AgentConfig
+
+        class Session:
+            def __init__(self):
+                self.contents = []
+
+            async def send_client_content(self, *, turns, turn_complete=True):
+                self.contents.append((turns, turn_complete))
+
+        cfg = Config(agent=AgentConfig(name='Friday', greeting_prompt='Wake up Friday!'))
+        voice = LiveVoice(Playback('sink'), config=cfg)
+        session = Session()
+        await voice.greet(session)
+        self.assertEqual(len(session.contents), 1)
+        self.assertEqual(session.contents[0][0].parts[0].text, 'Wake up Friday!')
+
+        # Non-english language default prompt
+        cfg_lang = Config(agent=AgentConfig(name='Jarvis', language='hi'))
+        voice_lang = LiveVoice(Playback('sink'), config=cfg_lang)
+        session_lang = Session()
+        await voice_lang.greet(session_lang)
+        self.assertEqual(len(session_lang.contents), 1)
+        self.assertIn('Hindi', session_lang.contents[0][0].parts[0].text)
+
+    async def test_greet_handles_send_error_gracefully(self):
+        class FailingSession:
+            async def send_client_content(self, *, turns, turn_complete=True):
+                raise ConnectionError('websocket drop')
+
+        voice = LiveVoice(Playback('sink'))
+        # Should not raise exception
+        await voice.greet(FailingSession())
+        self.assertTrue(voice.has_greeted)
+
+    async def test_transcript_streaming_does_not_cut_words(self):
+        import io
+        from contextlib import redirect_stdout
+        from google.genai import types
+
+        voice = LiveVoice(Playback('sink'), transcripts=True)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            # First turn: Gemini streaming 3 fragments
+            await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+                output_transcription=types.Transcription(text='Hello! '))))
+            await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+                output_transcription=types.Transcription(text='Good morning. '))))
+            await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+                output_transcription=types.Transcription(text='Jarvis online.'),
+                turn_complete=True)))
+
+            # Second turn: User input
+            await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+                input_transcription=types.Transcription(text='What is the time?'),
+                turn_complete=True)))
+
+        output = buf.getvalue().splitlines()
+        self.assertEqual(len(output), 2)
+        self.assertEqual(output[0], 'Gemini: Hello! Good morning. Jarvis online.')
+        self.assertEqual(output[1], 'You: What is the time?')
+
+    async def test_live_config_includes_single_sentence_rule(self):
+        res = live_config('Aoede', skills=DesktopSkills())
+        self.assertIn('one single sentence', res['system_instruction'])
+        self.assertIn('CRITICAL RULE', res['system_instruction'])
 
     async def test_stopping_process_is_idempotent(self):
         process = Process()
@@ -323,12 +440,16 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
 
         args = NS(model='test-model', voice='Aoede', transcripts=False,
                   microphone=None, retries=2)
-        with patch('google.genai.Client', return_value=Client()), \
+        with tempfile.TemporaryDirectory() as directory, \
+             patch('google.genai.Client', return_value=Client()), \
              patch('agent.EchoCancellation', return_value=Echo()), \
              patch('agent.asyncio.sleep', side_effect=no_wait), \
              self.assertLogs('gemini_voice', level='WARNING'):
+            from config import Config
+            configuration = Config()
+            configuration.memory.path = directory
             with self.assertRaisesRegex(RuntimeError, 'retry limit'):
-                await run(args, 'fake-key')
+                await run(args, 'fake-key', config=configuration)
         self.assertEqual(len(attempts), 3)
         self.assertEqual(cleaned, ['client', 'echo'])
 

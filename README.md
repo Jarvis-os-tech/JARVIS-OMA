@@ -48,14 +48,17 @@ Optional settings and dynamic configuration:
 ./run.sh --agent-name "Friday"
 ./run.sh --config ./config.toml
 ./run.sh --system-instruction "Custom prompt..."
+./run.sh --greeting-prompt "Good morning! Jarvis online."
+./run.sh --no-greet
+./run.sh --no-interrupt
 pactl list short sources
 ./run.sh --microphone YOUR_PHYSICAL_SOURCE_NAME
 ./run.sh --no-skills
 ```
 
-Settings can also be loaded automatically from a configuration file (`~/.config/jarvis-oma/config.toml`,
+Jarvis proactively greets the user upon activation and strictly answers in a single concise sentence by default. Settings can also be loaded automatically from a configuration file (`~/.config/jarvis-oma/config.toml`,
 `./config.toml`, or `./config.json`; see `config.toml.example` for all options), or via environment
-variables (`JARVIS_AGENT_NAME`, `JARVIS_VOICE`, `JARVIS_MODEL`, `JARVIS_CONFIG`, `GEMINI_LIVE_MODEL`).
+variables (`JARVIS_AGENT_NAME`, `JARVIS_VOICE`, `JARVIS_MODEL`, `JARVIS_CONFIG`, `JARVIS_GREET_ON_ACTIVATION`, `JARVIS_GREETING_PROMPT`, `JARVIS_SINGLE_SENTENCE`, `JARVIS_NO_INTERRUPT`, `GEMINI_LIVE_MODEL`).
 
 ## Dynamic Omarchy skills
 
@@ -74,14 +77,12 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 - **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
 - **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
 - **Desktop awareness & perception**: `inspect_screen` (Wayland capture + fast local OCR), `list_windows` (open apps across all workspaces), `focus_window` (bring apps to foreground), `list_workspaces`, and `get_system_resources` (real-time CPU, RAM, disk, and process monitoring)
-- **Filesystem**: list, read, search, create, edit, copy, move, and trash files or directories by explicit path using the permissions of the user running JARVIS
+- **Filesystem (Full Autonomy)**: `list_files`, `read_file` (with offset and pagination), `write_file`, `append_file`, `edit_file`, `make_directory`, `move_path`, `copy_path`, `trash_path`, `delete_path` (permanent removal with safety guards), `inspect_file` (file/directory metadata and line count), `search_files` (filename search), and `search_file_content` (content grep with line numbers and snippets)
 - **Multi-step tasks**: `start_task`, `task_status`, `list_tasks`, and `cancel_task` for bounded background file jobs with per-step results
 - **System agent orchestration**: discover and delegate to Codex, Claude Code, OpenCode, Gemini CLI, Hermes, and OMP; inspect progress and stop owned jobs
+- **Persistent memory**: remember, recall, forget and clear facts; manage SOUL/MEMORY/USER profiles; index text documents for retrieval
 
-Filesystem skills operate on paths the local user can access. Text reads are capped at
-20,000 characters per call; writes are capped at 1 MiB. Existing files require an
-explicit `overwrite=true` to replace them. `trash_path` moves items to the desktop
-Trash so they can be recovered. These skills do not provide shell execution.
+Filesystem skills operate with full autonomy across user and project directories, running asynchronously via worker threads (`asyncio.to_thread`) to ensure zero voice streaming or PipeWire audio latency during disk I/O. Text reads support offset seeking and up to 100,000 characters per call; atomic writes and appends support up to 5 MiB. Critical system roots (`/`, `~`, `/etc`, `/usr`, `/boot`, `/bin`, etc.) are protected with safety guards against accidental deletion or displacement.
 
 For a multi-step file request, JARVIS can inspect paths, submit a JSON plan of up
 to 30 validated file actions, and report progress by task ID. Cancellation takes
@@ -104,6 +105,72 @@ headlessly may fail or time out; inspect the job output for details. Job records
 not restored after restarting JARVIS. This manages jobs launched by JARVIS, rather
 than attaching to unrelated sessions already open in another application. Review an
 agent's changes before treating a successful process exit as verified task completion.
+
+Memory is adapted from the supplied `memory-system/` bundle; its curated originals
+are preserved. State lives under `~/.local/state/jarvis-oma/memory/` by default
+(or `XDG_STATE_HOME` / `[memory].path`). Memory facts and profiles are bounded and
+included in Gemini's voice-session prompt, so recalled information is sent to
+Google while using JARVIS. Quarantined facts and indexed documents are excluded.
+Use “remember that I prefer English”, “what do you remember about me?”, or “forget
+that fact”. `clear_memory` clears facts only; it preserves profiles and documents.
+
+Text-document search uses the supplied chunker with a Python SQLite FTS5 adapter.
+The original Rust vector/graph extension is not installed or enabled. Persistent
+conversation text is retained continuously by default (`record_sessions = true`),
+without age-based resets or automatic transcript pruning. Set it to false to stop
+new transcript storage and history recall. Recent context is loaded at startup;
+`recall_memory` searches older saved conversations. Optional
+background fact extraction uses the supplied MemoryService/FactExtractor with a
+local Ollama model: set `auto_capture = true` and `extraction_model` under `[memory]`.
+No extra cloud extraction calls are made. Settings are shown in `config.toml.example`.
+
+Structured capture is on by default (`structured_capture = true`), independently
+of transcript storage and optional model extraction. It conservatively captures
+explicit user preferences, decisions, projects, remember requests, and task
+requests. Assistant assertions never become user facts. Evidence, confidence,
+source and revision status live in a separate local SQLite ledger. Clear language
+and coding-agent preference changes supersede their previous value; unrelated
+facts are not guessed to conflict. `correct_memory` uses a recalled memory ID,
+and `memory_history` shows earlier revisions. Forget/clear also remove active
+structured entries; transcripts and profiles remain intact.
+
+Recall now ranks facts, active structured memories, history and documents using
+normalized words, phrases and conservative concept expansion, with scores and
+match explanations. This improves simple paraphrase recall but is not embedding
+search and cannot understand arbitrary meaning or contradictions. `memory_status`
+reports the backend and ledger counts. Summaries are separately exported under
+`JARVIS-OMA Memory/Summaries`, with source message IDs and unverified assistant
+outcome labels; they never replace the continuous transcript.
+
+Obsidian visualization is configured with `[memory].obsidian_vault`. JARVIS
+publishes facts, profiles, indexed documents, and continuous history as Markdown
+nodes under `JARVIS-OMA Memory`. Using the earlier JARVIS vault structure as a
+reference, conversations now have a continuous `Conversations/conversation.md`
+journal and daily reports such as `Conversations/2026-10-13 - Tuesday.md`.
+Each report contains date/day metadata, timestamped dialogue, speaker labels,
+and links to adjacent days, topics, and related fact/profile notes. Calendar
+grouping uses `obsidian_timezone` (default `Asia/Kolkata`) without resetting memory.
+Reports are captured transcripts, not AI-generated summaries. Nodes link to
+categories and shared-word topics. These links show lexical and chronological
+connections, not inferred causal claims. Open the Memory Map note or Obsidian's
+Graph view to explore them. Automatic sync runs every ten seconds while voice is
+connected; “sync my memory vault” forces a refresh. Source memory remains in its
+local stores; vault edits are not imported as instructions. Manual edits are
+preserved and reported as conflicts. Forgotten, unchanged generated facts are
+removed from the vault during sync. Keep personal notes outside the managed folder.
+
+Hermes computer control is available through `hermes_computer_status` and
+`hermes_computer_task`. The latter checks the installed CUA backend before
+launching `hermes chat -t computer_use -q` with the requested desktop task.
+It returns an agent job ID: use `check_agent_job`, `list_agent_jobs`, and
+`cancel_agent_job` for progress and cancellation. Only one JARVIS CUA job may
+run at a time, even across different workspaces. This coordinates JARVIS jobs,
+not separate Hermes sessions launched elsewhere. No `-z`/`--yolo` approval bypass
+is added; Hermes retains its configured permissions, and unavailable approvals
+can block a task. Driver readiness is not proof that every application supports
+interaction. Screenshots and GUI observations used by Hermes may be sent to its
+configured model provider. Say, for example, “Check Hermes computer control” or
+“Use Hermes to inspect the Calculator window without changing anything.”
 
 The manifests are dynamic configuration rather than executable plugins. Adapters self-declare
 their required system commands (`ADAPTER_COMMANDS`). When a command is not installed on the system,
@@ -162,11 +229,13 @@ Context-window compression is enabled. Server connection-renewal events trigger
 a reconnect. Other errors have exponential backoff capped at 30 seconds and a
 configurable retry budget (`--retries 5` by default). Authentication/configuration
 failures stop the process. An invalid resume handle is discarded with a warning;
-that retry starts a fresh conversation. Reconnects are not gapless.
+that retry starts a new provider connection and reloads JARVIS's persistent memory.
+Reconnects are not gapless.
 
 Microphone capture and playback are closed between attempts. Successful resumption
 depends on the server; stopping the program discards the handle. No local audio
-recordings or conversation history are written. Audio is sent to Google while
+recordings are written. Continuous conversation text is stored locally when
+`memory.record_sessions` is enabled. Audio and recalled memory are sent to Google while
 LIVE. Transcript fragments are printed only with `--transcripts`; your terminal
 may retain scrollback. A cloud connection and its usage costs are required.
 

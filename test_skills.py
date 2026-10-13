@@ -307,12 +307,15 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             json.dumps({'title': 'Editor', 'class': 'code', 'workspace': {'id': 2, 'name': '2'}}),
             json.dumps({'id': 2, 'name': '2'}), 'wifi\tHome\t80', 'Mute: no',
             'front-left: 0% / 42% / 0%', 'alsa_output.test', 'percentage=75\nstate=charging',
-            '55%', 'eDP-1'])
+            '55%', 'eDP-1',
+            json.dumps([{'class': 'code'}]),
+        ])
         context = await skills.execute('get_desktop_context', {})
         self.assertEqual(context['active_window']['class'], 'code')
         self.assertEqual(context['workspace']['id'], 2)
         self.assertFalse(context['audio']['muted'])
         self.assertTrue(context['battery']['available'])
+        self.assertEqual(context['open_windows_count'], 1)
 
     async def test_todo_adapters(self):
         temporary = tempfile.TemporaryDirectory()
@@ -399,6 +402,26 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
                 await skills.execute('create_todo', {'title': 'Bad', 'priority': 'invalid'})
             with self.assertRaises(SkillError):
                 await skills.execute('delete_todo', {'task': 'does-not-exist'})
+
+    async def test_filesystem_manifest_discovery_and_adapter_declarations(self):
+        skills = self.make_desktop_skills()
+        names = {item['name'] for item in skills.declarations}
+        expected_fs_skills = {
+            'list_files', 'read_file', 'write_file', 'append_file', 'edit_file',
+            'make_directory', 'move_path', 'copy_path', 'trash_path', 'delete_path',
+            'inspect_file', 'search_files', 'search_file_content',
+        }
+        for expected in expected_fs_skills:
+            self.assertIn(expected, names)
+        # Check adapter availability for filesystem skills (no external commands needed)
+        avail = skills.adapter_availability()
+        self.assertTrue(avail.get('filesystem.list'))
+        self.assertTrue(avail.get('filesystem.read'))
+        self.assertTrue(avail.get('filesystem.write'))
+        self.assertTrue(avail.get('filesystem.append'))
+        self.assertTrue(avail.get('filesystem.delete'))
+        self.assertTrue(avail.get('filesystem.info'))
+        self.assertTrue(avail.get('filesystem.grep'))
 
 
 if __name__ == '__main__':

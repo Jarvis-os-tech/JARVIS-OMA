@@ -5,6 +5,9 @@
 name = "Jarvis"                          # Custom agent name (e.g. Jarvis, Friday, Nova)
 voice = "Aoede"                          # Prebuilt voice: Aoede, Charon, Fenrir, Kore, Puck
 model = "gemini-3.8-live"                # Gemini Live model
+greet_on_activation = true               # Proactively greet the user upon activation
+single_sentence = true                   # Strictly limit every reply to a single sentence
+# greeting_prompt = "..."                # Optional custom greeting prompt
 # system_instruction = "Custom persona prompt..." # Optional custom system prompt
 
 [audio]
@@ -16,19 +19,43 @@ queue_max_seconds = 10                   # Playback backlog ceiling
 playback_latency_ms = 40                 # PipeWire playback latency
 capture_latency_ms = 20                  # PipeWire capture latency
 command_timeout = 8                      # Subprocess command timeout in seconds
+noise_suppression = true                 # WebRTC noise suppression filter
+playback_cushion_s = 0.35                # Playback buffer cushion in seconds
+mic_volume_percent = 80                  # Max mic volume percent to avoid clipping/bleed
 
 [vad]
 enabled = true                           # Voice Activity Detection
-start_sensitivity = "START_SENSITIVITY_HIGH"  # HIGH or LOW
+start_sensitivity = "START_SENSITIVITY_LOW"   # LOW (less sensitive to noise) or HIGH
 end_sensitivity = "END_SENSITIVITY_LOW"        # HIGH or LOW
-prefix_padding_ms = 200                  # Audio buffer before speech
-silence_duration_ms = 400                # Silence duration before turn end
-activity_handling = "START_OF_ACTIVITY_INTERRUPTS"
+prefix_padding_ms = 300                  # Audio buffer before speech
+silence_duration_ms = 800                # Silence duration before turn end
+activity_handling = "START_OF_ACTIVITY_INTERRUPTS" # Or "NO_INTERRUPTION" to prevent mid-turn cutoff
 
 [skills]
 enabled = true                           # Enable desktop controls
 exclude_unavailable = true               # Exclude skills if system binary is missing
 # manifest_dirs = ["/custom/manifest/path"]
+
+[filesystem]
+enabled = true                           # Enable filesystem skills
+autonomous = true                        # Grant full autonomous access for file management
+allow_delete = true                      # Allow permanent deletion in addition to trash
+max_read_chars = 50000                   # Maximum characters read per read_file call
+max_write_bytes = 5242880                # Maximum bytes per write/append (5 MiB)
+
+[memory]
+enabled = true
+path = ""                               # Bridge default: $XDG_STATE_HOME/jarvis-oma/memory
+max_facts = 1000                         # Positive integer
+context_max_chars = 6000                 # Positive integer
+record_sessions = true                  # Continuous text memory; never expires automatically
+auto_capture = false                    # Requires a nonempty extraction_model
+extraction_model = ""                   # Optional local Ollama model; no Gemini extraction calls
+extraction_url = "http://127.0.0.1:11434"
+obsidian_vault = ""                     # Existing Obsidian vault path
+obsidian_auto_sync = true               # Sync changes to linked Markdown notes
+obsidian_timezone = "Asia/Kolkata"       # Calendar date/day for daily conversation reports
+structured_capture = true               # Capture explicit user preferences/decisions/tasks locally
 
 [commands]
 # Override binary paths if installed in custom locations:

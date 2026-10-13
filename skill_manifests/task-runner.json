@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "start_task",
+      "description": "Start a background task with 1-30 filesystem steps. Inspect relevant paths first. plan_json is a JSON array of objects with tool and args. Supported tools: make_directory, write_file, append_file, edit_file, copy_path, move_path, trash_path. The response contains a task id for progress and cancellation.",
+      "adapter": "task.start",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "description": {"type": "string", "description": "Short description of the user's requested task."},
+          "plan_json": {"type": "string", "description": "JSON array such as [{\"tool\":\"make_directory\",\"args\":{\"path\":\"/home/user/Sorted\"}}]. Each step must use exact filesystem skill arguments."}
+        },
+        "required": ["description", "plan_json"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "task_status",
+      "description": "Get progress and per-step results for a background task by its id.",
+      "adapter": "task.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {"task_id": {"type": "string"}},
+        "required": ["task_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_tasks",
+      "description": "List current and recently completed background tasks and their progress.",
+      "adapter": "task.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_task",
+      "description": "Request cancellation of a background task; the current file operation may finish, then remaining steps stop.",
+      "adapter": "task.cancel",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {"task_id": {"type": "string"}},
+        "required": ["task_id"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

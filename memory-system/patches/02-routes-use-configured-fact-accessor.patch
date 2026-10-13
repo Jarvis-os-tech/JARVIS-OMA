@@ -1,0 +1,25 @@
+diff --git i/src/openjarvis/server/routes.py w/src/openjarvis/server/routes.py
+index 7ad27d4..a34824f 100644
+--- i/src/openjarvis/server/routes.py
++++ w/src/openjarvis/server/routes.py
+@@ -176,10 +176,18 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
+         and request_body.messages
+     ):
+         try:
++            from openjarvis.memory import load_configured_facts
+             from openjarvis.tools.storage.context import ContextConfig, inject_context
+ 
+-            memory_service = getattr(request.app.state, "memory_service", None)
+-            facts = memory_service.list_facts() if memory_service is not None else []
++            # Use the configured accessor, not MemoryService.list_facts().
++            # list_facts() returns every stored fact including quarantined
++            # (untrusted) ones. inject_context() re-filters today, but a
++            # quarantined fact is one refactor away from reaching a prompt, and
++            # the other three call sites (orchestrator, ask, sdk) all go
++            # through load_configured_facts(). Keep the accessors consistent so
++            # this path is safe even if that defence-in-depth filter is ever
++            # loosened or removed.
++            facts = load_configured_facts(config)
+ 
+             # Extract query from the last user message
+             query_text = ""

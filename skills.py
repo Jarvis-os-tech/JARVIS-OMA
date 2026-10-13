@@ -19,12 +19,15 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import time
 import uuid
 from urllib.parse import urlsplit
 import filesystem as fs
 from task_runner import TaskPlanError, TaskRunner
 from agent_orchestrator import AgentOrchestrator, OrchestrationError
+from config import MemoryConfig
+from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +91,18 @@ class DesktopSkills:
         'agents.status': '_adapter_check_agent_job',
         'agents.jobs': '_adapter_list_agent_jobs',
         'agents.cancel': '_adapter_cancel_agent_job',
+        'hermes.computer_status': '_adapter_hermes_computer_status',
+        'hermes.computer_task': '_adapter_hermes_computer_task',
+        'memory.remember': '_adapter_remember_memory',
+        'memory.recall': '_adapter_recall_memory',
+        'memory.forget': '_adapter_forget_memory',
+        'memory.clear': '_adapter_clear_memory',
+        'memory.profile': '_adapter_update_memory_profile',
+        'memory.index': '_adapter_index_memory_document',
+        'memory.status': '_adapter_memory_status',
+        'memory.obsidian': '_adapter_sync_memory_vault',
+        'memory.correct': '_adapter_correct_memory',
+        'memory.history': '_adapter_memory_history',
         'filesystem.delete': '_adapter_delete_path',
         'filesystem.info': '_adapter_inspect_path',
         'filesystem.grep': '_adapter_search_file_content',
@@ -147,6 +162,18 @@ class DesktopSkills:
         'agents.status': (),
         'agents.jobs': (),
         'agents.cancel': (),
+        'hermes.computer_status': ('hermes',),
+        'hermes.computer_task': ('hermes',),
+        'memory.remember': (),
+        'memory.recall': (),
+        'memory.forget': (),
+        'memory.clear': (),
+        'memory.profile': (),
+        'memory.index': (),
+        'memory.status': (),
+        'memory.obsidian': (),
+        'memory.correct': (),
+        'memory.history': (),
         'filesystem.delete': (),
         'filesystem.info': (),
         'filesystem.grep': (),
@@ -186,6 +213,11 @@ class DesktopSkills:
             manifest_dirs = [Path(__file__).with_name('skill_manifests')]
         self.manifest_dirs = [Path(directory) for directory in manifest_dirs]
         self._skills = self._load_manifests()
+        self._memory_config = config.memory if config else MemoryConfig()
+        self._memory = None
+        if not self._memory_config.enabled:
+            self._skills = {name: spec for name, spec in self._skills.items()
+                            if not spec['adapter'].startswith('memory.') or spec['adapter'] == 'memory.status'}
         self._task_runner = TaskRunner(self.execute, self._valid_task_step)
         self._agent_orchestrator = AgentOrchestrator()
 
@@ -468,6 +500,18 @@ class DesktopSkills:
     async def _adapter_list_system_agents(self):
         return self._agent_orchestrator.discover()
 
+    async def _adapter_hermes_computer_status(self):
+        return await self._agent_orchestrator.computer_status()
+
+    async def _adapter_hermes_computer_task(self, prompt, workspace, timeout_seconds=900):
+        readiness = await self._agent_orchestrator.computer_status()
+        if not readiness['ready']:
+            return readiness
+        try:
+            return self._agent_orchestrator.delegate_computer(prompt, workspace, timeout_seconds)
+        except OrchestrationError as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900):
         try:
             return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds)
@@ -491,6 +535,57 @@ class DesktopSkills:
 
     async def close_agent_jobs(self):
         await self._agent_orchestrator.close()
+        if self._memory is not None:
+            self._memory.close()
+
+    @property
+    def memory(self):
+        if self._memory is None:
+            self._memory = MemoryBridge(self._memory_config)
+        return self._memory
+
+    def memory_context(self):
+        try:
+            return self.memory.context()
+        except (OSError, ValueError, sqlite3.Error) as error:
+            log.warning('Memory recall unavailable: %s', type(error).__name__)
+            return ''
+
+    async def _memory_operation(self, method, **arguments):
+        try:
+            return getattr(self.memory, method)(**arguments)
+        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_remember_memory(self, text):
+        return await self._memory_operation('remember', text=text)
+
+    async def _adapter_recall_memory(self, query='', limit=20):
+        return await self._memory_operation('recall', query=query, limit=limit)
+
+    async def _adapter_forget_memory(self, text):
+        return await self._memory_operation('forget', text=text)
+
+    async def _adapter_clear_memory(self):
+        return await self._memory_operation('clear')
+
+    async def _adapter_update_memory_profile(self, name, content):
+        return await self._memory_operation('update_profile', name=name, content=content)
+
+    async def _adapter_index_memory_document(self, path):
+        return await self._memory_operation('index_document', path=path)
+
+    async def _adapter_memory_status(self):
+        return await self._memory_operation('status')
+
+    async def _adapter_sync_memory_vault(self):
+        return await self._memory_operation('sync_obsidian')
+
+    async def _adapter_correct_memory(self, memory_id, text, reason=''):
+        return await self._memory_operation('correct', memory_id=memory_id, text=text, reason=reason)
+
+    async def _adapter_memory_history(self, memory_id):
+        return await self._memory_operation('memory_history', memory_id=memory_id)
 
     @property
     def agent_job_events(self):
