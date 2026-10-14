@@ -41,23 +41,26 @@ speak while Gemini is speaking. Press **Ctrl+C** to stop microphone capture, clo
 the connection, stop playback and release the private audio routes. This version
 uses stop/restart rather than a separate mute interface.
 
-## Run as a system service
+## Run as a system service (Boot & Shutdown Automation)
 
-Install JARVIS as a per-user service so it starts with the graphical session and
-shuts down cleanly with the session:
-
-```bash
-./scripts/install-service.sh
-```
-
-The service receives `SIGTERM` during shutdown and releases microphone and
-PipeWire resources. `SIGUSR1` toggles JARVIS speech mute while leaving the
-conversation running; `SIGUSR2` stops only the currently speaking response:
+Install JARVIS as a systemd user service so it automatically activates on boot/login and gracefully deactivates on logout or system shutdown:
 
 ```bash
-systemctl --user kill --signal=SIGUSR1 jarvis-oma.service
-systemctl --user kill --signal=SIGUSR2 jarvis-oma.service
+# Install and enable the systemd user service
+./install-service.sh install
+
+# Or use standard systemctl commands:
+systemctl --user start jarvis.service     # Start JARVIS now
+systemctl --user stop jarvis.service      # Stop JARVIS cleanly
+systemctl --user status jarvis.service    # Check service status
+systemctl --user restart jarvis.service   # Restart JARVIS
+
+# Follow live service logs:
+journalctl --user -u jarvis -f
 ```
+
+The service is managed under `graphical-session.target` and receives `SIGTERM` on logout/shutdown, cleanly disconnecting Gemini Live, tearing down microphone streams, and releasing PipeWire echo-cancellation routes without zombie processes.
+
 
 Optional settings and dynamic configuration:
 
@@ -86,6 +89,7 @@ Skills are enabled by default. At startup Jarvis reads JSON manifests from
 the discovered declarations to Gemini Live. The bundled manifests enable:
 
 - **Capability development**: `start_development`, `development_status`, `list_development_jobs`, and `cancel_development` turn a concrete improvement request into a persisted, tested code proposal; proposals are not automatically activated.
+- **Google Workspace connector**: Gmail search/read/drafts, Google Calendar events/calendars, and Google Tasks are forwarded to the existing OAuth connector in `/home/g0pi/Projects/JARVIS-OS-1`.
 
 - **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
 - **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)
