@@ -6,4 +6,13 @@ __pycache__/
 !.env.example
 *.log
 obsidian-vault/
+memory/data/obsidian-vault/
 config.toml
+connectors/.secrets/
+.secrets/
+credentials.env
+*token*.json
+credentials*.json
+*.env.local
+*.key
+*.pem
