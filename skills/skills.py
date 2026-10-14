@@ -28,7 +28,10 @@ from urllib.parse import urlsplit
 import filesystem as fs
 from task_runner import TaskPlanError, TaskRunner
 from agent_orchestrator import AgentOrchestrator, OrchestrationError
+from orchestration.desktop_execution import DesktopAgentOrchestrator
 from orchestration.evolution import EvolutionManager
+from connectors import google_workspace
+from connectors import github
 from config import MemoryConfig
 from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
 try:
@@ -105,9 +108,33 @@ class DesktopSkills:
         'agents.jobs': '_adapter_list_agent_jobs',
         'agents.cancel': '_adapter_cancel_agent_job',
         'evolution.start': '_adapter_start_development',
+        'evolution.request': '_adapter_request_capability',
         'evolution.status': '_adapter_development_status',
         'evolution.list': '_adapter_list_development_jobs',
         'evolution.cancel': '_adapter_cancel_development',
+        'google.gmail_search': '_adapter_google_gmail_search',
+        'google.gmail_read': '_adapter_google_gmail_read',
+        'google.gmail_create_draft': '_adapter_google_gmail_create_draft',
+        'google.gmail_send_draft': '_adapter_google_gmail_send_draft',
+        'google.gmail_list_labels': '_adapter_google_gmail_list_labels',
+        'google.calendar_list_events': '_adapter_google_calendar_list_events',
+        'google.calendar_get_event': '_adapter_google_calendar_get_event',
+        'google.calendar_create_event': '_adapter_google_calendar_create_event',
+        'google.calendar_list_calendars': '_adapter_google_calendar_list_calendars',
+        'google.tasks_list_lists': '_adapter_google_tasks_list_lists',
+        'google.tasks_list_tasks': '_adapter_google_tasks_list_tasks',
+        'google.tasks_create_task': '_adapter_google_tasks_create_task',
+        'google.tasks_complete_task': '_adapter_google_tasks_complete_task',
+        'google.google_authorize': '_adapter_google_authorize',
+        'google.google_connection_status': '_adapter_google_connection_status',
+        'github.authorize': '_adapter_github_authorize',
+        'github.status': '_adapter_github_connection_status',
+        'github.repositories': '_adapter_github_list_repositories',
+        'github.repository': '_adapter_github_get_repository',
+        'github.issues': '_adapter_github_list_issues',
+        'github.issue': '_adapter_github_get_issue',
+        'github.pulls': '_adapter_github_list_pull_requests',
+        'github.pull': '_adapter_github_get_pull_request',
         'memory.remember': '_adapter_remember_memory',
         'memory.recall': '_adapter_recall_memory',
         'memory.forget': '_adapter_forget_memory',
@@ -196,9 +223,20 @@ class DesktopSkills:
         'agents.jobs': (),
         'agents.cancel': (),
         'evolution.start': ('git', 'bwrap'),
+        'evolution.request': ('git', 'bwrap'),
         'evolution.status': (),
         'evolution.list': (),
         'evolution.cancel': (),
+        'google.gmail_search': (), 'google.gmail_read': (),
+        'google.gmail_create_draft': (), 'google.gmail_send_draft': (),
+        'google.gmail_list_labels': (),
+        'google.calendar_list_events': (), 'google.calendar_get_event': (),
+        'google.calendar_create_event': (), 'google.calendar_list_calendars': (),
+        'google.tasks_list_lists': (), 'google.tasks_list_tasks': (),
+        'google.tasks_create_task': (), 'google.tasks_complete_task': (),
+        'google.google_authorize': (), 'google.google_connection_status': (),
+        'github.authorize': (), 'github.status': (), 'github.repositories': (), 'github.repository': (),
+        'github.issues': (), 'github.issue': (), 'github.pulls': (), 'github.pull': (),
         'memory.remember': (),
         'memory.recall': (),
         'memory.forget': (),
@@ -272,7 +310,7 @@ class DesktopSkills:
             self._skills = {name: spec for name, spec in self._skills.items()
                             if not spec['adapter'].startswith('memory.') or spec['adapter'] == 'memory.status'}
         self._task_runner = TaskRunner(self.execute, self._valid_task_step)
-        self._agent_orchestrator = AgentOrchestrator()
+        self._agent_orchestrator = DesktopAgentOrchestrator()
         self._evolution = None
         self.test_bar = TestBar()
         self._proactive = None
@@ -556,9 +594,10 @@ class DesktopSkills:
     async def _adapter_list_system_agents(self):
         return self._agent_orchestrator.discover()
 
-    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900):
+    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900, task_type=None):
         try:
-            return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds)
+            options = {'task_type': task_type} if task_type is not None else {}
+            return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds, **options)
         except OrchestrationError as error:
             raise SkillError(str(error)) from None
 
@@ -594,6 +633,20 @@ class DesktopSkills:
         except (OrchestrationError, OSError) as error:
             raise SkillError(str(error)) from None
 
+    async def _adapter_request_capability(self, request, workspace, agent='codex'):
+        """Turn an unsupported user request into a tracked capability proposal."""
+        goal = (
+            'Build the missing JARVIS capability needed for this user request. '
+            'Expose it as a declared skill with strict arguments, implement it using '
+            'the existing approved adapter patterns, add tests, and document how it is used. '
+            'Original user request: ' + request.strip()
+        )
+        try:
+            return await self.evolution.start(goal, workspace, agent,
+                                              requested_action=request.strip())
+        except (OrchestrationError, OSError, AttributeError) as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_development_status(self, job_id):
         try:
             manager = self._evolution or EvolutionManager(None, read_only=True)
@@ -624,6 +677,93 @@ class DesktopSkills:
             return await self.evolution.cancel(job_id)
         except (OrchestrationError, OSError) as error:
             raise SkillError(str(error)) from None
+
+    async def _google(self, tool, arguments):
+        try:
+            result = await google_workspace.dispatch(tool, arguments)
+            if isinstance(result, dict) and result.get('setup_required'):
+                result['message'] = 'Google is not connected; run the existing Google OAuth setup first.'
+            return result
+        except (OSError, RuntimeError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_google_gmail_search(self, query, max_results=10):
+        return await self._google('gmail_search', {'query': query, 'max_results': max_results})
+
+    async def _adapter_google_gmail_read(self, message_id):
+        return await self._google('gmail_read', {'message_id': message_id})
+
+    async def _adapter_google_gmail_create_draft(self, to, subject, body, cc=''):
+        return await self._google('gmail_create_draft', {'to': to, 'subject': subject, 'body': body, 'cc': cc})
+
+    async def _adapter_google_gmail_send_draft(self, draft_id):
+        return await self._google('gmail_send_draft', {'draft_id': draft_id})
+
+    async def _adapter_google_gmail_list_labels(self):
+        return await self._google('gmail_list_labels', {})
+
+    async def _adapter_google_calendar_list_events(self, **arguments):
+        return await self._google('calendar_list_events', arguments)
+
+    async def _adapter_google_calendar_get_event(self, event_id, calendar_id='primary'):
+        return await self._google('calendar_get_event', {'event_id': event_id, 'calendar_id': calendar_id})
+
+    async def _adapter_google_calendar_create_event(self, summary, start_datetime, end_datetime,
+                                                    description='', location='', attendees=None,
+                                                    calendar_id='primary'):
+        return await self._google('calendar_create_event', {
+            'summary': summary, 'start_datetime': start_datetime, 'end_datetime': end_datetime,
+            'description': description, 'location': location,
+            'attendees': ([item.strip() for item in attendees.split(',') if item.strip()]
+                          if isinstance(attendees, str) else attendees),
+            'calendar_id': calendar_id})
+
+    async def _adapter_google_calendar_list_calendars(self):
+        return await self._google('calendar_list_calendars', {})
+
+    async def _adapter_google_tasks_list_lists(self):
+        return await self._google('tasks_list_lists', {})
+
+    async def _adapter_google_tasks_list_tasks(self, list_id='@default'):
+        return await self._google('tasks_list_tasks', {'list_id': list_id})
+
+    async def _adapter_google_tasks_create_task(self, title, list_id='@default'):
+        return await self._google('tasks_create_task', {'title': title, 'list_id': list_id})
+
+    async def _adapter_google_tasks_complete_task(self, task_id, list_id='@default'):
+        return await self._google('tasks_complete_task', {'task_id': task_id, 'list_id': list_id})
+
+    async def _adapter_google_authorize(self):
+        return await self._google('google_authorize', {})
+
+    async def _adapter_google_connection_status(self):
+        return await self._google('google_connection_status', {})
+
+    async def _adapter_github_connection_status(self):
+        return await github.dispatch('github_connection_status', {})
+
+    async def _adapter_github_authorize(self):
+        return await github.dispatch('github_authorize', {})
+
+    async def _adapter_github_list_repositories(self, max_results=20):
+        return await github.dispatch('github_list_repositories', {'max_results': max_results})
+
+    async def _adapter_github_get_repository(self, owner, repository):
+        return await github.dispatch('github_get_repository', {'owner': owner, 'repository': repository})
+
+    async def _adapter_github_list_issues(self, owner, repository, state='open', max_results=20):
+        return await github.dispatch('github_list_issues', {
+            'owner': owner, 'repository': repository, 'state': state, 'max_results': max_results})
+
+    async def _adapter_github_get_issue(self, owner, repository, number):
+        return await github.dispatch('github_get_issue', {'owner': owner, 'repository': repository, 'number': number})
+
+    async def _adapter_github_list_pull_requests(self, owner, repository, state='open', max_results=20):
+        return await github.dispatch('github_list_pull_requests', {
+            'owner': owner, 'repository': repository, 'state': state, 'max_results': max_results})
+
+    async def _adapter_github_get_pull_request(self, owner, repository, number):
+        return await github.dispatch('github_get_pull_request', {'owner': owner, 'repository': repository, 'number': number})
 
     async def _adapter_press_key(self, key, modifiers=None):
         return await system_control.press_key(key, modifiers)

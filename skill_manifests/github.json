@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "github_authorize",
+      "description": "Open GitHub OAuth authorization in the default web browser. Call this when the user asks to connect, authorize, sign in to, or link their GitHub account.",
+      "adapter": "github.authorize",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_connection_status",
+      "description": "Check GitHub account access using a read-only API call; return connected login only.",
+      "adapter": "github.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_list_repositories",
+      "description": "List repositories accessible to your connected GitHub account.",
+      "adapter": "github.repositories",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_get_repository",
+      "description": "Read GitHub repository metadata.",
+      "adapter": "github.repository",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "repository"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_list_issues",
+      "description": "List GitHub repository issues.",
+      "adapter": "github.issues",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "owner",
+          "repository"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_get_issue",
+      "description": "Read one GitHub issue.",
+      "adapter": "github.issue",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "owner",
+          "repository",
+          "number"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_list_pull_requests",
+      "description": "List GitHub repository pull requests.",
+      "adapter": "github.pulls",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "owner",
+          "repository"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_get_pull_request",
+      "description": "Read one GitHub pull request.",
+      "adapter": "github.pull",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "owner",
+          "repository",
+          "number"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
