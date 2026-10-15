@@ -660,10 +660,14 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                     'active_jobs': len(skills.active_jobs) if (skills and hasattr(skills, 'active_jobs')) else 0,
                 }
 
+            def toggle_mute_action() -> bool:
+                audio_engine.set_muted(not audio_engine.muted)
+                return bool(audio_engine.muted)
+
             ipc_server = JarvisIPCServer(
                 socket_path=Path(socket_arg) if socket_arg else None,
                 status_provider=get_ipc_status,
-                toggle_mute_cb=lambda: audio_engine.set_muted(not audio_engine.muted),
+                toggle_mute_cb=toggle_mute_action,
                 interrupt_cb=lambda: audio_engine.handle_barge_in(),
             )
             audio_engine.on_state_change = lambda new_state: ipc_server.broadcast_state(

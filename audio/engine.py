@@ -148,14 +148,16 @@ class NativeAudioEngine:
         self._input_queue_capacity = 200 if enabled else 50
 
     def _set_state(self, new_state: str) -> None:
-        if self.state != new_state:
+        current_state = getattr(self, 'state', None)
+        if current_state != new_state:
             self.state = new_state
-            if self.on_state_change:
+            cb = getattr(self, 'on_state_change', None)
+            if cb:
                 try:
-                    if self.loop.is_running():
-                        self.loop.call_soon_threadsafe(self.on_state_change, new_state)
+                    if getattr(self, 'loop', None) and self.loop.is_running():
+                        self.loop.call_soon_threadsafe(cb, new_state)
                     else:
-                        self.on_state_change(new_state)
+                        cb(new_state)
                 except Exception:
                     pass
 
@@ -439,12 +441,13 @@ class NativeAudioEngine:
             except Exception:
                 pass
 
-    def set_muted(self, muted: bool):
+    def set_muted(self, muted: bool) -> bool:
         """Toggle mic capture and playback enqueue gating."""
         self.muted = bool(muted)
         if self.muted:
             self.handle_barge_in()
         log.info('Audio engine muted: %s', self.muted)
+        return self.muted
 
     async def stop_speaking(self):
         """Immediately stop playback while keeping the mic stream alive."""

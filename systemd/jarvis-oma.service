@@ -1,5 +1,7 @@
 [Unit]
 Description=JARVIS OMA voice assistant
+Documentation=https://github.com/Jarvis-os-tech/JARVIS-OMA
+PartOf=graphical-session.target
 After=graphical-session.target pipewire.service wireplumber.service
 Wants=pipewire.service wireplumber.service
 
@@ -7,11 +9,28 @@ Wants=pipewire.service wireplumber.service
 Type=simple
 WorkingDirectory=%h/Projects/JARVIS-OMA
 ExecStart=%h/Projects/JARVIS-OMA/run.sh
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
+KillMode=mixed
 KillSignal=SIGTERM
-TimeoutStopSec=15
+TimeoutStopSec=10
+
+# Allow high priority and realtime limits if permitted
+LimitRTPRIO=99
+LimitMEMLOCK=infinity
+Nice=-11
+
+# Environmental Buffers
+Environment=PATH=/usr/share/omarchy/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
+Environment=OMARCHY_PATH=/usr/share/omarchy
 Environment=PYTHONUNBUFFERED=1
+Environment=PIPEWIRE_LATENCY=128/48000
+Environment=PIPEWIRE_QUANTUM=128/48000
+EnvironmentFile=-%h/Projects/JARVIS-OMA/.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target default.target
