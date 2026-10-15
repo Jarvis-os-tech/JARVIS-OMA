@@ -23,131 +23,66 @@ class StandaloneTests(unittest.TestCase):
 
 
 from google.genai import types
-from agent import Playback, LiveVoice, live_config, supervise, stop_process, run
+from agent import (
+    LiveVoice, live_config, supervise, run,
+    NativeAudioEngine, DownstreamRouter, RenewConnection,
+)
 from skills import DesktopSkills
 
-class Process:
-    def __init__(self):
-        self.returncode = None
-        self.written = []
-        self.stdin = self
-        self.finished = asyncio.Event()
 
-    def write(self, data):
-        if self.returncode is not None:
-            raise BrokenPipeError()
-        self.written.append(data)
-
-    async def drain(self):
-        await asyncio.sleep(0)
-
-    def close(self):
-        pass
-
-    def terminate(self):
-        self.returncode = -15
-        self.finished.set()
-
-    def kill(self):
-        self.returncode = -9
-        self.finished.set()
-
-    async def wait(self):
-        await self.finished.wait()
-        return self.returncode
+def native_engine():
+    """Construct the native engine without opening real audio devices."""
+    import queue
+    engine = NativeAudioEngine.__new__(NativeAudioEngine)
+    engine.loop = asyncio.get_running_loop()
+    engine.async_input_queue = asyncio.Queue(maxsize=50)
+    engine.c_output_queue = queue.SimpleQueue()
+    engine.input_rate = 16000
+    engine.output_rate = 24000
+    engine.input_block_size = 320
+    engine.output_block_size = 480
+    engine.output_frame_bytes = 960
+    engine.active_generation = 0
+    engine.muted = False
+    engine.speaking = False
+    engine._input_queue_capacity = 50
+    engine.input_stream = None
+    engine.output_stream = None
+    engine.on_barge_in = None
+    engine._gain = 1.0
+    engine._target_gain = 1.0
+    import threading
+    engine._state_lock = threading.Lock()
+    return engine
 
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_interrupt_stops_output_discards_queued_audio_and_allows_new_turn(self):
-        processes = []
-
-        async def spawn(*args, **kwargs):
-            p = Process()
-            processes.append(p)
-            return p
-
-        player = Playback('test-sink')
-        with patch('agent.asyncio.create_subprocess_exec', side_effect=spawn):
-            worker = asyncio.create_task(player.run())
-            try:
-                player.enqueue(b'\x01\x00' * 240)
-                for _ in range(20):
-                    await asyncio.sleep(0)
-                    if processes and processes[0].written:
-                        break
-                self.assertEqual(processes[0].written, [b'\x01\x00' * 240])
-                player.enqueue(b'\x02\x00' * 240)
-                await player.interrupt()
-                self.assertIsNotNone(processes[0].returncode)
-                self.assertTrue(player.queue.empty())
-                player.enqueue(b'\x03\x00' * 240)
-                for _ in range(30):
-                    await asyncio.sleep(0)
-                    if len(processes) > 1 and processes[1].written:
-                        break
-                self.assertEqual(processes[1].written, [b'\x03\x00' * 240])
-            finally:
-                worker.cancel()
-                await asyncio.gather(worker, return_exceptions=True)
-                await player.interrupt()
-
-    async def test_interruption_during_player_creation_never_plays_stale_audio(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-        process = Process()
-
-        async def spawn(*args, **kwargs):
-            entered.set()
-            await release.wait()
-            return process
-
-        player = Playback('test-sink')
-        with patch('agent.asyncio.create_subprocess_exec', side_effect=spawn):
-            worker = asyncio.create_task(player.run())
-            try:
-                player.enqueue(b'\x01\x00' * 240)
-                await asyncio.wait_for(entered.wait(), 1)
-                await player.interrupt()
-                release.set()
-                for _ in range(20):
-                    await asyncio.sleep(0)
-                self.assertEqual(process.written, [])
-                self.assertIsNotNone(process.returncode)
-            finally:
-                worker.cancel()
-                await asyncio.gather(worker, return_exceptions=True)
-                await player.interrupt()
-
-    async def test_output_backlog_is_bounded_without_blocking_receive(self):
-        player = Playback('sink')
-        with self.assertRaises(BufferError):
-            player.enqueue(bytes(48000 * 11))
-
     async def test_all_response_audio_parts_are_processed(self):
         from google.genai import types
-        player = Playback('sink')
-        voice = LiveVoice(player)
+        engine = native_engine()
+        voice = LiveVoice(engine)
         event = types.LiveServerMessage(server_content=types.LiveServerContent(
             model_turn=types.Content(parts=[
                 types.Part(inline_data=types.Blob(data=b'\x01\x00', mime_type='audio/pcm;rate=24000')),
                 types.Part(inline_data=types.Blob(data=b'\x02\x00', mime_type='audio/pcm;rate=24000')),
             ])))
         await voice.handle(event)
-        self.assertEqual(player.queue.get_nowait()[1], b'\x01\x00')
-        self.assertEqual(player.queue.get_nowait()[1], b'\x02\x00')
+        voice.router.flush()
+        self.assertEqual(engine.c_output_queue.get_nowait()[1][:4], b'\x01\x00\x02\x00')
 
     async def test_interruption_event_cannot_requeue_its_stale_audio(self):
         from google.genai import types
-        player = Playback('sink')
-        player.enqueue(b'\x01\x00')
-        await LiveVoice(player).handle(types.LiveServerMessage(
+        engine = native_engine()
+        engine.enqueue_output(0, b'\x01\x00')
+        await LiveVoice(engine).handle(types.LiveServerMessage(
             server_content=types.LiveServerContent(interrupted=True,
                 model_turn=types.Content(parts=[types.Part(inline_data=types.Blob(
                     data=b'\x02\x00', mime_type='audio/pcm;rate=24000'))]))))
-        self.assertTrue(player.queue.empty())
+        self.assertTrue(engine.c_output_queue.empty())
 
     async def test_input_keeps_sending_while_output_is_queued(self):
-        player = Playback('sink')
-        player.enqueue(b'\x01\x00')
-        voice = LiveVoice(player)
+        engine = native_engine()
+        engine.enqueue_output(0, b'\x01\x00')
+        voice = LiveVoice(engine)
         reader = asyncio.StreamReader()
         reader.feed_data(bytes(1280))
         reader.feed_eof()
@@ -160,7 +95,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             await voice.send_audio(NS(send_realtime_input=send), reader)
         self.assertEqual([len(blob.data) for blob in sent], [640, 640])
         self.assertTrue(all(blob.mime_type == 'audio/pcm;rate=16000' for blob in sent))
-        self.assertFalse(player.queue.empty())
+        self.assertFalse(engine.c_output_queue.empty())
 
     async def test_receive_continues_across_turns_and_rejects_empty_closed_stream(self):
         from google.genai import types
@@ -178,10 +113,10 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                         turn_complete=True))
             return events()
 
-        player = Playback('sink')
+        player = native_engine()
         with self.assertRaises(ConnectionError):
             await LiveVoice(player).receive(NS(receive=receive))
-        self.assertEqual(player.queue.qsize(), 2)
+        self.assertEqual(player.c_output_queue.qsize(), 2)
 
     async def test_worker_failure_cancels_other_audio_workers(self):
         stopped = asyncio.Event()
@@ -202,7 +137,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resume_handle_is_saved_only_when_server_marks_resumable(self):
         from google.genai import types
-        voice = LiveVoice(Playback('sink'))
+        voice = LiveVoice(native_engine())
         await voice.handle(types.LiveServerMessage(session_resumption_update=
             types.LiveServerSessionResumptionUpdate(resumable=True, new_handle='handle-a')))
         self.assertEqual(voice.resume_handle, 'handle-a')
@@ -275,7 +210,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             async def send_tool_response(self, *, function_responses):
                 self.responses.append(function_responses)
 
-        voice = LiveVoice(Playback('sink'), skills=Skills())
+        voice = LiveVoice(native_engine(), skills=Skills())
         session = Session()
         event = types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[
             types.FunctionCall(id='call-1', name='test_skill', args={'value': 3})]))
@@ -297,7 +232,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             async def send_client_content(self, *, turns, turn_complete=True):
                 self.contents.append((turns, turn_complete))
 
-        voice = LiveVoice(Playback('sink'))
+        voice = LiveVoice(native_engine())
         session = Session()
         await voice.greet(session)
         self.assertEqual(len(session.contents), 1)
@@ -321,7 +256,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 self.contents.append((turns, turn_complete))
 
         cfg = Config(agent=AgentConfig(greet_on_activation=False))
-        voice = LiveVoice(Playback('sink'), config=cfg)
+        voice = LiveVoice(native_engine(), config=cfg)
         session = Session()
         await voice.greet(session)
         self.assertEqual(len(session.contents), 0)
@@ -338,7 +273,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 self.contents.append((turns, turn_complete))
 
         cfg = Config(agent=AgentConfig(name='Friday', greeting_prompt='Wake up Friday!'))
-        voice = LiveVoice(Playback('sink'), config=cfg)
+        voice = LiveVoice(native_engine(), config=cfg)
         session = Session()
         await voice.greet(session)
         self.assertEqual(len(session.contents), 1)
@@ -346,7 +281,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
 
         # Non-english language default prompt
         cfg_lang = Config(agent=AgentConfig(name='Jarvis', language='hi'))
-        voice_lang = LiveVoice(Playback('sink'), config=cfg_lang)
+        voice_lang = LiveVoice(native_engine(), config=cfg_lang)
         session_lang = Session()
         await voice_lang.greet(session_lang)
         self.assertEqual(len(session_lang.contents), 1)
@@ -357,7 +292,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             async def send_client_content(self, *, turns, turn_complete=True):
                 raise ConnectionError('websocket drop')
 
-        voice = LiveVoice(Playback('sink'))
+        voice = LiveVoice(native_engine())
         # Should not raise exception
         await voice.greet(FailingSession())
         self.assertTrue(voice.has_greeted)
@@ -367,7 +302,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         from contextlib import redirect_stdout
         from google.genai import types
 
-        voice = LiveVoice(Playback('sink'), transcripts=True)
+        voice = LiveVoice(native_engine(), transcripts=True)
         buf = io.StringIO()
         with redirect_stdout(buf):
             # First turn: Gemini streaming 3 fragments
@@ -393,12 +328,6 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         res = live_config('Aoede', skills=DesktopSkills())
         self.assertIn('one single sentence', res['system_instruction'])
         self.assertIn('CRITICAL RULE', res['system_instruction'])
-
-    async def test_stopping_process_is_idempotent(self):
-        process = Process()
-        await stop_process(process)
-        await stop_process(process)
-        self.assertIsNotNone(process.returncode)
 
     async def test_failed_connections_have_a_retry_budget_and_release_echo_routes(self):
         attempts = []
@@ -439,11 +368,38 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         async def no_wait(delay):
             pass
 
+        class MockAudioEngine:
+            def __init__(self, *args, **kwargs):
+                self.muted = False
+                self.output_frame_bytes = 960
+                self.async_input_queue = asyncio.Queue()
+                self.c_output_queue = __import__('queue').SimpleQueue()
+                self.on_barge_in = None
+
+            def start(self, source, sink):
+                pass
+
+            def handle_barge_in(self):
+                pass
+
+            def set_muted(self, state):
+                self.muted = state
+
+            async def stop_speaking(self):
+                pass
+
+            async def monitor_health(self):
+                await asyncio.sleep(999999)
+
+            def terminate(self):
+                cleaned.append('audio_engine')
+
         args = NS(model='test-model', voice='Aoede', transcripts=False,
                   microphone=None, retries=2)
         with tempfile.TemporaryDirectory() as directory, \
              patch('google.genai.Client', return_value=Client()), \
              patch('agent.EchoCancellation', return_value=Echo()), \
+             patch('agent.NativeAudioEngine', MockAudioEngine), \
              patch('agent.asyncio.sleep', side_effect=no_wait), \
              self.assertLogs('gemini_voice', level='WARNING'):
             from config import Config
@@ -452,13 +408,58 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, 'retry limit'):
                 await run(args, 'fake-key', config=configuration)
         self.assertEqual(len(attempts), 3)
-        self.assertEqual(cleaned, ['client', 'echo'])
+        self.assertEqual(cleaned, ['client', 'audio_engine', 'echo'])
 
     async def test_invalid_pcm_is_rejected_without_queuing_partial_audio(self):
-        player = Playback('sink')
+        player = native_engine()
         with self.assertRaises(ValueError):
-            player.enqueue(b'abc')
-        self.assertTrue(player.queue.empty())
+            DownstreamRouter(player).feed(b'abc')
+        self.assertTrue(player.c_output_queue.empty())
+
+    async def test_livevoice_with_native_engine_routes_audio_and_handles_barge_in(self):
+        engine = native_engine()
+
+        voice = LiveVoice(engine)
+        self.assertIsNotNone(voice.engine)
+        self.assertIsNotNone(voice.router)
+
+        # Receive 960 bytes of audio
+        event = NS(
+            session_resumption_update=None,
+            go_away=None,
+            tool_call_cancellation=None,
+            tool_call=None,
+            server_content=NS(
+                interrupted=False,
+                model_turn=NS(parts=[NS(inline_data=NS(data=b'\x01\x00' * 480, mime_type='audio/pcm;rate=24000'))]),
+                turn_complete=True,
+                input_transcription=None,
+                output_transcription=None,
+            ),
+        )
+        await voice.handle(event)
+        self.assertEqual(engine.c_output_queue.qsize(), 1)
+        gen, chunk = engine.c_output_queue.get_nowait()
+        self.assertEqual(gen, 0)
+        self.assertEqual(chunk, b'\x01\x00' * 480)
+
+        # Barge-in event
+        interrupt_event = NS(
+            session_resumption_update=None,
+            go_away=None,
+            tool_call_cancellation=None,
+            tool_call=None,
+            server_content=NS(
+                interrupted=True,
+                model_turn=None,
+                turn_complete=False,
+                input_transcription=None,
+                output_transcription=None,
+            ),
+        )
+        await voice.handle(interrupt_event)
+        self.assertEqual(engine.active_generation, 1)
+        self.assertEqual(len(voice.router.residual), 0)
 
     async def test_cancellation_reaps_all_supervised_workers(self):
         started = asyncio.Event()
@@ -476,8 +477,206 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
-        self.assertTrue(ended.is_set())
+    async def test_tool_call_fast_path_inline(self):
+        class FastSkills:
+            async def execute(self, name, args):
+                return {'result': 'fast_done'}
+
+        class Session:
+            def __init__(self):
+                self.responses = []
+                self.contents = []
+
+            async def send_tool_response(self, *, function_responses):
+                self.responses.append(function_responses)
+
+            async def send_client_content(self, *, turns, turn_complete=True):
+                self.contents.append((turns, turn_complete))
+
+        voice = LiveVoice(native_engine(), skills=FastSkills())
+        session = Session()
+        call = types.FunctionCall(id='fast-call-1', name='quick_action', args={'k': 'v'})
+        event = types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[call]))
+
+        await voice.handle(event, session)
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if session.responses:
+                break
+
+        self.assertEqual(len(session.responses), 1)
+        resp = session.responses[0]
+        self.assertEqual(resp.id, 'fast-call-1')
+        self.assertEqual(resp.response['output'], {'result': 'fast_done'})
+        self.assertEqual(len(session.contents), 0)
+        await voice.cancel_tools()
+
+    async def test_tool_call_slow_path_speculative_ack_and_late_injection(self):
+        finish_event = asyncio.Event()
+
+        class SlowSkills:
+            async def execute(self, name, args):
+                await asyncio.sleep(0.200)
+                finish_event.set()
+                return {'data': 'slow_result'}
+
+        class Session:
+            def __init__(self):
+                self.responses = []
+                self.contents = []
+
+            async def send_tool_response(self, *, function_responses):
+                self.responses.append(function_responses)
+
+            async def send_client_content(self, *, turns, turn_complete=True):
+                self.contents.append((turns, turn_complete))
+
+        voice = LiveVoice(native_engine(), skills=SlowSkills())
+        session = Session()
+        call = types.FunctionCall(id='slow-call-1', name='heavy_search', args={'q': 'query'})
+        event = types.LiveServerMessage(tool_call=types.LiveServerToolCall(function_calls=[call]))
+
+        await voice.handle(event, session)
+
+        # Wait for the speculative 150ms tool response
+        for _ in range(25):
+            await asyncio.sleep(0.02)
+            if session.responses:
+                break
+
+        self.assertEqual(len(session.responses), 1)
+        speculative = session.responses[0]
+        self.assertEqual(speculative.id, 'slow-call-1')
+        self.assertEqual(speculative.response.get('status'), 'running_in_background')
+
+        # Wait for the background completion and late client content injection
+        await asyncio.wait_for(finish_event.wait(), timeout=1.0)
+        for _ in range(25):
+            await asyncio.sleep(0.02)
+            if session.contents:
+                break
+
+        self.assertEqual(len(session.contents), 1)
+        turns, turn_complete = session.contents[0]
+        self.assertTrue(turn_complete)
+        self.assertIn("heavy_search", turns.parts[0].text)
+        self.assertIn("slow_result", turns.parts[0].text)
+        await voice.cancel_tools()
+
+    async def test_goaway_reconnect_buffers_audio(self):
+        voice = LiveVoice(native_engine())
+        go_away_event = NS(
+            session_resumption_update=None,
+            go_away=NS(time_to_go="10s"),
+            tool_call_cancellation=None,
+            tool_call=None,
+            server_content=None,
+        )
+        with self.assertRaises(RenewConnection):
+            await voice.handle(go_away_event)
+
+        reconnect_buffering_calls = []
+        connect_count = 0
+
+        class MockEngine:
+            def __init__(self, *args, **kwargs):
+                self.muted = False
+                self.output_frame_bytes = 960
+                self.async_input_queue = asyncio.Queue()
+                self.c_output_queue = __import__('queue').SimpleQueue()
+                self.on_barge_in = None
+
+            def start(self, source, sink):
+                pass
+
+            def handle_barge_in(self):
+                pass
+
+            def set_muted(self, state):
+                self.muted = state
+
+            def set_reconnect_buffering(self, enabled: bool):
+                reconnect_buffering_calls.append(enabled)
+
+            async def stop_speaking(self):
+                pass
+
+            async def monitor_health(self):
+                await asyncio.sleep(999999)
+
+            def terminate(self):
+                pass
+
+        class MockLiveSession:
+            def __init__(self, count):
+                self.count = count
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        class MockLive:
+            def connect(self, *args, **kwargs):
+                nonlocal connect_count
+                connect_count += 1
+                return MockLiveSession(connect_count)
+
+        async def mock_supervise(*workers):
+            for w in workers:
+                w.close()
+            if connect_count == 1:
+                raise RenewConnection()
+            raise asyncio.CancelledError()
+
+        class MockClientAio:
+            def __init__(self):
+                self.live = MockLive()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        class MockClient:
+            def __init__(self, *args, **kwargs):
+                self.aio = MockClientAio()
+
+        class Echo:
+            sink = 'test-sink'
+            source = 'test-source'
+
+            async def start(self, microphone):
+                pass
+
+            async def close(self):
+                pass
+
+        async def no_wait(d):
+            pass
+
+        args = NS(model='test-model', voice='Aoede', transcripts=False,
+                  microphone=None, retries=2, no_skills=True)
+        with patch('google.genai.Client', MockClient), \
+             patch('agent.EchoCancellation', return_value=Echo()), \
+             patch('agent.NativeAudioEngine', MockEngine), \
+             patch('agent.supervise', side_effect=mock_supervise), \
+             patch('agent.asyncio.sleep', side_effect=no_wait):
+            from config import Config
+            configuration = Config()
+            with self.assertRaises(asyncio.CancelledError):
+                await run(args, 'fake-key', config=configuration)
+
+        self.assertIn(True, reconnect_buffering_calls)
+        self.assertIn(False, reconnect_buffering_calls)
+        first_true = reconnect_buffering_calls.index(True)
+        first_false_after_true = [i for i, val in enumerate(reconnect_buffering_calls) if val is False and i > first_true]
+        self.assertTrue(len(first_false_after_true) > 0)
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
