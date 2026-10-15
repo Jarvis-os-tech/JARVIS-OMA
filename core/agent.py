@@ -28,6 +28,10 @@ from echo_cancel import EchoCancellation
 from skills import DesktopSkills, SkillError
 from audio.engine import NativeAudioEngine, StreamLostError
 from audio.downstream import DownstreamRouter
+try:
+    from core.ipc import JarvisIPCServer
+except ImportError:
+    from ipc import JarvisIPCServer
 
 log = logging.getLogger('gemini_voice')
 INPUT_BYTES = 640  # 20 ms, 16 kHz, mono signed little-endian PCM16
@@ -641,6 +645,30 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
         loop.add_signal_handler(signal.SIGUSR2, lambda: asyncio.create_task(audio_engine.stop_speaking()))
         if skills is not None:
             skills.memory.start()
+
+        # Wire up IPC control plane for Omarchy 4 Quickshell bar widget and jarvisctl
+        socket_arg = getattr(args, 'socket', None)
+        ipc_server = None
+        if not getattr(args, 'no_ipc', False):
+            def get_ipc_status() -> dict:
+                return {
+                    'state': getattr(audio_engine, 'state', 'idle'),
+                    'muted': getattr(audio_engine, 'muted', False),
+                    'model': args.model,
+                    'active_jobs': len(skills.active_jobs) if (skills and hasattr(skills, 'active_jobs')) else 0,
+                }
+
+            ipc_server = JarvisIPCServer(
+                socket_path=Path(socket_arg) if socket_arg else None,
+                status_provider=get_ipc_status,
+                toggle_mute_cb=lambda: audio_engine.set_muted(not audio_engine.muted),
+                interrupt_cb=lambda: audio_engine.handle_barge_in(),
+            )
+            audio_engine.on_state_change = lambda new_state: ipc_server.broadcast_state(
+                {'state': new_state, 'muted': getattr(audio_engine, 'muted', False)}
+            )
+            await ipc_server.start()
+
         failures = 0
         async with genai.Client(api_key=key).aio as client:
             while True:
@@ -709,6 +737,9 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                         audio_engine.handle_barge_in()
                 await asyncio.sleep(delay)
     finally:
+        if ipc_server is not None:
+            with contextlib.suppress(Exception):
+                await ipc_server.close()
         if loop is not None:
             with contextlib.suppress(NotImplementedError):
                 loop.remove_signal_handler(signal.SIGUSR1)
@@ -733,6 +764,8 @@ def main():
     parser.add_argument('--retries', type=int, default=5, help='Consecutive failure retry budget')
     parser.add_argument('--transcripts', action='store_true', help='Print transcript fragments to this terminal')
     parser.add_argument('--no-skills', action='store_true', help='Disable all Omarchy desktop controls')
+    parser.add_argument('--no-ipc', action='store_true', help='Disable IPC UNIX domain socket server')
+    parser.add_argument('--socket', help='Custom path to UNIX domain socket for IPC control plane')
     parser.add_argument('--list-skills', action='store_true', help='List desktop skills and command availability')
     parser.add_argument('--skill-dir', action='append', metavar='DIR',
                         help='Load dynamic JSON skill manifests from DIR instead of bundled defaults')
