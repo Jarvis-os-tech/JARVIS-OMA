@@ -59,7 +59,8 @@ class LiveVoice:
     def __init__(self, engine, *, transcripts=False, skills=None, config=None):
         self.engine = engine
         self.router = DownstreamRouter(engine)
-        self.engine.on_barge_in = self.router.clear
+        if engine is not None and hasattr(engine, 'on_barge_in'):
+            engine.on_barge_in = self.router.clear
         self.transcripts = transcripts
         self.skills = skills
         self.config = config
@@ -351,7 +352,8 @@ class LiveVoice:
                     self._greeting_text = ''
             if content.interrupted:
                 self._flush_transcript()
-                self.engine.handle_barge_in()
+                if self.engine is not None and hasattr(self.engine, 'handle_barge_in'):
+                    self.engine.handle_barge_in()
                 self.router.clear()
                 self._memory_user = ''
                 self._memory_assistant = ''

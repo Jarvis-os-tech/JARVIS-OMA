@@ -35,6 +35,8 @@ class AgentConfig:
     language: str = 'en'  # Primary language code (e.g. 'en', 'te', 'hi', or 'auto')
     greet_on_activation: bool = True  # Proactively greet user when activated
     greeting_prompt: str | None = None  # Custom greeting instruction if specified
+    greeting_cooldown_seconds: int = 14400  # Suppress repeat startup greetings on the same day
+    greeting_resume_work: bool = True  # Offer one continuation from saved conversation evidence
     single_sentence: bool = True  # Strictly enforce single-sentence responses
 
 
@@ -50,8 +52,15 @@ class AudioConfig:
     capture_latency_ms: int = 30
     command_timeout: int = 8
     noise_suppression: bool = True
-    playback_cushion_s: float = 0.35
     mic_volume_percent: int | None = 80
+    playback_cushion_s: float = 0.35
+    voice_rms_threshold: float = 450.0
+    voice_band_ratio: float = 0.55
+    duck_after_ms: int = 40
+    barge_in_after_ms: int = 300
+    release_after_ms: int = 120
+    duck_gain: float = 0.30
+    fade_ms: int = 10
 
     @property
     def input_frame_bytes(self) -> int:
@@ -228,6 +237,8 @@ def _merge_section(target, data: dict):
             # Type coercion for basic types
             if expected_type is int and isinstance(value, (int, float)) and not isinstance(value, bool):
                 value = int(value)
+            elif expected_type is float and isinstance(value, (int, float)) and not isinstance(value, bool):
+                value = float(value)
             elif expected_type is bool and isinstance(value, bool):
                 pass
             elif expected_type is str and isinstance(value, str):
