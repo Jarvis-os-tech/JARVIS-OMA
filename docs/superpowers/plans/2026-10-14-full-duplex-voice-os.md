@@ -34,18 +34,18 @@
   - Callbacks: `on_barge_in: Optional[Callable[[], None]]`, `on_state_change: Optional[Callable[[str], None]]`
   - State: `state: str` (`"listening" | "speaking" | "ducked" | "barged_in"`)
 
-- [ ] **Step 1: Write unit tests for ducking, FFT vocal detection, and zero-abort barge-in**
+- [x] **Step 1: Write unit tests for ducking, FFT vocal detection, and zero-abort barge-in**
 Update `tests/test_audio/test_engine.py` with tests verifying:
   - 40ms vocal detection (2 frames) switches state to `"ducked"` and targets gain `0.30`.
   - 300ms vocal detection (15 frames) triggers barge-in, increments generation, drains output queue, and sets `_fade_out_pending`.
   - Output callback smoothly fades out over 120 samples on barge-in without aborting PortAudio stream.
   - Zero-floor frames are emitted when muted so upstream clock never starves.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 Run: `.venv/bin/python -m unittest tests/test_audio/test_engine.py -v`
 Expected: FAIL on new ducking and FFT detection tests.
 
-- [ ] **Step 3: Implement `NativeAudioEngine` in `audio/engine.py`**
+- [x] **Step 3: Implement `NativeAudioEngine` in `audio/engine.py`**
 Implement the continuous engine with:
   - Vectorized `np.fft.rfft` bandpass (300Hz-3400Hz bin mask) and harmonic concentration check.
   - 40ms (2 frames) ducking to 30% amplitude (`_target_gain = 0.30`) with linear interpolation.
@@ -53,11 +53,11 @@ Implement the continuous engine with:
   - Dynamic noise floor tracking via rolling 50-frame window.
   - Zero-abort stream lifecycle (never calling `abort()`/`start()`).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `.venv/bin/python -m unittest tests/test_audio/test_engine.py -v`
 Expected: PASS (all tests green).
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 ```bash
 git add audio/engine.py tests/test_audio/test_engine.py
 git commit -m "feat(audio): implement isochronous engine with 40ms ducking and 300ms barge-in"
@@ -77,27 +77,27 @@ git commit -m "feat(audio): implement isochronous engine with 40ms ducking and 3
   - `LiveVoice.run_continuous_session(client: genai.Client)`
   - Seamless `resume_handle` updates across `RenewConnection` on `event.go_away`.
 
-- [ ] **Step 1: Write test for GoAway buffer expansion and reconnect**
+- [x] **Step 1: Write test for GoAway buffer expansion and reconnect**
 In `tests/test_core/test_agent.py`, add a test that mocks `RenewConnection` / `event.go_away`:
   - Verifies `audio_engine.set_reconnect_buffering(True)` is invoked when `RenewConnection` is raised.
   - Verifies `async_input_queue` expands limit to 200 chunks so mic audio is preserved during reconnect.
   - Verifies `audio_engine.set_reconnect_buffering(False)` resets ceiling back to 50 on successful reconnection.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 Run: `.venv/bin/python -m unittest tests/test_core/test_agent.py -k test_goaway_reconnect`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement GoAway reconnection buffering in `core/agent.py`**
+- [x] **Step 3: Implement GoAway reconnection buffering in `core/agent.py`**
 In `core/agent.py`:
   - In `run()` reconnect loop, call `audio_engine.set_reconnect_buffering(True)` upon `RenewConnection`.
   - Once `client.live.connect` succeeds, call `audio_engine.set_reconnect_buffering(False)`.
   - Maintain unbroken capture while reconnecting so zero microphone frames are lost.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `.venv/bin/python -m unittest tests/test_core/test_agent.py -k test_goaway_reconnect`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 ```bash
 git add core/agent.py tests/test_core/test_agent.py
 git commit -m "feat(core): implement glitchless GoAway session resumption buffering"
@@ -114,16 +114,16 @@ git commit -m "feat(core): implement glitchless GoAway session resumption buffer
 **Interfaces:**
 - Produces: `LiveVoice.execute_tool_with_hybrid_gate(session, call, timeout_sec: float = 0.150) -> None`
 
-- [ ] **Step 1: Write unit tests for the 150ms hybrid gate**
+- [x] **Step 1: Write unit tests for the 150ms hybrid gate**
 In `tests/test_core/test_agent.py`, add:
   - `test_tool_fast_path`: Mock tool finishing in 20ms. Verifies `session.send_tool_response` sent inline with result.
   - `test_tool_slow_path`: Mock tool sleeping 300ms. Verifies `session.send_tool_response` sent at 150ms with `status: "running_in_background"`, and `session.send_client_content` called upon completion with the final output.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 Run: `.venv/bin/python -m unittest tests/test_core/test_agent.py -k test_tool_`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `execute_tool_with_hybrid_gate` in `core/agent.py`**
+- [x] **Step 3: Implement `execute_tool_with_hybrid_gate` in `core/agent.py`**
 Wrap tool execution in:
 ```python
 tool_task = asyncio.create_task(
@@ -167,11 +167,11 @@ except asyncio.TimeoutError:
     asyncio.create_task(_inject_when_done())
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `.venv/bin/python -m unittest tests/test_core/test_agent.py -k test_tool_`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 ```bash
 git add core/agent.py tests/test_core/test_agent.py
 git commit -m "feat(core): implement 150ms shielded hybrid latency tool gate"
@@ -193,7 +193,7 @@ git commit -m "feat(core): implement 150ms shielded hybrid latency tool gate"
   - Methods: `start() -> None`, `stop() -> None`, `broadcast(event: dict) -> None`
   - CLI: `scripts/jarvisctl {status, toggle, mute, unmute, interrupt, subscribe}`
 
-- [ ] **Step 1: Write unit tests for IPC Server**
+- [x] **Step 1: Write unit tests for IPC Server**
 Create `tests/test_core/test_ipc.py` verifying:
   - Socket created with mode `0600`.
   - Command `{"command": "status"}` returns state, muted status, and active telemetry.
@@ -201,11 +201,11 @@ Create `tests/test_core/test_ipc.py` verifying:
   - Command `{"command": "interrupt"}` triggers `engine.trigger_barge_in()`.
   - Command `{"command": "subscribe"}` yields streamed JSON events when `broadcast()` is called.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 Run: `.venv/bin/python -m unittest tests/test_core/test_ipc.py -v`
 Expected: FAIL (module `core.ipc` does not exist).
 
-- [ ] **Step 3: Implement `core/ipc.py` and `scripts/jarvisctl`**
+- [x] **Step 3: Implement `core/ipc.py` and `scripts/jarvisctl`**
 - In `core/ipc.py`:
   - Determine socket path via `$XDG_RUNTIME_DIR/jarvis.sock` (fallback `/run/user/<uid>/jarvis.sock` or `~/.cache/jarvis.sock`).
   - Set permissions `0600` via `os.chmod`.
@@ -216,11 +216,11 @@ Expected: FAIL (module `core.ipc` does not exist).
 - In `core/agent.py`:
   - Instantiate and start `IPCServer` inside `run()`, linking `on_state_change` and `on_barge_in` callbacks to `ipc_server.broadcast`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 Run: `.venv/bin/python -m unittest tests/test_core/test_ipc.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 ```bash
 git add core/ipc.py scripts/jarvisctl tests/test_core/test_ipc.py core/agent.py
 git commit -m "feat(ipc): add headless 0600 UNIX domain socket server and jarvisctl CLI"
@@ -234,15 +234,15 @@ git commit -m "feat(ipc): add headless 0600 UNIX domain socket server and jarvis
 - Modify: `tests/`
 - Documentation: `docs/superpowers/plans/2026-10-14-full-duplex-voice-os.md`
 
-- [ ] **Step 1: Run full test suite across the entire repository**
+- [x] **Step 1: Run full test suite across the entire repository**
 Run: `.venv/bin/python -m unittest discover -s tests -v`
 Expected: 100% PASS across all audio, core, skills, and connector suites.
 
-- [ ] **Step 2: Verify Omarchy 4 integration links**
+- [x] **Step 2: Verify Omarchy 4 integration links**
 Run: `scripts/jarvisctl status --json`
 Ensure permissions and paths are aligned with Quickshell expectations.
 
-- [ ] **Step 3: Commit final plan verification checkpoint**
+- [x] **Step 3: Commit final plan verification checkpoint**
 ```bash
 git commit --allow-empty -m "chore: full-duplex continuous OS voice service verified"
 ```
