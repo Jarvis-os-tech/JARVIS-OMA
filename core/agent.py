@@ -926,6 +926,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                     'vision_mode': getattr(voice, 'vision_mode', 'off'),
                     'active_jobs': len(skills.active_jobs) if (skills and hasattr(skills, 'active_jobs')) else 0,
                     'playback_rebuffers': getattr(audio_engine, 'playback_rebuffers', 0),
+                    'playback_drains': getattr(audio_engine, 'playback_drains', 0),
                     'playback_cushion_ms': getattr(audio_engine, '_playback_prebuffer_frames', 0) * config.audio.output_frame_ms,
                     'output_underflows': getattr(audio_engine, 'output_underflows', 0),
                     'output_callback_errors': getattr(audio_engine, 'output_callback_errors', 0),

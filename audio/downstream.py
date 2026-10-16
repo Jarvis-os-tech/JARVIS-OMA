@@ -39,17 +39,20 @@ class DownstreamRouter:
             padding = self.frame_bytes - len(self.residual)
             last_sample = int.from_bytes(self.residual[-2:], 'little', signed=True)
             self.residual.extend(b'\x00' * padding)
-            # A hard step from a nonzero final sample to zero can sound like
-            # a crackle in the middle of a word. Synthesize a short raised-
-            # cosine tail only when it is audible; complete frames are faded
-            # by the output callback when their turn finishes.
+            # A hard step from a nonzero final sample to zero can click. If
+            # the padding is shorter than the fade, taper the final real
+            # samples too so even a nearly full frame ends smoothly.
             if abs(last_sample) >= 32:
-                fade_samples = min(padding // 2, 240)
-                offset = self.frame_bytes - padding
+                original_samples = (self.frame_bytes - padding) // 2
+                fade_start = min(original_samples, max(0, self.frame_bytes // 2 - 240))
+                fade_samples = min(240, self.frame_bytes // 2 - fade_start)
                 for index in range(fade_samples):
                     gain = 0.5 + 0.5 * math.cos(math.pi * (index + 1) / fade_samples)
-                    struct.pack_into('<h', self.residual, offset + index * 2,
-                                     round(last_sample * gain))
+                    sample_index = fade_start + index
+                    source = (struct.unpack_from('<h', self.residual, sample_index * 2)[0]
+                              if sample_index < original_samples else last_sample)
+                    struct.pack_into('<h', self.residual, sample_index * 2,
+                                     round(source * gain))
             if self.engine is not None and hasattr(self.engine, 'enqueue_output'):
                 generation = getattr(self.engine, 'active_generation', 0)
                 self.engine.enqueue_output(generation, bytes(self.residual))

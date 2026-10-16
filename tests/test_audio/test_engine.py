@@ -957,6 +957,31 @@ class TestDownstreamFlush(unittest.TestCase):
         self.assertEqual(len(router.residual), 0)
         loop.close()
 
+    def test_flush_tapers_loud_residual_instead_of_hard_zero(self):
+        engine, loop = _make_engine()
+        router = DownstreamRouter(engine)
+        router.feed(np.full(100, 12000, dtype=np.int16).tobytes())
+        router.flush()
+        _, chunk = engine.c_output_queue.get_nowait()
+        samples = np.frombuffer(chunk, dtype=np.int16)
+        self.assertEqual(samples[99], 12000)
+        self.assertGreater(samples[100], 11000)
+        self.assertEqual(samples[339], 0)
+        self.assertTrue((samples[340:] == 0).all())
+        loop.close()
+
+    def test_flush_tapers_nearly_full_final_frame(self):
+        engine, loop = _make_engine()
+        router = DownstreamRouter(engine)
+        router.feed(np.full(479, 12000, dtype=np.int16).tobytes())
+        router.flush()
+        _, chunk = engine.c_output_queue.get_nowait()
+        samples = np.frombuffer(chunk, dtype=np.int16)
+        self.assertEqual(samples[239], 12000)
+        self.assertLess(samples[360], 7000)
+        self.assertEqual(samples[-1], 0)
+        loop.close()
+
     def test_flush_noop_when_empty(self):
         engine, loop = _make_engine()
         router = DownstreamRouter(engine)
