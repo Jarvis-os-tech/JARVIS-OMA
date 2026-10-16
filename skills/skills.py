@@ -144,6 +144,7 @@ class DesktopSkills:
         'github.file': '_adapter_github_read_repository_file',
         'github.find_relevant_files': '_adapter_github_find_relevant_files',
         'github.read_repository_files': '_adapter_github_read_repository_files',
+        'github.analyze_repository': '_adapter_github_analyze_repository',
         'github.issues': '_adapter_github_list_issues',
         'github.issue': '_adapter_github_get_issue',
         'github.pulls': '_adapter_github_list_pull_requests',
@@ -832,6 +833,10 @@ class DesktopSkills:
     async def _adapter_github_read_repository_files(self, owner, repository, ref, paths):
         return await github.dispatch('github_read_repository_files', {
             'owner': owner, 'repository': repository, 'ref': ref, 'paths': paths})
+
+    async def _adapter_github_analyze_repository(self, owner, repository, query=''):
+        return await github.dispatch('github_analyze_repository', {
+            'owner': owner, 'repository': repository, 'query': query})
 
     async def _adapter_github_list_issues(self, owner, repository, state='open', max_results=20):
         return await github.dispatch('github_list_issues', {

@@ -279,6 +279,41 @@ class TestOutputCallback(unittest.TestCase):
 
 
 class TestPlaybackJitter(unittest.TestCase):
+    def test_device_underflow_softens_resume_without_growing_network_cushion(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
+        frame = np.full(480, 12000, dtype=np.int16).tobytes()
+        output = np.zeros((480, 1), dtype=np.int16)
+        engine.enqueue_output(0, frame)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[-1, 0], 12000)
+
+        engine.enqueue_output(0, frame)
+        status = type('OutputStatus', (), {'output_underflow': True, '__bool__': lambda self: True})()
+        engine._output_callback(output, 480, None, status)
+        self.assertEqual(engine.output_underflows, 1)
+        self.assertEqual(engine.playback_recoveries, 1)
+        self.assertEqual(engine.playback_rebuffers, 0)
+        self.assertEqual(engine._playback_prebuffer_frames, 1)
+        self.assertEqual(output[0, 0], 0)
+        self.assertEqual(output[-1, 0], 12000)
+
+    def test_callback_error_fades_and_reprimes_next_audio(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
+        frame = np.full(480, 12000, dtype=np.int16).tobytes()
+        output = np.zeros((480, 1), dtype=np.int16)
+        engine.enqueue_output(0, frame)
+        engine._output_callback(output, 480, None, None)
+        engine.c_output_queue.put((0, object()))
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(engine.output_callback_errors, 1)
+        self.assertEqual(engine.playback_recoveries, 1)
+        self.assertEqual(output[0, 0], 12000)
+        self.assertEqual(output[engine._edge_fade_samples - 1, 0], 0)
+        engine.enqueue_output(0, frame)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[0, 0], 0)
+        self.assertEqual(output[-1, 0], 12000)
+
     def test_network_cushion_is_independent_of_device_latency(self):
         engine = NativeAudioEngine(loop=MagicMock(), playback_latency_ms=20,
                                    playback_cushion_s=0.16)

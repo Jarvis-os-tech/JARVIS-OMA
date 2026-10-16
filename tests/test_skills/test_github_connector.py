@@ -8,6 +8,38 @@ from connectors import github
 
 
 class GithubConnectorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repository_analysis_reads_evidence_in_one_call(self):
+        ref = 'b' * 40
+        calls = []
+
+        async def fetch(path, query=None, *, max_bytes=1_000_000):
+            calls.append(path)
+            if path == '/repos/acme/widgets':
+                return {'default_branch': 'main'}
+            if path.endswith('/commits/main'):
+                return {'sha': ref}
+            if '/git/trees/' in path:
+                return {'truncated': False, 'tree': [
+                    {'type': 'blob', 'path': 'README.md', 'size': 25},
+                    {'type': 'blob', 'path': 'src/audio.py', 'size': 20},
+                ]}
+            if '/contents/' in path:
+                content = b'Audio starts here\n' if path.endswith('src/audio.py') else b'Project overview\n'
+                return {'type': 'file', 'path': path.rsplit('/', 1)[-1],
+                        'size': len(content), 'encoding': 'base64',
+                        'content': base64.b64encode(content).decode()}
+            raise AssertionError(path)
+
+        with patch.object(github, '_fetch', side_effect=fetch):
+            result = await github.dispatch('github_analyze_repository', {
+                'owner': 'acme', 'repository': 'widgets', 'query': 'audio'})
+        self.assertTrue(result['success'])
+        self.assertEqual(result['ref'], ref)
+        self.assertEqual(result['files'][0]['path'], 'src/audio.py')
+        self.assertIn('1: Audio starts here', result['files'][0]['content'])
+        self.assertIn(f'/blob/{ref}/src/audio.py#L1-L1', result['files'][0]['url'])
+        self.assertEqual(len([path for path in calls if '/contents/' in path]), 2)
+
     async def test_repository_analysis_finds_and_reads_pinned_evidence(self):
         ref = 'a' * 40
         calls = []

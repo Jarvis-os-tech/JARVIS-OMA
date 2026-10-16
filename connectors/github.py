@@ -31,6 +31,7 @@ TOOLS = {
     'github_connection_status', 'github_authorize',
     'github_list_repository_files', 'github_read_repository_file',
     'github_find_relevant_files', 'github_read_repository_files',
+    'github_analyze_repository',
 }
 _SEGMENT = re.compile(r'^[A-Za-z0-9_.][A-Za-z0-9_.-]*$')
 _auth_lock = threading.Lock()
@@ -467,6 +468,26 @@ async def _read_repository_files(args):
             'repository': f'{owner}/{repository}', 'ref': ref, 'files': results}
 
 
+async def _analyze_repository(args):
+    """Return code evidence in one call for a short live voice turn."""
+    found = await _find_relevant_files({**args, 'max_results': 12})
+    if not found.get('success'):
+        return found
+    candidates = found['files']
+    if not candidates:
+        return {'success': False, 'error': 'No readable repository files were found',
+                'repository': found['repository'], 'ref': found['ref']}
+    selected = [item['path'] for item in candidates[:4]]
+    read = await _read_repository_files({
+        'owner': args.get('owner'), 'repository': args.get('repository'),
+        'ref': found['ref'], 'paths': selected,
+    })
+    return {**read, 'candidate_paths': [item['path'] for item in candidates],
+            'total_readable_files': found['total_readable_files'],
+            'tree_truncated': found['tree_truncated'],
+            'scope': 'Four path-ranked files; request more files for deeper analysis'}
+
+
 async def dispatch(tool: str, arguments: dict):
     if tool not in TOOLS:
         return {'success': False, 'error': 'unsupported_tool'}
@@ -479,6 +500,8 @@ async def dispatch(tool: str, arguments: dict):
             return await _find_relevant_files(arguments)
         if tool == 'github_read_repository_files':
             return await _read_repository_files(arguments)
+        if tool == 'github_analyze_repository':
+            return await _analyze_repository(arguments)
         path, query = _route(tool, arguments)
         data = await _fetch(path, query)
         return _mapped(tool, data)

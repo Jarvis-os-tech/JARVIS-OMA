@@ -162,7 +162,10 @@ class NativeAudioEngine:
         self._playback_primed = False
         self._playback_need_fade_in = True
         self.playback_rebuffers = 0
+        self.output_underflows = 0
         self.output_callback_errors = 0
+        self.playback_recoveries = 0
+        self._last_output_status_log_at = 0.0
         self._last_output_enqueue_at = 0.0
         # The first PCM block can arrive with a large consonant transient.
         # A raised-cosine edge avoids a hard slope at either end of the ramp.
@@ -429,9 +432,21 @@ class NativeAudioEngine:
         """Feed hardware speaker buffer from the thread-safe SimpleQueue."""
         try:
             if status:
-                self.loop.call_soon_threadsafe(
-                    log.warning, 'PortAudio output status: %s', status,
-                )
+                # PortAudio reports a device-side dropout separately from an
+                # empty network queue. Resume the waveform with a soft edge;
+                # increasing the network cushion cannot repair a device stall.
+                if getattr(status, 'output_underflow', False):
+                    self.output_underflows += 1
+                    if self.speaking:
+                        self._playback_need_fade_in = True
+                        self.playback_recoveries += 1
+                now = time.monotonic()
+                if now - self._last_output_status_log_at >= 10.0:
+                    self._last_output_status_log_at = now
+                    self.loop.call_soon_threadsafe(
+                        log.warning, 'PortAudio output status: %s (underflows: %d)',
+                        status, self.output_underflows,
+                    )
 
             with self._state_lock:
                 self.playback_sample_clock += frames
@@ -585,6 +600,24 @@ class NativeAudioEngine:
                 self._set_state('speaking')
         except Exception as e:
             outdata.fill(0)
+            # A callback failure previously inserted a hard zero followed by
+            # an un-faded PCM frame. Release the last sample smoothly and
+            # re-prime before resuming rather than producing two sharp edges.
+            try:
+                fade_len = min(self._edge_fade_samples, len(outdata))
+                fade = (self._fade_out_edge[:fade_len] *
+                        float(self._last_output_sample)).astype(np.int16)
+                if outdata.ndim == 2:
+                    outdata[:fade_len, 0] = fade
+                else:
+                    outdata[:fade_len] = fade
+            except Exception:
+                outdata.fill(0)
+            self._last_output_sample = np.int16(0)
+            self._playback_primed = False
+            self._playback_need_fade_in = True
+            self.output_rms = 0.0
+            self.playback_recoveries += 1
             self.output_callback_errors += 1
             if self.output_callback_errors == 1 or self.output_callback_errors % 20 == 0:
                 self.loop.call_soon_threadsafe(

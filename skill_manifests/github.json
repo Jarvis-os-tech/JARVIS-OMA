@@ -92,6 +92,21 @@
       }
     },
     {
+      "name": "github_analyze_repository",
+      "description": "Start analysis of a connected GitHub repository in one call. Find relevant paths at a pinned commit and read four numbered file excerpts with source links. Use for repository overview or feature and bug analysis; inspect more files for deeper claims.",
+      "adapter": "github.analyze_repository",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string"},
+          "repository": {"type": "string"},
+          "query": {"type": "string"}
+        },
+        "required": ["owner", "repository", "query"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "github_find_relevant_files",
       "description": "Map a connected repository at one commit and rank paths relevant to a topic. Paths are candidates, not code evidence. Read selected files before making claims.",
       "adapter": "github.find_relevant_files",
