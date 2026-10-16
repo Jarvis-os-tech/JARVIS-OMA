@@ -1,6 +1,8 @@
 """Downstream audio slicing and buffering for full-duplex Gemini Live responses."""
 from __future__ import annotations
 
+import math
+import struct
 from typing import Any, Optional
 
 
@@ -32,10 +34,22 @@ class DownstreamRouter:
                 self.engine.enqueue_output(generation, chunk)
 
     def flush(self):
-        """Pad and emit any remaining sub-frame residual with silence."""
+        """Emit the final partial frame with a click-free tail into silence."""
         if self.residual:
             padding = self.frame_bytes - len(self.residual)
+            last_sample = int.from_bytes(self.residual[-2:], 'little', signed=True)
             self.residual.extend(b'\x00' * padding)
+            # A hard step from a nonzero final sample to zero can sound like
+            # a crackle in the middle of a word. Synthesize a short raised-
+            # cosine tail only when it is audible; complete frames are faded
+            # by the output callback when their turn finishes.
+            if abs(last_sample) >= 32:
+                fade_samples = min(padding // 2, 240)
+                offset = self.frame_bytes - padding
+                for index in range(fade_samples):
+                    gain = 0.5 + 0.5 * math.cos(math.pi * (index + 1) / fade_samples)
+                    struct.pack_into('<h', self.residual, offset + index * 2,
+                                     round(last_sample * gain))
             if self.engine is not None and hasattr(self.engine, 'enqueue_output'):
                 generation = getattr(self.engine, 'active_generation', 0)
                 self.engine.enqueue_output(generation, bytes(self.residual))

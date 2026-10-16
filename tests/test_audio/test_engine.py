@@ -379,6 +379,33 @@ class TestPlaybackJitter(unittest.TestCase):
         engine._output_callback(output, 480, None, None)
         self.assertTrue((output == 0).all())
 
+    def test_completed_full_frame_fades_nonzero_tail_to_silence(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
+        output = np.zeros((480, 1), dtype=np.int16)
+        engine.enqueue_output(0, np.full(480, 12000, dtype=np.int16).tobytes())
+        engine.mark_turn_complete()
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[-1, 0], 12000)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[0, 0], 12000)
+        self.assertEqual(output[engine._edge_fade_samples - 1, 0], 0)
+        self.assertFalse(engine.speaking)
+        self.assertEqual(engine.playback_rebuffers, 0)
+
+    def test_old_batch_drain_does_not_grow_network_cushion(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
+        output = np.zeros((480, 1), dtype=np.int16)
+        with patch('audio.engine.time.monotonic', return_value=100.0):
+            engine.enqueue_output(0, np.full(480, 12000, dtype=np.int16).tobytes())
+            engine._output_callback(output, 480, None, None)
+        with patch('audio.engine.time.monotonic', return_value=103.0):
+            engine._output_callback(output, 480, None, None)
+        self.assertEqual(engine.playback_drains, 1)
+        self.assertEqual(engine.playback_rebuffers, 0)
+        self.assertEqual(engine._playback_prebuffer_frames, 1)
+        self.assertEqual(output[0, 0], 12000)
+        self.assertEqual(output[engine._edge_fade_samples - 1, 0], 0)
+
     def test_correct_data_written(self):
         engine, loop = _make_engine()
         import numpy as np

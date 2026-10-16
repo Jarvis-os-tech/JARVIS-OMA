@@ -162,6 +162,7 @@ class NativeAudioEngine:
         self._playback_primed = False
         self._playback_need_fade_in = True
         self.playback_rebuffers = 0
+        self.playback_drains = 0
         self.output_underflows = 0
         self.output_callback_errors = 0
         self.playback_recoveries = 0
@@ -515,27 +516,37 @@ class NativeAudioEngine:
 
             if chunk is None:
                 outdata.fill(0)
-                if self.speaking and not self._turn_complete:
+                if self.speaking:
+                    # Even a completed turn can end on a nonzero PCM sample.
+                    # Fade that final edge; writing hard zero here made a click
+                    # whenever the last model chunk filled an exact frame.
                     fade_len = min(self._edge_fade_samples, frames)
                     fade = (self._fade_out_edge[:fade_len] * float(self._last_output_sample)).astype(np.int16)
                     if outdata.ndim == 2:
                         outdata[:fade_len, 0] = fade
                     else:
                         outdata[:fade_len] = fade
-                    self._playback_primed = False
-                    self._playback_need_fade_in = True
-                    self.playback_rebuffers += 1
-                    # Give later speech more headroom after an observed stall.
-                    # Cap this at 600 ms to keep interruption response useful.
-                    self._playback_prebuffer_frames = min(
-                        30, self._playback_prebuffer_frames + 4)
-                    if self.playback_rebuffers == 1 or self.playback_rebuffers % 20 == 0:
+                    if not self._turn_complete:
+                        self._playback_primed = False
+                        self._playback_need_fade_in = True
                         packet_age_ms = round((time.monotonic() - self._last_output_enqueue_at) * 1000)
-                        self.loop.call_soon_threadsafe(
-                            log.warning, 'Playback rebuffered %d time(s); cushion now %d ms; last packet %d ms ago',
-                            self.playback_rebuffers,
-                            self._playback_prebuffer_frames * self.output_frame_ms,
-                            packet_age_ms)
+                        if packet_age_ms > 2000:
+                            # A several-second-old packet can be the tail of
+                            # one pre-generated speech batch. Waiting for more
+                            # frames is safe, but growing the network cushion
+                            # after such a drain only adds delay to later turns.
+                            self.playback_drains += 1
+                        else:
+                            self.playback_rebuffers += 1
+                            # Cap actual network-jitter recovery at 600 ms.
+                            self._playback_prebuffer_frames = min(
+                                30, self._playback_prebuffer_frames + 4)
+                            if self.playback_rebuffers == 1 or self.playback_rebuffers % 20 == 0:
+                                self.loop.call_soon_threadsafe(
+                                    log.warning, 'Playback rebuffered %d time(s); cushion now %d ms; last packet %d ms ago',
+                                    self.playback_rebuffers,
+                                    self._playback_prebuffer_frames * self.output_frame_ms,
+                                    packet_age_ms)
                 self._last_output_sample = np.int16(0)
                 self.output_rms = 0.0
                 finished = False
