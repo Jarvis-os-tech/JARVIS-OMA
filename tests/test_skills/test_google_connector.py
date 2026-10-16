@@ -5,6 +5,7 @@ from email.policy import default
 import json
 import time
 import unittest
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 from connectors import google_workspace as google
@@ -68,8 +69,66 @@ class GoogleConnectorTests(unittest.TestCase):
         self.assertNotIn("secret-token", json.dumps(result))
         self.assertNotIn("denied", json.dumps(result))
 
+    def test_gmail_search_requests_each_header_and_preserves_api_errors(self):
+        listing = {"messages": [{"id": "message-id"}]}
+        detail = {"payload": {"headers": [
+            {"name": "subject", "value": "Hello"},
+            {"name": "FROM", "value": "friend@example.com"},
+        ]}, "snippet": "A preview"}
+        with patch.object(google, "_api", side_effect=[listing, detail]) as api:
+            result = google.gmail_search("is:unread")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["messages"][0]["subject"], "Hello")
+        self.assertEqual(result["messages"][0]["from"], "friend@example.com")
+        self.assertEqual(api.call_args.kwargs["params"]["metadataHeaders"],
+                         ["From", "Subject", "Date"])
+
+        with patch.object(google, "_api", side_effect=[listing, {"error": "HTTP 401"}]):
+            result = google.gmail_search("is:unread")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "HTTP 401")
+
+    def test_api_serializes_repeated_gmail_headers(self):
+        with patch.object(google, "_access_token", return_value="test-token"), \
+             patch.object(google, "_http_json", return_value={}) as request:
+            google._api("GET", f"{google.GMAIL_BASE}/messages/x", params={
+                "format": "metadata", "metadataHeaders": ["From", "Subject"]})
+        url = request.call_args.args[0]
+        self.assertIn("metadataHeaders=From&metadataHeaders=Subject", url)
+
+    def test_gmail_read_uses_preview_when_plain_text_is_absent(self):
+        with patch.object(google, "_api", return_value={"snippet": "Readable preview",
+                                                      "payload": {"mimeType": "text/html"}}):
+            result = google.gmail_read("message-id")
+        self.assertEqual(result["body"], "Readable preview")
+
+    def test_tasks_resolve_default_list_and_preserve_explicit_list(self):
+        with patch.object(google, "_api", side_effect=[
+            {"items": [{"id": "account-list", "title": "My Tasks"}]},
+            {"items": [{"id": "task-1"}]},
+        ]) as api:
+            result = google.tasks_list_tasks()
+        self.assertTrue(result["success"])
+        self.assertIn("/lists/account-list/tasks", api.call_args.args[1])
+
+        with patch.object(google, "_api", return_value={"id": "created"}) as api:
+            result = google.tasks_create_task("Buy milk", "other/list")
+        self.assertTrue(result["success"])
+        self.assertEqual(api.call_count, 1)
+        self.assertIn("/lists/other%2Flist/tasks", api.call_args.args[1])
+
+    def test_tasks_report_missing_list_instead_of_using_literal_default(self):
+        with patch.object(google, "_api", return_value={"items": []}) as api:
+            result = google.tasks_complete_task("task-1")
+        self.assertFalse(result["success"])
+        self.assertIn("No Google Task list", result["error"])
+        self.assertEqual(api.call_count, 1)
+
     def test_dispatch_is_async_allowlisted_and_returns_success_shape(self):
-        with patch.object(google, "gmail_list_labels", return_value={"success": True, "labels": []}):
+        async def immediate(function, arguments):
+            return function(arguments)
+        with patch.object(google, "gmail_list_labels", return_value={"success": True, "labels": []}), \
+             patch.object(google.asyncio, "to_thread", immediate):
             self.assertEqual(asyncio.run(google.dispatch("gmail_list_labels", {})), {"success": True, "labels": []})
         with self.assertRaises(ValueError):
             asyncio.run(google.dispatch("not_a_tool", {}))
@@ -88,14 +147,78 @@ class GoogleConnectorTests(unittest.TestCase):
     def test_google_authorize_opens_browser(self):
         with patch.object(google, "_client_credentials", return_value=("test-id", "test-secret")), \
              patch("connectors.google_workspace.HTTPServer") as mock_server, \
-             patch("connectors.google_workspace.webbrowser.open", return_value=True) as mock_open:
+             patch("connectors.google_workspace.open_url", return_value=True) as mock_open:
             mock_server.return_value = unittest.mock.MagicMock()
             result = google.google_authorize()
             self.assertTrue(result["success"])
             self.assertIn("auth_url", result)
             self.assertIn("test-id", result["auth_url"])
             self.assertIn("code_challenge", result["auth_url"])
+            self.assertIn("localhost%3A8085%2Fcallback", result["auth_url"])
+            self.assertIn(google.DRIVE_READ_SCOPE,
+                          parse_qs(urlsplit(result["auth_url"]).query)["scope"][0].split())
             mock_open.assert_called_once()
+
+    def test_drive_scope_is_separate_from_existing_google_connection(self):
+        old = {"scope": "https://mail.google.com/ https://www.googleapis.com/auth/calendar"}
+        with patch.object(google, "_load_tokens", return_value=old), patch.object(google, "authenticated", return_value=True), patch.object(google, "_api", side_effect=AssertionError("no API call")):
+            self.assertFalse(google.google_connection_status()["drive_connected"])
+            result = google.drive_search_files("budget")
+            self.assertTrue(result["setup_required"])
+            self.assertIn("read-only permission", result["error"])
+
+    def test_drive_search_escapes_query_and_bounds_result(self):
+        token = {"scope": google.DRIVE_READ_SCOPE}
+        files = [{"id": "a", "name": "Budget", "mimeType": "application/vnd.google-apps.spreadsheet"}]
+        with patch.object(google, "_load_tokens", return_value=token), patch.object(google, "_api", return_value={"files": files, "nextPageToken": "next"}) as api:
+            result = google.drive_search_files("Bob's plan", max_results=999)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["count"], 1)
+        self.assertTrue(result["has_more"])
+        self.assertEqual(api.call_args.kwargs["params"]["pageSize"], 50)
+        self.assertIn("Bob\\'s plan", api.call_args.kwargs["params"]["q"])
+
+    def test_drive_text_read_rejects_binary_and_limits_text(self):
+        with patch.object(google, "drive_get_file", return_value={"success": True, "file": {"mimeType": "application/pdf", "id": "x"}}), patch.object(google, "_api_text", side_effect=AssertionError("no download")):
+            self.assertFalse(google.drive_read_text_file("x")["success"])
+        with patch.object(google, "drive_get_file", return_value={"success": True, "file": {"mimeType": "text/plain", "id": "x"}}), patch.object(google, "_api_text", return_value={"text": "hello", "truncated": False}) as api:
+            self.assertEqual(google.drive_read_text_file("x")["content"], "hello")
+        self.assertIn("alt=media", api.call_args.args[0])
+
+    def test_docs_read_collects_nested_tabs_and_table_text(self):
+        doc = {"documentId": "d", "title": "Plan", "tabs": [{"tabProperties": {"title": "First"}, "documentTab": {"body": {"content": [{"paragraph": {"elements": [{"textRun": {"content": "Hello\n"}}]}}]}}, "childTabs": [{"tabProperties": {"title": "Nested"}, "documentTab": {"body": {"content": [{"table": {"tableRows": [{"tableCells": [{"content": [{"paragraph": {"elements": [{"textRun": {"content": "Cell"}}]}}]}]}]}}]}}}]}]}
+        with patch.object(google, "_load_tokens", return_value={"scope": google.DRIVE_READ_SCOPE}), patch.object(google, "_api", return_value=doc) as api:
+            result = google.docs_read_document("d/x")
+        self.assertIn("Hello", result["text"])
+        self.assertIn("Cell", result["text"])
+        self.assertIn("d%2Fx", api.call_args.args[1])
+        self.assertEqual(api.call_args.kwargs["params"], {"includeTabsContent": "true"})
+
+    def test_sheets_ranges_are_bounded_and_escaped(self):
+        with patch.object(google, "_load_tokens", return_value={"scope": google.DRIVE_READ_SCOPE}), patch.object(google, "_api", return_value={"range": "Sheet 1!A1:B2", "values": [["A", "B"], ["1", "2"]]}) as api:
+            self.assertFalse(google.sheets_read_range("id", "A1:U1")["success"])
+            self.assertFalse(google.sheets_read_range("id", "A1:J101")["success"])
+            result = google.sheets_read_range("s/id", "'Sheet 1'!A1:B2")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["rows"], 2)
+        self.assertIn("s%2Fid", api.call_args.args[1])
+        self.assertIn("%27Sheet%201%27%21A1%3AB2", api.call_args.args[1])
+        self.assertEqual(api.call_count, 1)
+
+        large = {"values": [["x" * 1000 for _ in range(20)] for _ in range(100)]}
+        with patch.object(google, "_load_tokens", return_value={"scope": google.DRIVE_READ_SCOPE}), patch.object(google, "_api", return_value=large):
+            result = google.sheets_read_range("id", "A1:T100")
+        self.assertTrue(result["truncated"])
+        self.assertLessEqual(sum(len(cell) for row in result["values"] for cell in row), 20_000)
+
+    def test_new_tools_dispatch_and_oauth_scope(self):
+        self.assertIn(google.DRIVE_READ_SCOPE, google.SCOPES)
+        async def immediate(function, arguments):
+            return function(arguments)
+        with patch.object(google, "drive_get_file", return_value={"success": True, "file": {"id": "f"}}), \
+             patch.object(google.asyncio, "to_thread", immediate):
+            result = asyncio.run(google.dispatch("drive_get_file", {"file_id": "f"}))
+        self.assertEqual(result["file"]["id"], "f")
 
 
 if __name__ == "__main__":

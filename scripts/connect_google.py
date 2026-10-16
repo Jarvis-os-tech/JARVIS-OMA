@@ -14,14 +14,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import webbrowser
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from connectors.browser import open_url
 from connectors import credentials
-from connectors.google_workspace import _NoRedirect
+from connectors.google_workspace import _NoRedirect, SCOPES
 
-SCOPES = ('https://mail.google.com/', 'https://www.googleapis.com/auth/calendar',
-          'https://www.googleapis.com/auth/tasks')
+DEFAULT_PORT = 8085
 
 
 def main():
@@ -34,8 +33,7 @@ def main():
     if not client_id or not client_secret:
         print('Google client credentials are missing; run scripts/import_connector_credentials.py first.')
         return 1
-    from connectors.google_workspace import _find_free_oauth_port
-    port = args.port or _find_free_oauth_port()
+    port = args.port or DEFAULT_PORT
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
@@ -78,8 +76,8 @@ def main():
         'prompt': 'consent', 'code_challenge': challenge, 'code_challenge_method': 'S256'})
     print('Authorize Google account access in the browser. Waiting up to ' + str(args.timeout) + ' seconds.', flush=True)
     print(url, flush=True)
-    if not args.no_browser:
-        webbrowser.open(url)
+    if not args.no_browser and not open_url(url):
+        print('The browser could not be opened automatically; open the URL above manually.', flush=True)
     try:
         deadline = time.monotonic() + max(1, min(args.timeout, 600))
         while not received and time.monotonic() < deadline:
@@ -108,7 +106,7 @@ def main():
     except Exception:
         print('Google token exchange failed; credential values withheld.')
         return 1
-    print('Google account connected. Tokens saved privately in this project.')
+    print('Google account connected, including read-only Drive, Docs, and Sheets. Tokens saved privately in this project.')
     return 0
 
 

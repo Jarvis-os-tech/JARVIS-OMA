@@ -30,6 +30,24 @@ class ConnectorTests(unittest.IsolatedAsyncioTestCase):
         google_dispatch.assert_awaited_once_with('google_authorize', {})
         github_dispatch.assert_awaited_once_with('github_authorize', {})
 
+    async def test_voice_can_inspect_github_repository_files(self):
+        skills = DesktopSkills()
+        with patch('skills.skills.github.dispatch', new=AsyncMock(
+                return_value={'success': True, 'items': []})) as dispatch:
+            result = await skills.execute('github_list_repository_files', {
+                'owner': 'acme', 'repository': 'widgets'})
+        self.assertTrue(result['success'])
+        dispatch.assert_awaited_once_with('github_list_repository_files', {
+            'owner': 'acme', 'repository': 'widgets', 'path': ''})
+
+        with patch('skills.skills.github.dispatch', new=AsyncMock(
+                return_value={'success': True, 'content': 'hello'})) as dispatch:
+            result = await skills.execute('github_read_repository_file', {
+                'owner': 'acme', 'repository': 'widgets', 'path': 'README.md'})
+        self.assertEqual(result['content'], 'hello')
+        dispatch.assert_awaited_once_with('github_read_repository_file', {
+            'owner': 'acme', 'repository': 'widgets', 'path': 'README.md'})
+
 
 if __name__ == '__main__':
     unittest.main()

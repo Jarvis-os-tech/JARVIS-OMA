@@ -7,16 +7,18 @@ from proactive.runtime import ProactiveRuntime
 class FakeOrchestrator:
     def __init__(self): self.workers={}; self.jobs={}; self.calls=[]
     def delegate(self, agent, prompt, workspace, timeout):
-        self.calls.append((agent,prompt,workspace,timeout)); key='job-1'
+        self.calls.append((agent,prompt,workspace,timeout)); key=f'job-{len(self.calls)}'
         self.jobs[key]={'id':key,'state':'running'}
         return {'job': {'id': key}}
-    async def cancel(self, job): self.workers.pop(job, None)
+    async def cancel(self, job):
+        self.workers.pop(job, None)
+        self.jobs[job]['state'] = 'cancelled'
 
 class ProactiveRuntimeTests(unittest.TestCase):
     def test_queue_plan_delegate_and_persist_activity(self):
         with tempfile.TemporaryDirectory() as root:
             orchestrator=FakeOrchestrator(); runtime=ProactiveRuntime(Path(root), orchestrator)
-            queued=runtime.enqueue('Implement the parser', root)
+            queued=runtime.enqueue('Implement the parser', root, authorized=True)
             result=asyncio.run(runtime.tick())
             self.assertEqual(result['results'][0]['status'], 'delegated')
             self.assertEqual(orchestrator.calls[0][0], 'codex')
@@ -39,6 +41,7 @@ class ProactiveRuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.observe_todos(tasks, root), ['todo:t1'])
             self.assertEqual(runtime.observe_todos(tasks, root), [])
             result=asyncio.run(runtime.tick())
-            self.assertEqual(result['results'][0]['status'], 'delegated')
+            self.assertEqual(result['results'][0]['status'], 'approval_required')
+            self.assertEqual(orchestrator.calls, [])
 
 if __name__ == '__main__': unittest.main()

@@ -34,7 +34,7 @@ class DecisionStatus(str, Enum):
 class Action:
     """An intended action and its declared effect.
 
-    External side effects and destructive changes always require approval.
+    External side effects and destructive changes require explicit approval.
     ``UNKNOWN`` also requires approval; omissions must never grant autonomy.
     """
 
@@ -100,12 +100,18 @@ class ProactivePolicy:
         """Return true only for known safe autonomous effect classes."""
         return action.effect in self._AUTONOMOUS_EFFECTS
 
-    def evaluate(self, trigger_id: str, action: Action, now: float) -> PolicyDecision:
-        """Evaluate one trigger; ``now`` must be a monotonic numeric time."""
+    def evaluate(self, trigger_id: str, action: Action, now: float, *, approved: bool = False) -> PolicyDecision:
+        """Evaluate a trigger, optionally with explicit approval from a trusted caller.
+
+        Approval covers this action only. In particular approval to delegate does
+        not approve arbitrary downstream actions or reclassify their effects.
+        """
         if not isinstance(trigger_id, str) or not trigger_id.strip():
             raise ValueError("trigger_id must be a non-empty string")
         if not isinstance(action, Action):
             raise TypeError("action must be an Action")
+        if type(approved) is not bool:
+            raise TypeError("approved must be a boolean from the trusted caller")
         if isinstance(now, bool) or not isinstance(now, (int, float)):
             raise TypeError("now must be a monotonic number")
         timestamp = float(now)
@@ -126,7 +132,7 @@ class ProactivePolicy:
             return self._decision(DecisionStatus.RATE_LIMITED, trigger_id, "proactive action rate limit reached")
 
         safe = self.classify(action)
-        if not safe:
+        if not safe and not approved:
             return self._decision(
                 DecisionStatus.APPROVAL_REQUIRED,
                 trigger_id,
@@ -138,7 +144,8 @@ class ProactivePolicy:
         self._last_by_trigger[trigger_id] = timestamp
         self._accepted.append(timestamp)
         return PolicyDecision(
-            DecisionStatus.ALLOWED, True, False, "safe action allowed by policy", trigger_id
+            DecisionStatus.ALLOWED, True, False,
+            "explicitly approved action" if approved else "safe action allowed by policy", trigger_id
         )
 
     def _expire(self, now: float) -> None:

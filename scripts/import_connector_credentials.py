@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy existing Google/GitHub credentials into private project storage."""
+"""Copy existing Google, GitHub, and Brave credentials into private project storage."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from connectors import credentials
 
 KEYS = ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GITHUB_CLIENT_ID',
-        'GITHUB_CLIENT_SECRET', 'GITHUB_TOKEN', 'GH_TOKEN')
+        'GITHUB_CLIENT_SECRET', 'GITHUB_TOKEN', 'GH_TOKEN', 'BRAVE_SEARCH_API_KEY')
 
 
 def main():

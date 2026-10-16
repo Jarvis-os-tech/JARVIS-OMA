@@ -106,6 +106,7 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
         skills.agent_job_events.put_nowait({'id': 'test-id', 'agent': 'omp',
                                           'state': 'completed', 'workspace': '/tmp/test'})
         watcher = asyncio.create_task(voice.monitor_agents(session))
+        sender = asyncio.create_task(voice.send_notifications(session))
         try:
             for _ in range(100):
                 if session.send_client_content.called:
@@ -117,4 +118,5 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('untrusted', sent)
         finally:
             watcher.cancel()
-            await asyncio.gather(watcher, return_exceptions=True)
+            sender.cancel()
+            await asyncio.gather(watcher, sender, return_exceptions=True)

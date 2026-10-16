@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from skills import DesktopSkills, SkillError
+from connectors import internet_search as web_search
 
 
 def manifest(skills):
@@ -27,6 +29,185 @@ def spec(name='apps', adapter='applications.list', properties=None, required=Non
 
 
 class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
+    async def test_brave_search_returns_bounded_public_sources(self):
+        payload = {'web': {'results': [
+            {'title': 'Example <b>result</b>', 'url': 'https://example.org/fact',
+             'description': 'A <em>source</em> summary'},
+            {'title': 'Duplicate', 'url': 'https://example.org/fact'},
+            {'title': 'Bad link', 'url': 'javascript:alert(1)'},
+        ]}}
+        with patch.object(web_search, '_get_json', new_callable=AsyncMock,
+                          return_value=payload) as get_json:
+            result = await web_search.brave_search('test search', api_key='test-key')
+        self.assertEqual(result['provider'], 'Brave Search')
+        self.assertEqual(result['sources'], [{
+            'title': 'Example result', 'url': 'https://example.org/fact',
+            'snippet': 'A source summary'}])
+        self.assertIn('X-Subscription-Token', get_json.call_args.kwargs['headers'])
+
+    async def test_brave_search_uses_private_connector_credential_store(self):
+        payload = {'web': {'results': [
+            {'title': 'Result', 'url': 'https://example.org/result'}]}}
+        with patch.object(web_search.credentials, 'get', return_value='private-key') as secret, \
+                patch.object(web_search, '_get_json', new_callable=AsyncMock,
+                             return_value=payload) as get_json:
+            self.assertTrue(web_search.brave_available())
+            await web_search.brave_search('example')
+        secret.assert_called_with('BRAVE_SEARCH_API_KEY')
+        self.assertEqual(get_json.call_args.kwargs['headers']['X-Subscription-Token'],
+                         'private-key')
+
+    async def test_current_query_does_not_fall_back_to_encyclopedia(self):
+        self.assertFalse(web_search.encyclopedia_eligible('What is the stock price today?'))
+        self.assertTrue(web_search.encyclopedia_eligible('How do stars form?'))
+        with patch.object(web_search, 'brave_available', return_value=False), \
+                patch('google.genai.Client') as client, \
+                patch.object(web_search, 'wikipedia_search', new_callable=AsyncMock) as wiki:
+            # A real exception carrying the HTTP status exercises quota fallback.
+            class QuotaError(Exception):
+                code = 429
+            client.return_value.aio.__aenter__.return_value.models.generate_content.side_effect = QuotaError()
+            with self.assertRaisesRegex(SkillError, 'BRAVE_SEARCH_API_KEY'):
+                await DesktopSkills(api_key='test-key').execute(
+                    'internet_search', {'query': 'stock price today'})
+            wiki.assert_not_awaited()
+
+    async def test_stable_query_uses_wikipedia_after_grounding_quota(self):
+        class QuotaError(Exception):
+            code = 429
+        wiki_result = {'answer': 'Encyclopedia background for: stars',
+                       'sources': [{'title': 'Star', 'url': 'https://en.wikipedia.org/wiki/Star',
+                                    'snippet': 'Astronomical object'}],
+                       'provider': 'Wikipedia'}
+        with patch.object(web_search, 'brave_available', return_value=False), \
+                patch('google.genai.Client') as client, \
+                patch.object(web_search, 'wikipedia_search', new_callable=AsyncMock,
+                             return_value=wiki_result) as wiki:
+            client.return_value.aio.__aenter__.return_value.models.generate_content = AsyncMock(
+                side_effect=QuotaError())
+            result = await DesktopSkills(api_key='test-key').execute(
+                'internet_search', {'query': 'How do stars form?'})
+            self.assertEqual(result, wiki_result)
+            wiki.assert_awaited_once()
+
+    async def test_internet_search_returns_grounded_sources_to_voice(self):
+        result = SimpleNamespace(
+            text='Current answer',
+            candidates=[SimpleNamespace(grounding_metadata=SimpleNamespace(
+                grounding_chunks=[SimpleNamespace(web=SimpleNamespace(
+                    title='Official source', uri='https://example.org/fact'))]))])
+        generate = AsyncMock(return_value=result)
+
+        class FakeAio:
+            async def __aenter__(self):
+                return SimpleNamespace(models=SimpleNamespace(generate_content=generate))
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch('google.genai.Client', return_value=SimpleNamespace(aio=FakeAio())):
+            output = await DesktopSkills(api_key='test-key').execute(
+                'internet_search', {'query': 'current fact'})
+        self.assertEqual(output['answer'], 'Current answer')
+        self.assertEqual(output['sources'], [
+            {'title': 'Official source', 'url': 'https://example.org/fact'}])
+        self.assertEqual(generate.await_args.kwargs['model'], 'gemini-3.8-flash')
+
+    async def test_grounded_search_tries_next_account_after_quota(self):
+        class QuotaError(Exception):
+            code = 429
+
+        result = SimpleNamespace(text='Verified answer', candidates=[SimpleNamespace(
+            grounding_metadata=SimpleNamespace(grounding_chunks=[SimpleNamespace(
+                web=SimpleNamespace(title='Source', uri='https://example.org/fact'))]))])
+        attempts = []
+
+        class FakeAio:
+            def __init__(self, key):
+                async def generate_content(**kwargs):
+                    attempts.append((key, kwargs['model']))
+                    if key == 'first-key':
+                        raise QuotaError()
+                    return result
+                self.models = SimpleNamespace(generate_content=generate_content)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch.object(web_search, 'brave_available', return_value=False), \
+                patch('google.genai.Client', side_effect=lambda api_key: SimpleNamespace(
+                    aio=FakeAio(api_key))):
+            skills = DesktopSkills(api_key=['first-key', 'second-key'])
+            output = await skills.execute('internet_search', {'query': 'price today'})
+            self.assertEqual(output['answer'], 'Verified answer')
+            self.assertEqual(attempts, [('first-key', 'gemini-3.8-flash'),
+                                        ('first-key', 'gemini-2.5-flash'),
+                                        ('second-key', 'gemini-3.8-flash')])
+            attempts.clear()
+            await skills.execute('internet_search', {'query': 'price now'})
+            self.assertEqual(attempts, [('second-key', 'gemini-3.8-flash')])
+
+    async def test_grounded_search_tries_next_model_when_unavailable(self):
+        class ModelUnavailable(Exception):
+            code = 404
+
+        result = SimpleNamespace(text='Verified answer', candidates=[SimpleNamespace(
+            grounding_metadata=SimpleNamespace(grounding_chunks=[SimpleNamespace(
+                web=SimpleNamespace(title='Source', uri='https://example.org/fact'))]))])
+        attempts = []
+
+        async def generate_content(**kwargs):
+            attempts.append(kwargs['model'])
+            if len(attempts) == 1:
+                raise ModelUnavailable()
+            return result
+
+        class FakeAio:
+            async def __aenter__(self):
+                return SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch.object(web_search, 'brave_available', return_value=False), \
+                patch('google.genai.Client', return_value=SimpleNamespace(aio=FakeAio())):
+            output = await DesktopSkills(api_key=['test-key']).execute(
+                'internet_search', {'query': 'price today'})
+        self.assertEqual(output['model'], 'gemini-3.7-flash')
+        self.assertEqual(attempts, ['gemini-3.8-flash', 'gemini-3.7-flash'])
+
+    async def test_grounded_search_uses_older_quota_after_newer_quota(self):
+        class QuotaError(Exception):
+            code = 429
+
+        result = SimpleNamespace(text='Verified answer', candidates=[SimpleNamespace(
+            grounding_metadata=SimpleNamespace(grounding_chunks=[SimpleNamespace(
+                web=SimpleNamespace(title='Source', uri='https://example.org/fact'))]))])
+        attempts = []
+
+        async def generate_content(**kwargs):
+            attempts.append(kwargs['model'])
+            if kwargs['model'].startswith('gemini-3.'):
+                raise QuotaError()
+            return result
+
+        class FakeAio:
+            async def __aenter__(self):
+                return SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch.object(web_search, 'brave_available', return_value=False), \
+                patch('google.genai.Client', return_value=SimpleNamespace(aio=FakeAio())):
+            output = await DesktopSkills(api_key=['test-key']).execute(
+                'internet_search', {'query': 'price today'})
+        self.assertEqual(output['model'], 'gemini-2.5-flash')
+        self.assertEqual(attempts, ['gemini-3.8-flash', 'gemini-2.5-flash'])
+
     def make_desktop_skills(self, manifest_dirs=None, **kwargs):
         skills = DesktopSkills(manifest_dirs=manifest_dirs, **kwargs)
         for cmd in ('omarchy-brightness-display', 'gtk-launch', 'hyprctl', 'notify-send',
@@ -422,6 +603,19 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(avail.get('filesystem.delete'))
         self.assertTrue(avail.get('filesystem.info'))
         self.assertTrue(avail.get('filesystem.grep'))
+
+    async def test_file_discovery_defaults_to_home_when_voice_omits_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'voice-probe.txt').write_text('Jarvis file access works', encoding='utf-8')
+            skills = self.make_desktop_skills()
+            with patch('skills.skills.Path.home', return_value=root):
+                listed = await skills.execute('list_files', {})
+                named = await skills.execute('search_files', {'query': 'voice-probe'})
+                content = await skills.execute('search_file_content', {'query': 'access works'})
+            self.assertEqual(listed['path'], str(root))
+            self.assertIn(str(root / 'voice-probe.txt'), named['matches'])
+            self.assertTrue(content['matches'])
 
 
 if __name__ == '__main__':

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "internet_search",
+      "description": "Search the public internet and return source links. Uses Brave Search when BRAVE_SEARCH_API_KEY is configured, otherwise Gemini grounded Search. Stable background questions can fall back to Wikipedia. Never treat Wikipedia background as verification of current news, prices, weather, or schedules.",
+      "adapter": "web.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Specific question or terms to search on the public web."}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

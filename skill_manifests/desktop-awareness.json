@@ -3,7 +3,7 @@
   "skills": [
     {
       "name": "inspect_screen",
-      "description": "Inspect what is currently visible on the screen or active window, capturing visual layout and extracting on-screen text via local OCR.",
+      "description": "Inspect the screen or active window with a single visual frame and locally extracted OCR text. The result says whether the visual frame was submitted; if visual_input is ocr_only, rely only on OCR and window metadata.",
       "adapter": "screen.inspect",
       "parameters_json_schema": {
         "type": "object",

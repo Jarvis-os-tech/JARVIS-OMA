@@ -32,7 +32,9 @@ from orchestration.desktop_execution import DesktopAgentOrchestrator
 from orchestration.evolution import EvolutionManager
 from connectors import google_workspace
 from connectors import github
+from connectors import internet_search as web_search
 from config import MemoryConfig
+from core.workers import BoundedWorker, WorkerBusyError
 from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
 try:
     from skills.input_bar import TestBar
@@ -64,6 +66,7 @@ class DesktopSkills:
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
         'web.open': '_adapter_open_website',
+        'web.search': '_adapter_internet_search',
         'audio.volume': '_adapter_adjust_volume',
         'display.brightness': '_adapter_adjust_brightness',
         'workspace.switch': '_adapter_switch_workspace',
@@ -127,10 +130,20 @@ class DesktopSkills:
         'google.tasks_complete_task': '_adapter_google_tasks_complete_task',
         'google.google_authorize': '_adapter_google_authorize',
         'google.google_connection_status': '_adapter_google_connection_status',
+        'google.drive_search_files': '_adapter_google_drive_search_files',
+        'google.drive_get_file': '_adapter_google_drive_get_file',
+        'google.drive_read_text_file': '_adapter_google_drive_read_text_file',
+        'google.docs_read_document': '_adapter_google_docs_read_document',
+        'google.sheets_get_spreadsheet': '_adapter_google_sheets_get_spreadsheet',
+        'google.sheets_read_range': '_adapter_google_sheets_read_range',
         'github.authorize': '_adapter_github_authorize',
         'github.status': '_adapter_github_connection_status',
         'github.repositories': '_adapter_github_list_repositories',
         'github.repository': '_adapter_github_get_repository',
+        'github.files': '_adapter_github_list_repository_files',
+        'github.file': '_adapter_github_read_repository_file',
+        'github.find_relevant_files': '_adapter_github_find_relevant_files',
+        'github.read_repository_files': '_adapter_github_read_repository_files',
         'github.issues': '_adapter_github_list_issues',
         'github.issue': '_adapter_github_get_issue',
         'github.pulls': '_adapter_github_list_pull_requests',
@@ -171,6 +184,9 @@ class DesktopSkills:
         'audio.mic_control': '_adapter_control_microphone',
         'display.brightness_set': '_adapter_set_brightness',
         'window.move_workspace': '_adapter_move_window_workspace',
+        'vision.control_mode': '_adapter_control_vision_mode',
+        'vision.capture_frame': '_adapter_capture_camera_frame',
+        'vision.check_hardware': '_adapter_check_vision_hardware',
     }
 
     # ── Adapter → required system commands ────────────────────────────
@@ -235,7 +251,11 @@ class DesktopSkills:
         'google.tasks_list_lists': (), 'google.tasks_list_tasks': (),
         'google.tasks_create_task': (), 'google.tasks_complete_task': (),
         'google.google_authorize': (), 'google.google_connection_status': (),
+        'google.drive_search_files': (), 'google.drive_get_file': (),
+        'google.drive_read_text_file': (), 'google.docs_read_document': (),
+        'google.sheets_get_spreadsheet': (), 'google.sheets_read_range': (),
         'github.authorize': (), 'github.status': (), 'github.repositories': (), 'github.repository': (),
+        'github.files': (), 'github.file': (),
         'github.issues': (), 'github.issue': (), 'github.pulls': (), 'github.pull': (),
         'memory.remember': (),
         'memory.recall': (),
@@ -270,6 +290,9 @@ class DesktopSkills:
         'audio.mic_control': ('wpctl',),
         'display.brightness_set': ('brightnessctl',),
         'window.move_workspace': ('hyprctl',),
+        'vision.control_mode': (),
+        'vision.capture_frame': ('vision_ctrl',),
+        'vision.check_hardware': ('vision_ctrl',),
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
@@ -305,7 +328,11 @@ class DesktopSkills:
         self._skills = self._load_manifests()
         self._memory_config = config.memory if config else MemoryConfig()
         self._memory_api_key = api_key
+        self._search_key_cooldown = {}
         self._memory = None
+        self._memory_worker = BoundedWorker('jarvis-memory', capacity=16)
+        self._file_worker = BoundedWorker('jarvis-files', capacity=16)
+        self._memory_writes = set()
         if not self._memory_config.enabled:
             self._skills = {name: spec for name, spec in self._skills.items()
                             if not spec['adapter'].startswith('memory.') or spec['adapter'] == 'memory.status'}
@@ -314,6 +341,8 @@ class DesktopSkills:
         self._evolution = None
         self.test_bar = TestBar()
         self._proactive = None
+        self.vision_mode = 'off'
+        self.on_vision_mode_change = None
 
         # Discover commands dynamically from active adapters
         self._commands = self._discover_commands()
@@ -335,6 +364,12 @@ class DesktopSkills:
             override = self._command_overrides.get(name)
             if override and os.path.isfile(override) and os.access(override, os.X_OK):
                 commands[name] = override
+            elif name == 'vision_ctrl':
+                local_native = Path(__file__).resolve().parent / 'native' / 'bin' / 'vision_ctrl'
+                if local_native.is_file() and os.access(str(local_native), os.X_OK):
+                    commands[name] = str(local_native)
+                else:
+                    commands[name] = shutil.which(name)
             else:
                 commands[name] = shutil.which(name)
         return commands
@@ -417,13 +452,14 @@ class DesktopSkills:
                 self._validate_schema(option, depth=depth + 1)
             return
         kind = schema.get('type')
-        if kind not in ('object', 'string', 'integer', 'boolean'):
+        if kind not in ('object', 'string', 'integer', 'boolean', 'array'):
             raise SkillError('skill schema type is not allowed')
         allowed_by_type = {
             'object': {'type', 'properties', 'required', 'additionalProperties', 'description'},
             'string': {'type', 'description', 'enum'},
             'integer': {'type', 'description', 'enum', 'minimum', 'maximum'},
             'boolean': {'type', 'description', 'enum'},
+            'array': {'type', 'description', 'items', 'minItems', 'maxItems'},
         }
         if not set(schema) <= allowed_by_type[kind]:
             raise SkillError('skill manifest contains an unsupported schema')
@@ -446,6 +482,12 @@ class DesktopSkills:
                 if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', key):
                     raise SkillError('invalid skill parameter name')
                 self._validate_schema(value, depth=depth + 1)
+        if kind == 'array':
+            minimum, maximum = schema.get('minItems', 0), schema.get('maxItems', 16)
+            if (type(minimum) is not int or type(maximum) is not int or
+                    not 0 <= minimum <= maximum <= 16 or 'items' not in schema):
+                raise SkillError('invalid bounded array skill schema')
+            self._validate_schema(schema['items'], depth=depth + 1)
         if 'enum' in schema:
             enum = schema['enum']
             if not isinstance(enum, list) or not enum or len(enum) > 32:
@@ -475,6 +517,10 @@ class DesktopSkills:
                 return False
             return all(self._arguments_match(item, schema['properties'][key])
                        for key, item in value.items())
+        if kind == 'array':
+            return (isinstance(value, list) and
+                    schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', 16) and
+                    all(self._arguments_match(item, schema['items']) for item in value))
         if kind == 'string':
             valid = isinstance(value, str)
         elif kind == 'integer':
@@ -682,7 +728,8 @@ class DesktopSkills:
         try:
             result = await google_workspace.dispatch(tool, arguments)
             if isinstance(result, dict) and result.get('setup_required'):
-                result['message'] = 'Google is not connected; run the existing Google OAuth setup first.'
+                result.setdefault('message', result.get('error') or
+                                  "Say 'open Google authorization' to connect your Google account.")
             return result
         except (OSError, RuntimeError, ValueError) as error:
             raise SkillError(str(error)) from None
@@ -739,6 +786,24 @@ class DesktopSkills:
     async def _adapter_google_connection_status(self):
         return await self._google('google_connection_status', {})
 
+    async def _adapter_google_drive_search_files(self, query='', max_results=10):
+        return await self._google('drive_search_files', {'query': query, 'max_results': max_results})
+
+    async def _adapter_google_drive_get_file(self, file_id):
+        return await self._google('drive_get_file', {'file_id': file_id})
+
+    async def _adapter_google_drive_read_text_file(self, file_id):
+        return await self._google('drive_read_text_file', {'file_id': file_id})
+
+    async def _adapter_google_docs_read_document(self, document_id):
+        return await self._google('docs_read_document', {'document_id': document_id})
+
+    async def _adapter_google_sheets_get_spreadsheet(self, spreadsheet_id):
+        return await self._google('sheets_get_spreadsheet', {'spreadsheet_id': spreadsheet_id})
+
+    async def _adapter_google_sheets_read_range(self, spreadsheet_id, cell_range='A1:J25'):
+        return await self._google('sheets_read_range', {'spreadsheet_id': spreadsheet_id, 'cell_range': cell_range})
+
     async def _adapter_github_connection_status(self):
         return await github.dispatch('github_connection_status', {})
 
@@ -750,6 +815,23 @@ class DesktopSkills:
 
     async def _adapter_github_get_repository(self, owner, repository):
         return await github.dispatch('github_get_repository', {'owner': owner, 'repository': repository})
+
+    async def _adapter_github_list_repository_files(self, owner, repository, path=''):
+        return await github.dispatch('github_list_repository_files', {
+            'owner': owner, 'repository': repository, 'path': path})
+
+    async def _adapter_github_read_repository_file(self, owner, repository, path):
+        return await github.dispatch('github_read_repository_file', {
+            'owner': owner, 'repository': repository, 'path': path})
+
+    async def _adapter_github_find_relevant_files(self, owner, repository, query='', max_results=20):
+        return await github.dispatch('github_find_relevant_files', {
+            'owner': owner, 'repository': repository, 'query': query,
+            'max_results': max_results})
+
+    async def _adapter_github_read_repository_files(self, owner, repository, ref, paths):
+        return await github.dispatch('github_read_repository_files', {
+            'owner': owner, 'repository': repository, 'ref': ref, 'paths': paths})
 
     async def _adapter_github_list_issues(self, owner, repository, state='open', max_results=20):
         return await github.dispatch('github_list_issues', {
@@ -796,12 +878,21 @@ class DesktopSkills:
         return await system_control.move_window_to_workspace(workspace)
 
     async def close_agent_jobs(self):
-        if self._evolution is not None:
-            await self._evolution.close()
-        await self._agent_orchestrator.close()
-        self.test_bar.close()
-        if self._memory is not None:
-            self._memory.close()
+        try:
+            if self._proactive is not None:
+                await self._proactive.close()
+            if self._evolution is not None:
+                await self._evolution.close()
+            await self._agent_orchestrator.close()
+        finally:
+            self.test_bar.close()
+            if self._memory_writes:
+                await asyncio.gather(*tuple(self._memory_writes), return_exceptions=True)
+            try:
+                await self._memory_worker.close(
+                    finalizer=self._memory.close if self._memory is not None else None)
+            finally:
+                await self._file_worker.close()
 
     async def _adapter_open_input_bar(self):
         url = self.test_bar.start()
@@ -839,24 +930,30 @@ class DesktopSkills:
         return {'status': 'closed' if closed or matches else 'already_closed',
                 'windows_closed': len(matches)}
 
-    async def _adapter_proactive_task(self, prompt, workspace, agent=None):
-        return self.proactive.enqueue(prompt, workspace, agent, authorized=True)
+    async def _adapter_proactive_task(self, prompt, workspace, agent=None, artifact_check=None):
+        runtime = await self.get_proactive()
+        return await runtime.call('enqueue', prompt, workspace, agent, authorized=True,
+                                  verification=[artifact_check] if artifact_check is not None else None)
 
     async def _adapter_proactive_status(self):
-        return self.proactive.status()
+        runtime = await self.get_proactive()
+        return await runtime.call('status')
 
     async def _adapter_proactive_pause(self):
-        result = self.proactive.pause()
+        runtime = await self.get_proactive()
+        result = await runtime.call('pause')
         await self._cancel_active_development()
         return result
 
     async def _adapter_proactive_resume(self):
-        return self.proactive.resume()
+        runtime = await self.get_proactive()
+        return await runtime.call('resume')
 
     async def _adapter_proactive_stop(self):
-        self.proactive.control.stop_all()
+        runtime = await self.get_proactive()
+        result = await runtime.stop_all()
         await self._cancel_active_development()
-        return await self.proactive.stop_all()
+        return result
 
     async def _cancel_active_development(self):
         if self._evolution is not None:
@@ -884,10 +981,40 @@ class DesktopSkills:
             log.warning('Memory recall unavailable: %s', type(error).__name__)
             return ''
 
+    async def memory_call(self, method, *args, **kwargs):
+        def invoke():
+            return getattr(self.memory, method)(*args, **kwargs)
+        return await self._memory_worker.run(invoke)
+
+    def queue_memory_exchange(self, user, assistant):
+        if not user and not assistant:
+            return
+        self.queue_memory_job(self.memory_call('record_exchange', user, assistant))
+
+    def queue_memory_job(self, operation):
+        if len(self._memory_writes) >= 16:
+            log.warning('Memory capture backlog full; dropping exchange')
+            operation.close()
+            return
+        task = asyncio.create_task(operation)
+        self._memory_writes.add(task)
+        def finished(done):
+            self._memory_writes.discard(done)
+            try:
+                done.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as error:
+                log.warning('Memory capture failed: %s', type(error).__name__)
+        task.add_done_callback(finished)
+
+    async def get_proactive(self):
+        return await self._file_worker.run(lambda: self.proactive)
+
     async def _memory_operation(self, method, **arguments):
         try:
-            return getattr(self.memory, method)(**arguments)
-        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error) as error:
+            return await self.memory_call(method, **arguments)
+        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, WorkerBusyError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_remember_memory(self, text):
@@ -947,20 +1074,23 @@ class DesktopSkills:
 
     async def _file_operation(self, operation, *args, **kwargs):
         try:
-            return operation(*args, **kwargs)
-        except fs.FileOperationError as error:
+            return await self._file_worker.run(operation, *args, **kwargs)
+        except (fs.FileOperationError, WorkerBusyError) as error:
             raise SkillError(str(error)) from None
 
-    async def _adapter_list_files(self, path, limit=100, include_hidden=True):
+    async def _adapter_list_files(self, path=None, limit=100, include_hidden=True):
+        path = path or str(Path.home())
         return await self._file_operation(fs.list_directory, path, limit, include_hidden)
 
     async def _adapter_read_file(self, path, offset=0, max_chars=20000):
         return await self._file_operation(fs.read_text, path, offset, max_chars)
 
-    async def _adapter_search_files(self, path, query, limit=50, include_hidden=False):
+    async def _adapter_search_files(self, query, path=None, limit=50, include_hidden=False):
+        path = path or str(Path.home())
         return await self._file_operation(fs.search_files, path, query, limit, include_hidden)
 
-    async def _adapter_search_file_content(self, path, query, limit=30):
+    async def _adapter_search_file_content(self, query, path=None, limit=30):
+        path = path or str(Path.home())
         return await self._file_operation(fs.search_file_content, path, query, limit)
 
     async def _adapter_write_file(self, path, content, overwrite=False):
@@ -1011,6 +1141,100 @@ class DesktopSkills:
         app_id, label = exact[0]
         await self._launch(self._command('gtk-launch'), app_id)
         return {'status': 'opened', 'application': label}
+
+    async def _adapter_internet_search(self, query):
+        """Return bounded sources using Brave, Gemini grounding, or Wikipedia."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 500:
+            raise SkillError('search query must be 1 to 500 characters')
+        query = query.strip()
+        if web_search.brave_available():
+            try:
+                return await web_search.brave_search(query)
+            except web_search.SearchProviderError as error:
+                log.warning('Brave Search unavailable: %s', error)
+        configured = self._memory_api_key
+        configured = configured if isinstance(configured, (list, tuple)) else [configured]
+        keys = list(dict.fromkeys(key for key in configured if key))
+        failure = 'internet search requires a configured Gemini or Brave Search API key'
+        if keys:
+            from google import genai
+            deadline = time.monotonic() + 30
+            for key in keys:
+                if time.monotonic() >= deadline:
+                    failure = 'internet search timed out; please try again'
+                    break
+                if self._search_key_cooldown.get(key, 0) > time.monotonic():
+                    continue
+                skip_key = False
+                newer_model_quota = False
+                for model in web_search.GROUNDING_MODELS:
+                    if newer_model_quota and model.startswith('gemini-3.'):
+                        continue
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        failure = 'internet search timed out; please try again'
+                        break
+                    try:
+                        async with genai.Client(api_key=key).aio as client:
+                            result = await asyncio.wait_for(client.models.generate_content(
+                                model=model, contents=query,
+                                config={'tools': [{'google_search': {}}], 'temperature': 0,
+                                        'automatic_function_calling': {'disable': True}}),
+                                timeout=min(8, remaining))
+                    except TimeoutError:
+                        failure = 'internet search timed out; please try again'
+                        skip_key = True
+                        break
+                    except Exception as error:
+                        code = getattr(error, 'code', getattr(error, 'status_code', None))
+                        if code == 429:
+                            failure = 'internet search quota is currently exhausted'
+                            if model.startswith('gemini-3.'):
+                                newer_model_quota = True
+                                continue
+                            self._search_key_cooldown[key] = time.monotonic() + 300
+                            skip_key = True
+                            break
+                        if code in (401, 403):
+                            failure = 'internet search API credentials cannot access Search'
+                            self._search_key_cooldown[key] = time.monotonic() + 300
+                            skip_key = True
+                            break
+                        if code in (400, 404):
+                            failure = 'internet search model is unavailable for this account'
+                            continue
+                        log.warning('Internet search failed: %s (status %s)', type(error).__name__, code)
+                        failure = 'internet search is temporarily unavailable'
+                        skip_key = True
+                        break
+                    answer = (result.text or '').strip()
+                    candidates = result.candidates or []
+                    grounding = getattr(candidates[0], 'grounding_metadata', None) if candidates else None
+                    sources = []
+                    for chunk in getattr(grounding, 'grounding_chunks', None) or []:
+                        web = getattr(chunk, 'web', None)
+                        uri = getattr(web, 'uri', None)
+                        if (web_search._public_url(uri) and
+                                uri not in {source['url'] for source in sources}):
+                            sources.append({'title': getattr(web, 'title', '') or uri, 'url': uri})
+                        if len(sources) == 5:
+                            break
+                    if answer and sources:
+                        return {'answer': answer[:6000], 'sources': sources,
+                                'provider': 'Gemini grounded Search', 'model': model}
+                    failure = 'internet search returned no source-backed answer'
+                if newer_model_quota:
+                    self._search_key_cooldown[key] = time.monotonic() + 300
+                if time.monotonic() >= deadline:
+                    break
+                if skip_key:
+                    continue
+        if web_search.encyclopedia_eligible(query):
+            try:
+                return await web_search.wikipedia_search(query)
+            except web_search.SearchProviderError as error:
+                log.warning('Wikipedia background search unavailable: %s', error)
+        raise SkillError(f'{failure}; configure BRAVE_SEARCH_API_KEY for general web search')
 
     async def _adapter_open_website(self, url):
         if (not isinstance(url, str) or len(url) > 2048 or
@@ -1131,7 +1355,7 @@ class DesktopSkills:
         data.setdefault('tasks', [])
         return data
 
-    async def _adapter_create_todo(self, title, description='', priority='medium'):
+    def _create_todo(self, title, description='', priority='medium'):
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
             raise SkillError('todo title must be 1 to 200 characters')
         if not isinstance(description, str) or len(description) > 1000:
@@ -1150,7 +1374,7 @@ class DesktopSkills:
         self._write_todos(data)
         return {'status': 'created', 'todo': task, 'system': 'omarchy'}
 
-    async def _adapter_list_todos(self, query='', status='all'):
+    def _list_todos(self, query='', status='all'):
         if not isinstance(query, str) or len(query) > 200 or status not in ('all', 'backlog', 'ongoing', 'complete'):
             raise SkillError('invalid todo filter')
         data = self._read_todos()
@@ -1191,7 +1415,7 @@ class DesktopSkills:
             raise SkillError('multiple todos have that title; use an id from list_todos')
         raise SkillError('todo was not found; use its exact title or id')
 
-    async def _adapter_update_todo(self, task, title=None, description=None, priority=None):
+    def _update_todo(self, task, title=None, description=None, priority=None):
         data = self._read_todos(); item = self._find_todo(data, task)
         if title is not None:
             if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200: raise SkillError('invalid todo title')
@@ -1205,26 +1429,26 @@ class DesktopSkills:
         self._write_todos(data)
         return {'status': 'updated', 'todo': item, 'system': 'omarchy'}
 
-    async def _adapter_complete_todo(self, task, completed=True):
+    def _complete_todo(self, task, completed=True):
         data = self._read_todos(); item = self._find_todo(data, task)
         item['completed'] = bool(completed); item['status'] = 'complete' if item['completed'] else 'ongoing'
         item['completedAt'] = int(time.time() * 1000) if item['completed'] else 0
         self._write_todos(data)
         return {'status': 'completed' if item['completed'] else 'reopened', 'todo': item, 'system': 'omarchy'}
 
-    async def _adapter_delete_todo(self, task):
+    def _delete_todo(self, task):
         data = self._read_todos(); item = self._find_todo(data, task)
         data['tasks'] = [candidate for candidate in data['tasks'] if candidate is not item]
         self._write_todos(data)
         return {'status': 'deleted', 'todo': item, 'system': 'omarchy'}
 
-    async def _adapter_clear_completed_todos(self):
+    def _clear_completed_todos(self):
         data = self._read_todos(); before = len(data['tasks'])
         data['tasks'] = [item for item in data['tasks'] if item.get('status') != 'complete' and not item.get('completed')]
         self._write_todos(data)
         return {'status': 'cleared', 'count': before - len(data['tasks']), 'system': 'omarchy'}
 
-    async def _adapter_move_todo(self, task, status):
+    def _move_todo(self, task, status):
         if status not in ('backlog', 'ongoing', 'complete'):
             raise SkillError('todo status must be backlog, ongoing, or complete')
         data = self._read_todos()
@@ -1235,63 +1459,157 @@ class DesktopSkills:
         self._write_todos(data)
         return {'status': 'moved', 'todo': item, 'system': 'omarchy'}
 
+    async def _todo_operation(self, method, *args, **kwargs):
+        try:
+            return await self._file_worker.run(method, *args, **kwargs)
+        except WorkerBusyError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_create_todo(self, title, description='', priority='medium'):
+        return await self._todo_operation(self._create_todo, title, description, priority)
+
+    async def _adapter_list_todos(self, query='', status='all'):
+        return await self._todo_operation(self._list_todos, query, status)
+
+    async def _adapter_update_todo(self, task, title=None, description=None, priority=None):
+        return await self._todo_operation(self._update_todo, task, title, description, priority)
+
+    async def _adapter_complete_todo(self, task, completed=True):
+        return await self._todo_operation(self._complete_todo, task, completed)
+
+    async def _adapter_delete_todo(self, task):
+        return await self._todo_operation(self._delete_todo, task)
+
+    async def _adapter_clear_completed_todos(self):
+        return await self._todo_operation(self._clear_completed_todos)
+
+    async def _adapter_move_todo(self, task, status):
+        return await self._todo_operation(self._move_todo, task, status)
+
     async def _adapter_get_desktop_context(self):
         """Return a compact read-only snapshot of the current Omarchy desktop."""
         context = {
             'time': dt.datetime.now().astimezone().isoformat(timespec='seconds'),
         }
         hypr = self._commands.get('hyprctl')
+
+        async def _safe_run(coro):
+            try:
+                return await coro
+            except Exception as e:
+                return e
+
+        # Prepare coroutines in exact order for deterministic execution and mock compatibility
+        tasks = []
+        # 1. activewindow
+        tasks.append(_safe_run(self._run(hypr, 'activewindow', '-j', max_output=65536)) if hypr else asyncio.sleep(0, result=None))
+        # 2. activeworkspace
+        tasks.append(_safe_run(self._run(hypr, 'activeworkspace', '-j', max_output=65536)) if hypr else asyncio.sleep(0, result=None))
+        # 3. network
         try:
-            if not hypr: raise SkillError('hyprctl is not installed')
-            active = json.loads(await self._run(hypr, 'activewindow', '-j', max_output=65536))
-            if not isinstance(active, dict): raise ValueError('active window is not an object')
-            context['active_window'] = {
-                'title': active.get('title', ''), 'class': active.get('class', ''),
-                'workspace': active.get('workspace', {}).get('name', active.get('workspace', {}).get('id')),
-            }
-        except (SkillError, json.JSONDecodeError, AttributeError):
+            net_cmd = self._command('omarchy-network-status')
+            tasks.append(_safe_run(self._run(net_cmd, '--verbose')))
+        except SkillError as e:
+            tasks.append(asyncio.sleep(0, result=e))
+        # 4, 5, 6. audio (mute, volume, sink)
+        try:
+            pactl_cmd = self._command('pactl')
+            tasks.append(_safe_run(self._run(pactl_cmd, 'get-sink-mute', '@DEFAULT_SINK@')))
+            tasks.append(_safe_run(self._run(pactl_cmd, 'get-sink-volume', '@DEFAULT_SINK@')))
+            tasks.append(_safe_run(self._run(pactl_cmd, 'get-default-sink')))
+        except SkillError as e:
+            tasks.append(asyncio.sleep(0, result=e))
+            tasks.append(asyncio.sleep(0, result=e))
+            tasks.append(asyncio.sleep(0, result=e))
+        # 7. battery
+        try:
+            bat_cmd = self._command('omarchy-battery-status')
+            tasks.append(_safe_run(self._run(bat_cmd, '--shell')))
+        except SkillError as e:
+            tasks.append(asyncio.sleep(0, result=e))
+        # 8, 9. brightness & monitor
+        try:
+            b_cmd = self._command('omarchy-brightness-display')
+            tasks.append(_safe_run(self._run(b_cmd)))
+        except SkillError as e:
+            tasks.append(asyncio.sleep(0, result=e))
+        try:
+            m_cmd = self._command('omarchy-hyprland-monitor-focused')
+            tasks.append(_safe_run(self._run(m_cmd)))
+        except SkillError as e:
+            tasks.append(asyncio.sleep(0, result=e))
+        # 10. clients
+        tasks.append(_safe_run(self._run(hypr, 'clients', '-j', max_output=65536)) if hypr else asyncio.sleep(0, result=None))
+
+        # Run all 10 concurrently
+        results = await asyncio.gather(*tasks)
+        active_raw, ws_raw, net_raw, mute_raw, vol_raw, sink_raw, bat_raw, bright_raw, mon_raw, clients_raw = results
+
+        # Process active window
+        if isinstance(active_raw, str):
+            try:
+                active = json.loads(active_raw)
+                if isinstance(active, dict):
+                    context['active_window'] = {
+                        'title': active.get('title', ''), 'class': active.get('class', ''),
+                        'workspace': active.get('workspace', {}).get('name', active.get('workspace', {}).get('id')),
+                    }
+                else:
+                    context['active_window'] = None
+            except (json.JSONDecodeError, AttributeError):
+                context['active_window'] = None
+        else:
             context['active_window'] = None
-        try:
-            if not hypr: raise SkillError('hyprctl is not installed')
-            workspace = json.loads(await self._run(hypr, 'activeworkspace', '-j', max_output=65536))
-            if not isinstance(workspace, dict): raise ValueError('workspace is not an object')
-            context['workspace'] = {'id': workspace.get('id'), 'name': workspace.get('name')}
-        except (SkillError, json.JSONDecodeError, AttributeError, ValueError):
+
+        # Process workspace
+        if isinstance(ws_raw, str):
+            try:
+                workspace = json.loads(ws_raw)
+                if isinstance(workspace, dict):
+                    context['workspace'] = {'id': workspace.get('id'), 'name': workspace.get('name')}
+                else:
+                    context['workspace'] = None
+            except (json.JSONDecodeError, AttributeError):
+                context['workspace'] = None
+        else:
             context['workspace'] = None
-        try:
-            network = await self._run(self._command('omarchy-network-status'), '--verbose')
-            parts = network.splitlines()
-            context['network'] = {'raw': network, 'lines': parts}
-        except SkillError:
+
+        # Process network
+        if isinstance(net_raw, str):
+            context['network'] = {'raw': net_raw, 'lines': net_raw.splitlines()}
+        else:
             context['network'] = None
-        try:
-            audio = await self._run(self._command('pactl'), 'get-sink-mute', '@DEFAULT_SINK@')
-            volume = await self._run(self._command('pactl'), 'get-sink-volume', '@DEFAULT_SINK@')
-            context['audio'] = {'muted': audio.lower().endswith('yes'),
-                                'volume': volume,
-                                'sink': await self._run(self._command('pactl'), 'get-default-sink')}
-        except SkillError:
+
+        # Process audio
+        if isinstance(mute_raw, str) and isinstance(vol_raw, str):
+            context['audio'] = {
+                'muted': mute_raw.lower().endswith('yes'),
+                'volume': vol_raw,
+                'sink': sink_raw if isinstance(sink_raw, str) else None,
+            }
+        else:
             context['audio'] = None
-        try:
-            battery = await self._run(self._command('omarchy-battery-status'), '--shell')
-            context['battery'] = {'raw': battery, 'available': bool(battery)}
-        except SkillError:
+
+        # Process battery
+        if isinstance(bat_raw, str):
+            context['battery'] = {'raw': bat_raw, 'available': bool(bat_raw)}
+        else:
             context['battery'] = None
-        try:
-            context['brightness'] = await self._run(self._command('omarchy-brightness-display'))
-            context['brightness_monitor'] = await self._run(
-                self._command('omarchy-hyprland-monitor-focused'))
-        except SkillError:
-            context['brightness'] = None
-        try:
-            if hypr:
-                clients_raw = await self._run(hypr, 'clients', '-j', max_output=65536)
+
+        # Process brightness
+        context['brightness'] = bright_raw if isinstance(bright_raw, str) else None
+        context['brightness_monitor'] = mon_raw if isinstance(mon_raw, str) else None
+
+        # Process clients count
+        if isinstance(clients_raw, str):
+            try:
                 clients = json.loads(clients_raw)
                 context['open_windows_count'] = len(clients) if isinstance(clients, list) else None
-            else:
+            except (json.JSONDecodeError, TypeError):
                 context['open_windows_count'] = None
-        except (SkillError, json.JSONDecodeError, TypeError):
+        else:
             context['open_windows_count'] = None
+
         return context
 
     # ── Desktop awareness adapters ────────────────────────────────────
@@ -1301,10 +1619,15 @@ class DesktopSkills:
         if region not in ('full', 'active'):
             raise SkillError('screen inspection region must be full or active')
         screenshots_dir = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'jarvis_screen'
-        screenshots_dir.mkdir(parents=True, exist_ok=True)
-        filename = str(screenshots_dir / f'inspect_{int(time.time() * 1000)}.png')
+        screenshots_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if screenshots_dir.is_symlink() or screenshots_dir.stat().st_uid != os.getuid():
+            raise SkillError('screen capture directory is not private to this user')
+        screenshots_dir.chmod(0o700)
+        # A bounded JPEG frame can be forwarded to Gemini Live as realtime
+        # visual input; OCR still runs locally and remains the fallback.
+        filename = str(screenshots_dir / f'inspect_{time.time_ns()}.jpg')
 
-        args = [self._command('grim')]
+        args = [self._command('grim'), '-t', 'jpeg', '-q', '70']
         active_window_info = None
         hyprctl = self._commands.get('hyprctl')
         if hyprctl:
@@ -1328,6 +1651,8 @@ class DesktopSkills:
 
         args.append(filename)
         await self._run(*args, timeout=10)
+        if Path(filename).exists():
+            Path(filename).chmod(0o600)
 
         extracted_text = None
         if extract_text:
@@ -1347,6 +1672,92 @@ class DesktopSkills:
             'active_window': active_window_info,
             'text_content': extracted_text,
             'screenshot_path': filename,
+        }
+
+    async def _adapter_control_vision_mode(self, mode, action='start'):
+        """Control real-time video streaming mode (screen, camera, or off)."""
+        clean_mode = str(mode).lower().strip()
+        clean_action = str(action or 'start').lower().strip()
+        if clean_mode not in ('screen', 'camera', 'off'):
+            raise SkillError("vision mode must be 'screen', 'camera', or 'off'")
+        if clean_action not in ('start', 'stop', 'status'):
+            raise SkillError("action must be 'start', 'stop', or 'status'")
+
+        if clean_action == 'status':
+            return {
+                'status': 'ok',
+                'mode': self.vision_mode,
+                'action': 'status',
+                'active': self.vision_mode != 'off',
+            }
+
+        target_mode = 'off' if clean_action == 'stop' else clean_mode
+        self.vision_mode = target_mode
+
+        if callable(self.on_vision_mode_change):
+            res = self.on_vision_mode_change(target_mode)
+            if asyncio.iscoroutine(res):
+                await res
+
+        return {
+            'status': 'ok',
+            'mode': self.vision_mode,
+            'action': clean_action,
+            'active': self.vision_mode != 'off',
+            'message': f"Real-time visual streaming set to '{self.vision_mode}'."
+        }
+
+    async def _adapter_capture_camera_frame(self, device='/dev/video0'):
+        """Capture a single on-demand hardware camera snapshot using direct V4L2 MJPEG actuator."""
+        if not device or not isinstance(device, str) or not device.startswith('/dev/video'):
+            raise SkillError('invalid camera device path; expected /dev/videoN')
+
+        webcam_dir = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'jarvis_webcam'
+        webcam_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if webcam_dir.is_symlink() or webcam_dir.stat().st_uid != os.getuid():
+            raise SkillError('webcam directory is not private to this user')
+        webcam_dir.chmod(0o700)
+
+        filename = str(webcam_dir / f'webcam_{time.time_ns()}.jpg')
+        cmd = self._command('vision_ctrl')
+        raw = await self._run(cmd, 'capture_frame', filename, device, timeout=10, max_output=4096)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            raise SkillError('invalid response from vision_ctrl actuator') from None
+
+        if parsed.get('status') != 'ok':
+            err = parsed.get('error', 'camera capture failed')
+            raise SkillError(err)
+
+        if Path(filename).exists():
+            Path(filename).chmod(0o600)
+
+        actual_path = parsed.get('path') or filename
+        return {
+            'status': 'captured',
+            'device': device,
+            'screenshot_path': actual_path,
+            'file_size': parsed.get('file_size', 0),
+            'method': parsed.get('method', 'v4l2'),
+        }
+
+    async def _adapter_check_vision_hardware(self):
+        """Check hardware cameras and display server environment."""
+        cmd = self._command('vision_ctrl')
+        raw_status = await self._run(cmd, 'status', timeout=5, max_output=4096)
+        raw_cams = await self._run(cmd, 'check_camera', timeout=5, max_output=8192)
+        try:
+            status_data = json.loads(raw_status)
+            cam_data = json.loads(raw_cams)
+        except json.JSONDecodeError:
+            raise SkillError('invalid JSON from vision_ctrl actuator') from None
+
+        return {
+            'status': 'ok',
+            'vision_mode': self.vision_mode,
+            'hardware_status': status_data,
+            'cameras': cam_data.get('cameras', []),
         }
 
     async def _adapter_list_windows(self, workspace=None):

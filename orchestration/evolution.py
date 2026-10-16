@@ -22,6 +22,7 @@ import stat
 import sys
 import uuid
 
+from core.secret_env import sanitized_subprocess_env
 from .agent_orchestrator import AGENTS, OrchestrationError, now
 
 
@@ -154,7 +155,7 @@ class EvolutionManager:
         return {'status': 'success', 'jobs': [
             {key: job.get(key) for key in fields} for job in self.jobs.values()]}
 
-    async def start(self, goal, workspace, agent='codex'):
+    async def start(self, goal, workspace, agent='codex', requested_action=None):
         if self._closed or self.read_only:
             raise EvolutionError('evolution manager is closed')
         if not self.can_run():
@@ -178,6 +179,7 @@ class EvolutionManager:
         job = {'id': key, 'goal': goal.strip(), 'agent': agent, 'workspace': str(root),
                'checkout': str(self.state_dir / key / 'checkout'), 'state': 'queued',
                'created_at': now(), 'updated_at': now(), 'source_head': None,
+               'requested_action': requested_action or goal.strip(),
                'stages': [], 'commands': [], 'tests': None, 'baseline_tests': None, 'diff': '',
                'diff_truncated': False, 'cancel_requested': False,
                'active_agent_job_id': None, 'review_trust': 'untrusted',
@@ -233,9 +235,10 @@ class EvolutionManager:
                 *argv, cwd=str(cwd), stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True, umask=0o077,
-                env={**{key: value for key, value in os.environ.items()
-                        if not key.startswith('GIT_')},
-                     'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'}))
+                env=sanitized_subprocess_env(
+                    {key: value for key, value in os.environ.items()
+                     if not key.startswith('GIT_')},
+                    GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0')))
             try:
                 process = await asyncio.shield(spawn)
             except asyncio.CancelledError:

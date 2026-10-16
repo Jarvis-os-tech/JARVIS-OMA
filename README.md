@@ -17,9 +17,9 @@ sandboxed verification and review. See [capability development](docs/capability-
 
 ## Run
 
-Requirements: Python 3.12+, a Gemini API key with Live access, and working PipeWire
-with `pw-record`, `pw-play`, and `pactl`. On Omarchy these audio utilities may
-already be installed. No system service installation or restart is required.
+Requirements: Python 3.12+, a Gemini API key with Live access, working PipeWire
+with `pactl` (for echo-cancellation routing), and PortAudio (`libportaudio2` / `sounddevice`).
+No system service installation or restart is required.
 
 Open a terminal **inside this folder**, then:
 
@@ -89,7 +89,7 @@ Skills are enabled by default. At startup Jarvis reads JSON manifests from
 the discovered declarations to Gemini Live. The bundled manifests enable:
 
 - **Capability development**: `start_development`, `development_status`, `list_development_jobs`, and `cancel_development` turn a concrete improvement request into a persisted, tested code proposal; proposals are not automatically activated.
-- **Google Workspace connector**: Gmail search/read/drafts, Google Calendar events/calendars, and Google Tasks are forwarded to the existing OAuth connector in `/home/g0pi/Projects/JARVIS-OS-1`.
+- **Google Workspace connector**: Gmail search/read/drafts, Google Calendar events/calendars, Google Tasks, and read-only Drive, Docs, and Sheets are handled by the local OAuth connector in `connectors/google_workspace.py`. Existing accounts must reconnect once to grant the new Drive read permission; see `docs/voice-capability-wiring.md`.
 
 - **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
 - **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)

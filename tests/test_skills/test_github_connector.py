@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import unittest
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
@@ -7,6 +8,51 @@ from connectors import github
 
 
 class GithubConnectorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repository_analysis_finds_and_reads_pinned_evidence(self):
+        ref = 'a' * 40
+        calls = []
+
+        async def fetch(path, query=None, *, max_bytes=1_000_000):
+            calls.append((path, query, max_bytes))
+            if path == '/repos/acme/widgets':
+                return {'default_branch': 'main'}
+            if path.endswith('/commits/main'):
+                return {'sha': ref}
+            if '/git/trees/' in path:
+                return {'truncated': False, 'tree': [
+                    {'type': 'blob', 'path': 'src/audio/playback.py', 'size': 500},
+                    {'type': 'blob', 'path': 'docs/README.md', 'size': 100},
+                    {'type': 'tree', 'path': 'src/audio'},
+                ]}
+            if '/contents/' in path:
+                return {'type': 'file', 'path': 'src/audio/playback.py', 'size': 24,
+                        'encoding': 'base64', 'content': base64.b64encode(
+                            b'def play():\n    return 1\n').decode()}
+            raise AssertionError(path)
+
+        with patch.object(github, '_fetch', side_effect=fetch):
+            found = await github.dispatch('github_find_relevant_files', {
+                'owner': 'acme', 'repository': 'widgets', 'query': 'audio playback'})
+            self.assertTrue(found['success'])
+            self.assertEqual(found['ref'], ref)
+            self.assertEqual(found['files'][0]['path'], 'src/audio/playback.py')
+            read = await github.dispatch('github_read_repository_files', {
+                'owner': 'acme', 'repository': 'widgets', 'ref': ref,
+                'paths': ['src/audio/playback.py']})
+        self.assertTrue(read['success'])
+        self.assertEqual(read['files'][0]['content'], '1: def play():\n2:     return 1')
+        self.assertIn(f'/blob/{ref}/src/audio/playback.py#L1-L2', read['files'][0]['url'])
+        self.assertTrue(any('/git/trees/' in path and max_bytes == github.MAX_TREE_BYTES
+                            for path, _, max_bytes in calls))
+        self.assertTrue(any(query == {'ref': ref} for _, query, _ in calls))
+
+    async def test_repository_analysis_rejects_unpinned_or_unsafe_reads(self):
+        for ref, paths in [('main', ['src/app.py']), ('a' * 40, ['../private']),
+                           ('a' * 40, ['src/app.py'] * 2), ('a' * 40, ['x'] * 7)]:
+            result = await github.dispatch('github_read_repository_files', {
+                'owner': 'acme', 'repository': 'widgets', 'ref': ref, 'paths': paths})
+            self.assertFalse(result['success'])
+
     async def test_token_environment_precedes_private_file_and_gh_token_environment(self):
         with patch.dict('os.environ', {'GH_TOKEN': 'env-token'}, clear=True), \
                 patch.object(github.credentials, 'get', side_effect=['file-token', 'other-file']):
@@ -28,6 +74,47 @@ class GithubConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fetch.await_args.args[0], '/repos/acme/widgets/issues/4')
         self.assertEqual(len(result['item']['body']), 4000)
 
+    async def test_repository_files_are_available_for_code_analysis(self):
+        entries = [
+            {'name': 'README.md', 'path': 'README.md', 'type': 'file', 'size': 15},
+            {'name': 'src', 'path': 'src', 'type': 'dir', 'size': 0},
+        ]
+        with patch.object(github, '_fetch', return_value=entries) as fetch:
+            result = await github.dispatch('github_list_repository_files',
+                                           {'owner': 'acme', 'repository': 'widgets'})
+        self.assertEqual(fetch.await_args.args, ('/repos/acme/widgets/contents', None))
+        self.assertEqual([item['path'] for item in result['items']], ['README.md', 'src'])
+
+        contents = {'type': 'file', 'path': 'src/app.py', 'size': 11,
+                    'encoding': 'base64', 'content': 'cHJpbnQoJ2hpJyk='}
+        with patch.object(github, '_fetch', return_value=contents) as fetch:
+            result = await github.dispatch('github_read_repository_file',
+                                           {'owner': 'acme', 'repository': 'widgets', 'path': 'src/app.py'})
+        self.assertEqual(fetch.await_args.args, ('/repos/acme/widgets/contents/src/app.py', None))
+        self.assertEqual(result['content'], "print('hi')")
+
+    async def test_repository_paths_are_encoded_and_cannot_escape(self):
+        with patch.object(github, '_fetch', return_value=[]) as fetch:
+            result = await github.dispatch('github_list_repository_files',
+                                           {'owner': 'acme', 'repository': 'widgets', 'path': 'docs/design notes'})
+        self.assertTrue(result['success'])
+        self.assertEqual(fetch.await_args.args[0], '/repos/acme/widgets/contents/docs/design%20notes')
+        for path in ('../private', 'src//main.py', 'src/./main.py', 'src/\\main.py', 'src/\x00main.py'):
+            with self.subTest(path=path):
+                result = await github.dispatch('github_read_repository_file',
+                                               {'owner': 'acme', 'repository': 'widgets', 'path': path})
+                self.assertFalse(result['success'])
+
+    async def test_unreadable_repository_file_is_reported_without_raw_data(self):
+        with patch.object(github, '_fetch', return_value={
+            'type': 'file', 'path': 'binary.dat', 'encoding': 'base64',
+            'content': 'invalid encoded private bytes!!!',
+        }):
+            result = await github.dispatch('github_read_repository_file',
+                                           {'owner': 'acme', 'repository': 'widgets', 'path': 'binary.dat'})
+        self.assertFalse(result['success'])
+        self.assertNotIn('private bytes', str(result))
+
     async def test_github_authorize_opens_browser_with_state_and_pkce(self):
         fake_server = MagicMock()
         fake_server.server_address = ('127.0.0.1', 43123)
@@ -36,7 +123,7 @@ class GithubConnectorTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(github, 'HTTPServer', return_value=fake_server), \
                 patch.object(github, '_auth_server', None), \
                 patch.object(github.threading, 'Thread') as thread, \
-                patch.object(github.webbrowser, 'open', return_value=True) as opened:
+                patch.object(github, 'open_url', return_value=True) as opened:
             result = github.github_authorize()
         self.assertTrue(result['success'])
         self.assertIn('client-id', result['auth_url'])

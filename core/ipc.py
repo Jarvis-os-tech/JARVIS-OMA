@@ -23,11 +23,13 @@ class JarvisIPCServer:
         status_provider: Optional[Callable[[], dict[str, Any]]] = None,
         toggle_mute_cb: Optional[Callable[[], bool]] = None,
         interrupt_cb: Optional[Callable[[], None]] = None,
+        set_vision_mode_cb: Optional[Callable[[str], dict[str, Any]]] = None,
     ):
         self.socket_path = Path(socket_path) if socket_path else default_socket_path()
         self.status_provider = status_provider or (lambda: {})
         self.toggle_mute_cb = toggle_mute_cb or (lambda: False)
         self.interrupt_cb = interrupt_cb or (lambda: None)
+        self.set_vision_mode_cb = set_vision_mode_cb or (lambda mode: {"vision_mode": mode})
         self._server: Optional[asyncio.AbstractServer] = None
         self._subscribers: set[asyncio.StreamWriter] = set()
 
@@ -66,6 +68,16 @@ class JarvisIPCServer:
             elif cmd == "interrupt":
                 self.interrupt_cb()
                 writer.write((json.dumps({"status": "ok", "interrupted": True}) + "\n").encode("utf-8"))
+                await writer.drain()
+            elif cmd == "set_vision_mode":
+                mode = req.get("mode", "off")
+                res = self.set_vision_mode_cb(mode)
+                writer.write((json.dumps({"status": "ok", **res}) + "\n").encode("utf-8"))
+                await writer.drain()
+                self.broadcast_state({"vision_mode": res.get("vision_mode", mode)})
+            elif cmd == "get_vision_mode":
+                status = self.status_provider()
+                writer.write((json.dumps({"status": "ok", "vision_mode": status.get("vision_mode", "off")}) + "\n").encode("utf-8"))
                 await writer.drain()
             elif cmd == "subscribe":
                 is_subscriber = True

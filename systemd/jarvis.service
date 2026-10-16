@@ -7,18 +7,23 @@ Wants=pipewire.service wireplumber.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/g0pi/Projects/JARVIS-OMA
-ExecStart=/home/g0pi/Projects/JARVIS-OMA/run.sh
+WorkingDirectory=%h/Projects/JARVIS-OMA
+ExecStart=%h/Projects/JARVIS-OMA/run.sh
 Restart=always
 RestartSec=3s
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=10s
 
+# Normal process scheduling keeps startup independent of realtime privileges.
+
 # Environment settings for Wayland, PipeWire and Omarchy desktop
-Environment=PATH=/usr/share/omarchy/bin:/home/g0pi/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
+Environment=PATH=/usr/share/omarchy/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
 Environment=OMARCHY_PATH=/usr/share/omarchy
-EnvironmentFile=-/home/g0pi/Projects/JARVIS-OMA/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PIPEWIRE_LATENCY=128/48000
+Environment=PIPEWIRE_QUANTUM=128/48000
+EnvironmentFile=-%h/Projects/JARVIS-OMA/.env
 
 StandardOutput=journal
 StandardError=journal

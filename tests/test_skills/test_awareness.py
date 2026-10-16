@@ -137,19 +137,21 @@ class DesktopAwarenessTests(unittest.IsolatedAsyncioTestCase):
             'Error: module not found\nat app.py line 42',  # tesseract OCR
         ])
 
-        res = await skills.execute('inspect_screen', {'region': 'active', 'extract_text': True})
+        with patch.dict('os.environ', {'XDG_RUNTIME_DIR': '/tmp'}):
+            res = await skills.execute('inspect_screen', {'region': 'active', 'extract_text': True})
         self.assertEqual(res['status'], 'inspected')
         self.assertEqual(res['region'], 'active')
         self.assertEqual(res['active_window']['class'], 'code')
         self.assertIn('Error: module not found', res['text_content'])
-        self.assertTrue(res['screenshot_path'].endswith('.png'))
+        self.assertTrue(res['screenshot_path'].endswith('.jpg'))
 
         # Test full screen inspection without text extraction
         skills._run = AsyncMock(side_effect=[
             active_window_json,
             '',  # grim
         ])
-        res_full = await skills.execute('inspect_screen', {'region': 'full', 'extract_text': False})
+        with patch.dict('os.environ', {'XDG_RUNTIME_DIR': '/tmp'}):
+            res_full = await skills.execute('inspect_screen', {'region': 'full', 'extract_text': False})
         self.assertEqual(res_full['region'], 'full')
         self.assertIsNone(res_full['text_content'])
 

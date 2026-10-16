@@ -1,4 +1,4 @@
-"""Portable, allowlisted Gmail, Calendar, and Tasks connector."""
+"""Portable, allowlisted Google Workspace connector."""
 from __future__ import annotations
 
 import asyncio
@@ -10,8 +10,8 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import re
 import secrets
-import socket
 import subprocess
 import threading
 import time
@@ -20,16 +20,23 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
+from connectors.browser import open_url
 from connectors import credentials
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+OAUTH_PORT = 8085
 GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 CALENDAR_BASE = "https://www.googleapis.com/calendar/v3"
 TASKS_BASE = "https://tasks.googleapis.com/tasks/v1"
+DRIVE_BASE = "https://www.googleapis.com/drive/v3"
+DOCS_BASE = "https://docs.googleapis.com/v1"
+SHEETS_BASE = "https://sheets.googleapis.com/v4"
+DRIVE_READ_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 SCOPES = (
     "https://mail.google.com/",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/tasks",
+    DRIVE_READ_SCOPE,
 )
 TOOLS = frozenset({
     "gmail_search", "gmail_read", "gmail_create_draft", "gmail_send_draft",
@@ -37,6 +44,8 @@ TOOLS = frozenset({
     "calendar_create_event", "calendar_list_calendars", "tasks_list_lists",
     "tasks_list_tasks", "tasks_create_task", "tasks_complete_task",
     "google_authorize", "google_connection_status",
+    "drive_search_files", "drive_get_file", "drive_read_text_file",
+    "docs_read_document", "sheets_get_spreadsheet", "sheets_read_range",
 })
 _refresh_lock = threading.Lock()
 _auth_server = None
@@ -148,10 +157,10 @@ def authenticated():
 
 
 def _api(method, url, body=None, params=None):
-    if not url.startswith((GMAIL_BASE, CALENDAR_BASE, TASKS_BASE)):
+    if not url.startswith((GMAIL_BASE, CALENDAR_BASE, TASKS_BASE, DRIVE_BASE, DOCS_BASE, SHEETS_BASE)):
         return {"error": "Invalid Google API host"}
     if params:
-        url += "?" + urllib.parse.urlencode(params)
+        url += "?" + urllib.parse.urlencode(params, doseq=True)
     try:
         token = _access_token()
     except RuntimeError as exc:
@@ -159,6 +168,204 @@ def _api(method, url, body=None, params=None):
     return _http_json(url, method, body, {
         "Authorization": f"Bearer {token}", "Content-Type": "application/json",
     })
+
+
+def _drive_scope_error():
+    """Return a clear consent requirement without attempting a privileged request."""
+    try:
+        granted = set(str(_load_tokens().get("scope", "")).split())
+    except RuntimeError:
+        granted = set()
+    if DRIVE_READ_SCOPE in granted or "https://www.googleapis.com/auth/drive" in granted:
+        return None
+    return {"success": False, "setup_required": True,
+            "error": "Drive, Docs, and Sheets need read-only permission. Say 'open Google authorization' to reconnect your Google account."}
+
+
+def _google_error(response):
+    result = {"success": False, "error": response["error"]}
+    if response.get("setup_required") or response["error"] in ("HTTP 401", "HTTP 403"):
+        result["setup_required"] = True
+        if response["error"] == "HTTP 403":
+            result["message"] = "Check that the Drive, Docs, and Sheets APIs are enabled for this Google Cloud project, then reconnect the account."
+    return result
+
+
+def _drive_file(file):
+    limits = {"id": 256, "name": 512, "mimeType": 128, "description": 500,
+              "modifiedTime": 64, "webViewLink": 2048}
+    return {key: str(file.get(key, ""))[:limit] for key, limit in limits.items()}
+
+
+def drive_search_files(query="", max_results=10):
+    if error := _drive_scope_error():
+        return error
+    limit = _bounded(max_results)
+    term = str(query).strip().replace("\\", "\\\\").replace("'", "\\'")
+    condition = "trashed = false"
+    if term:
+        condition += f" and (name contains '{term}' or fullText contains '{term}')"
+    response = _api("GET", f"{DRIVE_BASE}/files", params={
+        "q": condition, "pageSize": limit,
+        "fields": "nextPageToken,files(id,name,mimeType,description,modifiedTime,webViewLink)",
+        "orderBy": "modifiedTime desc", "spaces": "drive",
+    })
+    if "error" in response:
+        return _google_error(response)
+    files = [_drive_file(file) for file in response.get("files", [])[:limit]]
+    return {"success": True, "count": len(files), "files": files,
+            "has_more": bool(response.get("nextPageToken"))}
+
+
+def drive_get_file(file_id):
+    if error := _drive_scope_error():
+        return error
+    file_id = urllib.parse.quote(str(file_id), safe="")
+    response = _api("GET", f"{DRIVE_BASE}/files/{file_id}", params={
+        "fields": "id,name,mimeType,description,modifiedTime,webViewLink,size,parents",
+    })
+    if "error" in response:
+        return _google_error(response)
+    return {"success": True, "file": {**_drive_file(response),
+            "size": response.get("size"), "parents": response.get("parents", [])[:20]}}
+
+
+def drive_read_text_file(file_id):
+    """Read small uploaded text files; native Docs and Sheets have dedicated tools."""
+    metadata = drive_get_file(file_id)
+    if not metadata.get("success"):
+        return metadata
+    file = metadata["file"]
+    mime_type = file["mimeType"]
+    if mime_type not in ("text/plain", "text/markdown", "text/csv", "application/json", "application/xml"):
+        return {"success": False, "error": "This Drive file is not a supported text upload. Use docs_read_document or sheets_read_range for Google files."}
+    response = _api_text(f"{DRIVE_BASE}/files/{urllib.parse.quote(str(file_id), safe='')}?alt=media")
+    if "error" in response:
+        return _google_error(response)
+    return {"success": True, "file": file, "content": response["text"],
+            "truncated": response["truncated"]}
+
+
+def _api_text(url):
+    if not url.startswith(f"{DRIVE_BASE}/files/"):
+        return {"error": "Invalid Google API host"}
+    try:
+        token = _access_token()
+    except RuntimeError as exc:
+        return {"error": str(exc), "setup_required": True}
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with _opener.open(request, timeout=15) as response:
+            raw = response.read(20_001)
+        return {"text": raw[:20_000].decode("utf-8", errors="replace"), "truncated": len(raw) > 20_000}
+    except urllib.error.HTTPError as exc:
+        return {"error": f"HTTP {exc.code}"}
+    except Exception:
+        return {"error": "Google request failed"}
+
+
+def _document_text(content, chunks):
+    for element in content or []:
+        paragraph = element.get("paragraph", {})
+        for run in paragraph.get("elements", []):
+            if "textRun" in run:
+                chunks.append(run["textRun"].get("content", ""))
+        table = element.get("table", {})
+        for row in table.get("tableRows", []):
+            for cell in row.get("tableCells", []):
+                _document_text(cell.get("content", []), chunks)
+        _document_text(element.get("tableOfContents", {}).get("content", []), chunks)
+
+
+def docs_read_document(document_id):
+    if error := _drive_scope_error():
+        return error
+    document_id = urllib.parse.quote(str(document_id), safe="")
+    response = _api("GET", f"{DOCS_BASE}/documents/{document_id}",
+                    params={"includeTabsContent": "true"})
+    if "error" in response:
+        return _google_error(response)
+    chunks = []
+    def collect(tabs):
+        for tab in tabs:
+            title = tab.get("tabProperties", {}).get("title", "")
+            if title:
+                chunks.append(f"\n[{title}]\n")
+            _document_text(tab.get("documentTab", {}).get("body", {}).get("content", []), chunks)
+            collect(tab.get("childTabs", []))
+    if response.get("tabs"):
+        collect(response["tabs"])
+    else:
+        _document_text(response.get("body", {}).get("content", []), chunks)
+    full = "".join(chunks)
+    return {"success": True, "document_id": response.get("documentId", document_id),
+            "title": response.get("title", ""), "text": full[:20_000],
+            "truncated": len(full) > 20_000}
+
+
+def sheets_get_spreadsheet(spreadsheet_id):
+    if error := _drive_scope_error():
+        return error
+    spreadsheet_id = urllib.parse.quote(str(spreadsheet_id), safe="")
+    response = _api("GET", f"{SHEETS_BASE}/spreadsheets/{spreadsheet_id}", params={
+        "fields": "spreadsheetId,spreadsheetUrl,properties(title),sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))",
+    })
+    if "error" in response:
+        return _google_error(response)
+    return {"success": True, "spreadsheet_id": response.get("spreadsheetId", spreadsheet_id),
+            "title": response.get("properties", {}).get("title", ""),
+            "url": response.get("spreadsheetUrl", ""),
+            "sheets": [sheet.get("properties", {}) for sheet in response.get("sheets", [])[:50]]}
+
+
+def _column_number(label):
+    value = 0
+    for char in label.upper():
+        value = value * 26 + ord(char) - ord("A") + 1
+    return value
+
+
+_A1_RANGE = re.compile(r"(?:(?:'[^']*(?:''[^']*)*'|[^!]+)!)?([A-Z]+)([1-9][0-9]*):([A-Z]+)([1-9][0-9]*)\Z", re.I)
+
+
+def sheets_read_range(spreadsheet_id, cell_range="A1:J25"):
+    if error := _drive_scope_error():
+        return error
+    cell_range = str(cell_range).strip()
+    match = _A1_RANGE.fullmatch(cell_range) if len(cell_range) <= 100 else None
+    if not match:
+        return {"success": False, "error": "Use a bounded A1 range such as Sheet1!A1:J25."}
+    start_col, start_row, end_col, end_row = match.groups()
+    columns = _column_number(end_col) - _column_number(start_col) + 1
+    rows = int(end_row) - int(start_row) + 1
+    if columns < 1 or rows < 1 or columns > 20 or rows > 100 or columns * rows > 2000:
+        return {"success": False, "error": "Read at most 100 rows, 20 columns, and 2,000 cells at a time."}
+    spreadsheet_id = urllib.parse.quote(str(spreadsheet_id), safe="")
+    response = _api("GET", f"{SHEETS_BASE}/spreadsheets/{spreadsheet_id}/values/{urllib.parse.quote(cell_range, safe='')}",
+                    params={"valueRenderOption": "FORMATTED_VALUE"})
+    if "error" in response:
+        return _google_error(response)
+    values = response.get("values", [])[:100]
+    bounded = []
+    remaining = 20_000
+    truncated = len(response.get("values", [])) > 100
+    for row in values:
+        result_row = []
+        truncated = truncated or len(row) > 20
+        for cell in row[:20]:
+            text = str(cell)
+            if len(text) > 500 or len(text) > remaining:
+                truncated = True
+            value = text[:min(500, remaining)]
+            result_row.append(value)
+            remaining -= len(value)
+            if remaining == 0:
+                break
+        bounded.append(result_row)
+        if remaining == 0:
+            break
+    return {"success": True, "range": response.get("range", cell_range), "values": bounded,
+            "rows": len(bounded), "truncated": truncated or len(bounded) < len(values)}
 
 
 def _bounded(value, default=10):
@@ -184,7 +391,8 @@ def _extract_body(payload):
 
 
 def _headers(response):
-    return {h.get("name", ""): h.get("value", "") for h in response.get("payload", {}).get("headers", [])}
+    return {h.get("name", "").lower(): h.get("value", "")
+            for h in response.get("payload", {}).get("headers", [])}
 
 
 def gmail_search(query="", max_results=10):
@@ -193,10 +401,15 @@ def gmail_search(query="", max_results=10):
     if "error" in res: return {"success": False, "error": res["error"], **({"setup_required": True} if res.get("setup_required") else {})}
     results = []
     for msg in res.get("messages", [])[:limit]:
-        detail = _api("GET", f"{GMAIL_BASE}/messages/{urllib.parse.quote(str(msg['id']), safe='')}", params={"format": "metadata", "metadataHeaders": "From,Subject,Date"})
-        if "error" not in detail:
-            h = _headers(detail)
-            results.append({"id": msg["id"], "subject": h.get("Subject", "(no subject)"), "from": h.get("From", ""), "date": h.get("Date", ""), "snippet": detail.get("snippet", "")})
+        detail = _api("GET", f"{GMAIL_BASE}/messages/{urllib.parse.quote(str(msg['id']), safe='')}",
+                      params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]})
+        if "error" in detail:
+            return {"success": False, "error": detail["error"],
+                    **({"setup_required": True} if detail.get("setup_required") else {})}
+        h = _headers(detail)
+        results.append({"id": msg["id"], "subject": h.get("subject", "(no subject)"),
+                        "from": h.get("from", ""), "date": h.get("date", ""),
+                        "snippet": detail.get("snippet", "")})
     return {"success": True, "count": len(results), "messages": results}
 
 
@@ -204,7 +417,10 @@ def gmail_read(message_id):
     res = _api("GET", f"{GMAIL_BASE}/messages/{urllib.parse.quote(str(message_id), safe='')}", params={"format": "full"})
     if "error" in res: return {"success": False, "error": res["error"], **({"setup_required": True} if res.get("setup_required") else {})}
     h = _headers(res)
-    return {"success": True, "id": message_id, "subject": h.get("Subject", ""), "from": h.get("From", ""), "to": h.get("To", ""), "date": h.get("Date", ""), "snippet": res.get("snippet", ""), "body": _extract_body(res.get("payload", {}))[:4000]}
+    snippet = res.get("snippet", "")
+    return {"success": True, "id": message_id, "subject": h.get("subject", ""),
+            "from": h.get("from", ""), "to": h.get("to", ""), "date": h.get("date", ""),
+            "snippet": snippet, "body": (_extract_body(res.get("payload", {})) or snippet)[:4000]}
 
 
 def gmail_create_draft(to, subject, body, cc=""):
@@ -274,10 +490,27 @@ def calendar_list_calendars():
 def tasks_list_lists():
     res = _api("GET", f"{TASKS_BASE}/users/@me/lists", params={"maxResults": 50})
     if "error" in res: return {"success": False, "error": res["error"]}
-    return {"success": True, "lists": res.get("items", [])[:50]}
+    lists = res.get("items", [])[:50]
+    return {"success": True, "lists": lists,
+            "default_list_id": lists[0].get("id") if lists else None}
+
+
+def _task_list_id(list_id):
+    """Resolve a spoken default-list request to an account-specific list ID."""
+    if list_id != "@default":
+        return str(list_id), None
+    result = tasks_list_lists()
+    if not result["success"]:
+        return None, result
+    selected = result.get("default_list_id")
+    if not selected:
+        return None, {"success": False, "error": "No Google Task list is available."}
+    return str(selected), None
 
 
 def tasks_list_tasks(list_id="@default"):
+    list_id, error = _task_list_id(list_id)
+    if error: return error
     lid = urllib.parse.quote(str(list_id), safe="")
     res = _api("GET", f"{TASKS_BASE}/lists/{lid}/tasks", params={"maxResults": 50})
     if "error" in res: return {"success": False, "error": res["error"]}
@@ -285,6 +518,8 @@ def tasks_list_tasks(list_id="@default"):
 
 
 def tasks_create_task(title, list_id="@default"):
+    list_id, error = _task_list_id(list_id)
+    if error: return error
     lid = urllib.parse.quote(str(list_id), safe="")
     res = _api("POST", f"{TASKS_BASE}/lists/{lid}/tasks", {"title": title})
     if "error" in res: return {"success": False, "error": res["error"]}
@@ -292,6 +527,8 @@ def tasks_create_task(title, list_id="@default"):
 
 
 def tasks_complete_task(task_id, list_id="@default"):
+    list_id, error = _task_list_id(list_id)
+    if error: return error
     lid, tid = urllib.parse.quote(str(list_id), safe=""), urllib.parse.quote(str(task_id), safe="")
     res = _api("PATCH", f"{TASKS_BASE}/lists/{lid}/tasks/{tid}", {"status": "completed"})
     if "error" in res: return {"success": False, "error": res["error"]}
@@ -301,10 +538,14 @@ def tasks_complete_task(task_id, list_id="@default"):
 def google_connection_status():
     is_auth = authenticated()
     if is_auth:
+        drive_ready = _drive_scope_error() is None
         return {
             "success": True,
             "connected": True,
-            "message": "Google Workspace is connected and authorized.",
+            "drive_connected": drive_ready,
+            "message": ("Google Workspace is connected, including read-only Drive, Docs, and Sheets."
+                        if drive_ready else
+                        "Gmail, Calendar, and Tasks are connected. Drive, Docs, and Sheets need read-only permission; say 'open Google authorization' to reconnect."),
         }
     return {
         "success": True,
@@ -321,14 +562,7 @@ def _find_free_oauth_port():
             return int(env_port)
         except ValueError:
             pass
-    for p in (8080, 8085, 8088):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("127.0.0.1", p))
-                return p
-        except OSError:
-            continue
-    return 8085
+    return OAUTH_PORT
 
 
 def google_authorize():
@@ -400,7 +634,7 @@ def google_authorize():
                 self.wfile.write(
                     b"<html><body style='font-family: sans-serif; text-align: center; padding-top: 50px;'>"
                     b"<h2 style='color: #4CAF50;'>Authorization Successful!</h2>"
-                    b"<p>JARVIS is now connected to your Google Workspace account (Gmail, Calendar, Tasks).</p>"
+                    b"<p>JARVIS is now connected to Gmail, Calendar, Tasks, Drive, Docs, and Sheets.</p>"
                     b"<p>You may close this tab and return to JARVIS.</p>"
                     b"</body></html>"
                 )
@@ -469,22 +703,13 @@ def google_authorize():
         "code_challenge_method": "S256",
     })
 
-    opened = False
-    try:
-        opened = webbrowser.open(auth_url)
-    except Exception:
-        pass
-    if not opened:
-        try:
-            subprocess.Popen(["xdg-open", auth_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            opened = True
-        except Exception:
-            pass
+    opened = open_url(auth_url)
 
     return {
-        "success": True,
+        "success": opened,
         "message": "Opened Google authorization in your browser. Please approve access to connect your account.",
         "auth_url": auth_url,
+        **({} if opened else {"error": "Could not open a visible browser window."}),
     }
 
 
@@ -502,6 +727,12 @@ _DISPATCH = {
     "tasks_list_tasks": lambda a: tasks_list_tasks(a.get("list_id", "@default")),
     "tasks_create_task": lambda a: tasks_create_task(a["title"], a.get("list_id", "@default")),
     "tasks_complete_task": lambda a: tasks_complete_task(a["task_id"], a.get("list_id", "@default")),
+    "drive_search_files": lambda a: drive_search_files(a.get("query", ""), a.get("max_results", 10)),
+    "drive_get_file": lambda a: drive_get_file(a["file_id"]),
+    "drive_read_text_file": lambda a: drive_read_text_file(a["file_id"]),
+    "docs_read_document": lambda a: docs_read_document(a["document_id"]),
+    "sheets_get_spreadsheet": lambda a: sheets_get_spreadsheet(a["spreadsheet_id"]),
+    "sheets_read_range": lambda a: sheets_read_range(a["spreadsheet_id"], a.get("cell_range", "A1:J25")),
     "google_authorize": lambda a: google_authorize(),
     "google_connection_status": lambda a: google_connection_status(),
 }

@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -149,11 +150,21 @@ async def press_key(key: str, modifiers: str | list[str] | None = None) -> dict[
     return {"status": "error", "message": f"wtype press_key failed: {stderr}"}
 
 
-async def list_desktop_commands(query: str | None = None, limit: int = 25) -> dict[str, Any]:
-    """Extract and list desktop keybindings/actions from omarchy-menu-keybindings."""
+_cached_bindings: list[dict[str, Any]] | None = None
+_cached_bindings_time: float = 0.0
+_BINDINGS_CACHE_TTL: float = 300.0
+
+
+async def _get_bindings() -> list[dict[str, Any]]:
+    """Load and cache desktop keybindings from omarchy-menu-keybindings."""
+    global _cached_bindings, _cached_bindings_time
+    now = time.monotonic()
+    if _cached_bindings is not None and (now - _cached_bindings_time) < _BINDINGS_CACHE_TTL:
+        return _cached_bindings
+
     script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
     if not script_path:
-        return {"status": "error", "message": "omarchy-menu-keybindings is not installed"}
+        return []
 
     extract_cmd = f"set -- --print; source {script_path} >/dev/null 2>&1; output_binding_records"
     process = await asyncio.create_subprocess_exec(
@@ -170,7 +181,7 @@ async def list_desktop_commands(query: str | None = None, limit: int = 25) -> di
             process.kill()
         except OSError:
             pass
-        return {"status": "error", "message": "keybindings loading timed out"}
+        return _cached_bindings or []
 
     bindings = []
     for line in stdout.splitlines():
@@ -197,6 +208,17 @@ async def list_desktop_commands(query: str | None = None, limit: int = 25) -> di
             "dispatcher": dispatcher,
             "arg": arg,
         })
+
+    _cached_bindings = bindings
+    _cached_bindings_time = now
+    return bindings
+
+
+async def list_desktop_commands(query: str | None = None, limit: int = 25) -> dict[str, Any]:
+    """Extract and list desktop keybindings/actions from omarchy-menu-keybindings."""
+    bindings = await _get_bindings()
+    if not bindings:
+        return {"status": "error", "message": "no keybindings available"}
 
     if query:
         q = query.strip().lower()
@@ -225,29 +247,7 @@ async def execute_desktop_command(title: str) -> dict[str, Any]:
     if not script_path:
         return {"status": "error", "message": "omarchy-menu-keybindings is not installed"}
 
-    extract_cmd = f"set -- --print; source {script_path} >/dev/null 2>&1; output_binding_records"
-    process = await asyncio.create_subprocess_exec(
-        "bash", "-c", extract_cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=_desktop_env(),
-    )
-    try:
-        stdout_bytes, _ = await asyncio.wait_for(process.communicate(), timeout=_TIMEOUT)
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-    except asyncio.TimeoutError:
-        return {"status": "error", "message": "keybindings loading timed out"}
-
-    bindings = []
-    for line in stdout.splitlines():
-        parts = line.split("\t")
-        if len(parts) >= 2:
-            left = parts[0]
-            dispatcher = parts[1]
-            arg = parts[2] if len(parts) > 2 else ""
-            t = left.split("→", 1)[1].strip() if "→" in left else left.strip()
-            bindings.append({"title": t, "dispatcher": dispatcher, "arg": arg})
-
+    bindings = await _get_bindings()
     if not bindings:
         return {"status": "error", "message": "no keybindings available"}
 
@@ -394,9 +394,15 @@ async def move_window_to_workspace(workspace: int) -> dict[str, Any]:
     if not hyprctl:
         return {"status": "error", "message": "hyprctl is not installed"}
 
-    ws = int(workspace)
-    code, _, stderr = await _run_command(hyprctl, "dispatch", "movetoworkspacesilent", str(ws))
+    ws = str(int(workspace))
+    # Try legacy dispatch first
+    code, _, stderr = await _run_command(hyprctl, "dispatch", "movetoworkspacesilent", ws)
+    if code == 0:
+        return {"status": "success", "workspace": int(ws)}
+
+    # Hyprland 0.56+ uses Lua dispatch: hl.dsp.window.move({ workspace = "..." })
+    code, _, stderr = await _run_command(hyprctl, "dispatch", f'hl.dsp.window.move({{ workspace = "{ws}" }})')
     if code != 0:
         return {"status": "error", "message": f"failed to move window: {stderr}"}
 
-    return {"status": "success", "workspace": ws}
+    return {"status": "success", "workspace": int(ws)}

@@ -22,6 +22,13 @@ path. Ask for `development_status`, `list_development_jobs`, or
 `skills/manifests`; the legacy `skill_manifests` copy also includes these tools.
 Custom manifest directories must include `development.json` to expose them.
 
+If a user asks for something with no matching skill, the assistant uses
+`request_capability`. It records the exact request in `requested_action`, tells the
+user that the capability is currently unavailable, and starts the same pipeline with
+the goal of adding a declared skill. It must never claim the original action ran.
+After the proposal is reviewed and integrated, restart JARVIS and repeat the saved
+request; the new skill can then execute it.
+
 Without starting audio or the cloud voice connection:
 
 ```sh

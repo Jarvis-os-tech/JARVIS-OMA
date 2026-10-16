@@ -62,6 +62,68 @@
       }
     },
     {
+      "name": "github_list_repository_files",
+      "description": "List files and folders in a connected GitHub repository. Start at the root when the path is unknown, then inspect relevant folders before analyzing its code. Use github_list_repositories first when the repository is unknown.",
+      "adapter": "github.files",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string"},
+          "repository": {"type": "string"},
+          "path": {"type": "string", "description": "Optional repository-relative folder path; omit for root."}
+        },
+        "required": ["owner", "repository"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_read_repository_file",
+      "description": "Read a text file from a connected GitHub repository so Jarvis can analyze actual code, README, or configuration. Use github_list_repository_files to find paths first.",
+      "adapter": "github.file",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string"},
+          "repository": {"type": "string"},
+          "path": {"type": "string", "description": "Repository-relative file path, such as README.md or src/main.py."}
+        },
+        "required": ["owner", "repository", "path"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_find_relevant_files",
+      "description": "Map a connected repository at one commit and rank paths relevant to a topic. Paths are candidates, not code evidence. Read selected files before making claims.",
+      "adapter": "github.find_relevant_files",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string"},
+          "repository": {"type": "string"},
+          "query": {"type": "string"},
+          "max_results": {"type": "integer", "minimum": 1, "maximum": 30}
+        },
+        "required": ["owner", "repository", "query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github_read_repository_files",
+      "description": "Read up to six text files at the commit returned by github_find_relevant_files. Return bounded numbered excerpts and pinned source links for evidence-based analysis.",
+      "adapter": "github.read_repository_files",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {"type": "string"},
+          "repository": {"type": "string"},
+          "ref": {"type": "string"},
+          "paths": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"type": "string"}}
+        },
+        "required": ["owner", "repository", "ref", "paths"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "github_list_issues",
       "description": "List GitHub repository issues.",
       "adapter": "github.issues",

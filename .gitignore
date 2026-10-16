@@ -16,3 +16,5 @@ credentials*.json
 *.env.local
 *.key
 *.pem
+skills/native/bin/
+*.o

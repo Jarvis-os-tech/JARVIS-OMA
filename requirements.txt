@@ -1,2 +1,5 @@
 # SDK version used for the offline contract tests. No local inference packages.
 google-genai==2.24.0
+sounddevice>=0.5.1
+numpy>=1.26.0
+httpx>=0.27.0

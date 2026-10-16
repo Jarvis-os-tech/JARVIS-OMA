@@ -2,6 +2,21 @@
   "version": 1,
   "skills": [
     {
+      "name": "request_capability",
+      "description": "Use when the user asks for a capability that is not currently available. Records the exact original request and starts a development proposal for the missing skill. Tell the user the capability is not available yet and that it will be built; do not pretend the requested action happened.",
+      "adapter": "evolution.request",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "request": {"type": "string", "description": "The exact unsupported user request."},
+          "workspace": {"type": "string", "description": "Absolute path to the clean source repository root."},
+          "agent": {"type": "string", "enum": ["codex", "claude", "opencode", "gemini", "hermes", "omp"]}
+        },
+        "required": ["request", "workspace"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "start_development",
       "description": "Start a user-requested capability improvement in a separate clean Git checkout. Runs baseline tests, research, implementation, sandboxed tests and independent review. Returns a job ID. Produces a proposal only; does not install or deploy it. Requires git, bubblewrap and an authenticated coding agent. Use a concrete goal and clean committed source repository.",
       "adapter": "evolution.start",

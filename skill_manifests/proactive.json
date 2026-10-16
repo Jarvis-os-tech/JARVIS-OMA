@@ -1,7 +1,100 @@
-{"version":1,"skills":[
- {"name":"proactive_task","description":"Queue an explicitly authorized task for Jarvis to plan, route, delegate, monitor, and record proactively.","adapter":"proactive.enqueue","parameters_json_schema":{"type":"object","properties":{"prompt":{"type":"string"},"workspace":{"type":"string"},"agent":{"type":"string","enum":["codex","claude","opencode","gemini","hermes","omp"]}},"required":["prompt","workspace"],"additionalProperties":false}},
- {"name":"proactive_status","description":"Report the global proactive state, pending events, and recent activity ledger.","adapter":"proactive.status","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
- {"name":"pause_jarvis","description":"Globally pause all new proactive Jarvis work while leaving current jobs visible.","adapter":"proactive.pause","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
- {"name":"resume_jarvis","description":"Resume proactive Jarvis work and clear a previous stop-all latch.","adapter":"proactive.resume","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
- {"name":"stop_all_jarvis_work","description":"Immediately stop every active Jarvis-managed agent and prevent new proactive work until resumed.","adapter":"proactive.stop","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}
-]}
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "proactive_task",
+      "description": "Queue an explicitly authorized task for Jarvis to plan, route, delegate, monitor, and record proactively.",
+      "adapter": "proactive.enqueue",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude",
+              "opencode",
+              "gemini",
+              "hermes",
+              "omp"
+            ]
+          },
+          "artifact_check": {
+            "type": "object",
+            "description": "Optional predeclared exact file-byte check. Use a known expected hash, never an invented or worker-provided success claim.",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Workspace-relative artifact path, no symlinks or traversal."
+              },
+              "sha256": {
+                "type": "string",
+                "description": "Known expected SHA-256 digest, 64 hex characters."
+              }
+            },
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "prompt",
+          "workspace"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proactive_status",
+      "description": "Report the global proactive state, pending events, and recent activity ledger.",
+      "adapter": "proactive.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pause_jarvis",
+      "description": "Globally pause all new proactive Jarvis work while leaving current jobs visible.",
+      "adapter": "proactive.pause",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "resume_jarvis",
+      "description": "Resume proactive Jarvis work and clear a previous stop-all latch.",
+      "adapter": "proactive.resume",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "stop_all_jarvis_work",
+      "description": "Immediately stop every active Jarvis-managed agent and prevent new proactive work until resumed.",
+      "adapter": "proactive.stop",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -37,7 +38,7 @@ class AgentConfig:
     greeting_prompt: str | None = None  # Custom greeting instruction if specified
     greeting_cooldown_seconds: int = 14400  # Suppress repeat startup greetings on the same day
     greeting_resume_work: bool = True  # Offer one continuation from saved conversation evidence
-    single_sentence: bool = True  # Strictly enforce single-sentence responses
+    single_sentence: bool = False  # Allow complete answers when the user asks for detail
 
 
 @dataclass
@@ -48,12 +49,14 @@ class AudioConfig:
     input_frame_ms: int = 20
     output_frame_ms: int = 20
     queue_max_seconds: int = 10
-    playback_latency_ms: int = 60
+    playback_latency_ms: int = 100
     capture_latency_ms: int = 30
     command_timeout: int = 8
     noise_suppression: bool = True
+    local_barge_in: bool = False
+    diagnostic_transcripts: bool = False
     mic_volume_percent: int | None = 80
-    playback_cushion_s: float = 0.35
+    playback_cushion_s: float = 0.32
     voice_rms_threshold: float = 450.0
     voice_band_ratio: float = 0.55
     duck_after_ms: int = 40
@@ -61,6 +64,44 @@ class AudioConfig:
     release_after_ms: int = 120
     duck_gain: float = 0.30
     fade_ms: int = 10
+
+    def validate(self):
+        for name in ('input_sample_rate', 'output_sample_rate', 'input_frame_ms',
+                     'output_frame_ms', 'queue_max_seconds', 'playback_latency_ms',
+                     'capture_latency_ms', 'command_timeout', 'duck_after_ms',
+                     'barge_in_after_ms', 'release_after_ms'):
+            value = getattr(self, name)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f'audio.{name} must be a positive integer')
+        if self.input_sample_rate < 8000:
+            raise ValueError('audio.input_sample_rate must be at least 8000 for speech detection')
+        if self.output_sample_rate != 24000:
+            raise ValueError('audio.output_sample_rate must be 24000; output resampling is not implemented')
+        for direction in ('input', 'output'):
+            rate = getattr(self, f'{direction}_sample_rate')
+            duration = getattr(self, f'{direction}_frame_ms')
+            if rate * duration % 1000:
+                raise ValueError(f'audio.{direction}_frame_ms must produce an integral number of samples')
+        if self.barge_in_after_ms <= self.duck_after_ms:
+            raise ValueError('audio.barge_in_after_ms must be greater than audio.duck_after_ms')
+        if type(self.fade_ms) is not int or self.fade_ms < 0:
+            raise ValueError('audio.fade_ms must be a nonnegative integer')
+        if type(self.noise_suppression) is not bool:
+            raise ValueError('audio.noise_suppression must be a boolean')
+        if type(self.local_barge_in) is not bool:
+            raise ValueError('audio.local_barge_in must be a boolean')
+        if type(self.diagnostic_transcripts) is not bool:
+            raise ValueError('audio.diagnostic_transcripts must be a boolean')
+        if self.mic_volume_percent is not None and (
+                type(self.mic_volume_percent) is not int or not 1 <= self.mic_volume_percent <= 100):
+            raise ValueError('audio.mic_volume_percent must be an integer from 1 to 100 or null')
+        for name in ('playback_cushion_s', 'voice_rms_threshold', 'voice_band_ratio', 'duck_gain'):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                raise ValueError(f'audio.{name} must be a finite nonnegative number')
+        for name in ('voice_band_ratio', 'duck_gain'):
+            if getattr(self, name) > 1:
+                raise ValueError(f'audio.{name} must be between 0 and 1')
 
     @property
     def input_frame_bytes(self) -> int:
@@ -88,6 +129,22 @@ class VADConfig:
     prefix_padding_ms: int = 300
     silence_duration_ms: int = 800
     activity_handling: str = 'START_OF_ACTIVITY_INTERRUPTS'
+
+    def validate(self):
+        if type(self.enabled) is not bool:
+            raise ValueError('vad.enabled must be a boolean')
+        if not self.enabled:
+            raise ValueError('vad.enabled must be true; manual activity signals are not implemented')
+        for name, choices in (
+                ('start_sensitivity', ('START_SENSITIVITY_LOW', 'START_SENSITIVITY_HIGH')),
+                ('end_sensitivity', ('END_SENSITIVITY_LOW', 'END_SENSITIVITY_HIGH')),
+                ('activity_handling', ('START_OF_ACTIVITY_INTERRUPTS', 'NO_INTERRUPTION'))):
+            if getattr(self, name) not in choices:
+                raise ValueError(f'vad.{name} must be one of {", ".join(choices)}')
+        if type(self.prefix_padding_ms) is not int or self.prefix_padding_ms < 0:
+            raise ValueError('vad.prefix_padding_ms must be a nonnegative integer')
+        if type(self.silence_duration_ms) is not int or self.silence_duration_ms <= 0:
+            raise ValueError('vad.silence_duration_ms must be a positive integer')
 
 
 @dataclass
@@ -175,6 +232,17 @@ class Config:
     commands: dict[str, str] = field(default_factory=dict)  # command overrides
     memory: MemoryConfig = field(default_factory=MemoryConfig)
 
+    def validate(self):
+        for name in ('model', 'voice'):
+            value = getattr(self.agent, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f'agent.{name} must be a nonempty string')
+        if type(self.skills.enabled) is not bool:
+            raise ValueError('skills.enabled must be a boolean')
+        self.audio.validate()
+        self.vad.validate()
+        self.memory.validate()
+
 
 # ---------------------------------------------------------------------------
 # Loaders
@@ -232,17 +300,7 @@ def _merge_section(target, data: dict):
     known = {f.name for f in fields(target)}
     for key, value in data.items():
         if key in known:
-            current = getattr(target, key)
-            expected_type = type(current) if current is not None else None
-            # Type coercion for basic types
-            if expected_type is int and isinstance(value, (int, float)) and not isinstance(value, bool):
-                value = int(value)
-            elif expected_type is float and isinstance(value, (int, float)) and not isinstance(value, bool):
-                value = float(value)
-            elif expected_type is bool and isinstance(value, bool):
-                pass
-            elif expected_type is str and isinstance(value, str):
-                pass
+            # Preserve the supplied type so validation cannot hide malformed input.
             setattr(target, key, value)
         else:
             log.warning('Unknown config key ignored: %s', key)
@@ -250,13 +308,14 @@ def _merge_section(target, data: dict):
 
 def _apply_env_overrides(config: Config):
     """Apply JARVIS_* environment variables as overrides."""
+    defaults = Config()
     env_map = {
+        'GEMINI_LIVE_MODEL': ('agent', 'model'),  # Legacy alias; JARVIS_MODEL wins.
         'JARVIS_AGENT_NAME': ('agent', 'name'),
         'JARVIS_VOICE': ('agent', 'voice'),
         'JARVIS_MODEL': ('agent', 'model'),
         'JARVIS_LANGUAGE': ('agent', 'language'),
         'JARVIS_SYSTEM_INSTRUCTION': ('agent', 'system_instruction'),
-        'GEMINI_LIVE_MODEL': ('agent', 'model'),  # backward compat
         'JARVIS_FS_AUTONOMOUS': ('filesystem', 'autonomous'),
         'JARVIS_FS_ALLOW_DELETE': ('filesystem', 'allow_delete'),
         'JARVIS_FS_MAX_READ_CHARS': ('filesystem', 'max_read_chars'),
@@ -264,6 +323,7 @@ def _apply_env_overrides(config: Config):
         'JARVIS_GREETING_PROMPT': ('agent', 'greeting_prompt'),
         'JARVIS_SINGLE_SENTENCE': ('agent', 'single_sentence'),
         'JARVIS_NOISE_SUPPRESSION': ('audio', 'noise_suppression'),
+        'JARVIS_LOCAL_BARGE_IN': ('audio', 'local_barge_in'),
         'JARVIS_MIC_VOLUME_PERCENT': ('audio', 'mic_volume_percent'),
         'JARVIS_PLAYBACK_CUSHION_S': ('audio', 'playback_cushion_s'),
         'JARVIS_VAD_ACTIVITY_HANDLING': ('vad', 'activity_handling'),
@@ -274,24 +334,29 @@ def _apply_env_overrides(config: Config):
         value = os.getenv(env_key)
         if value is not None:
             target_obj = getattr(config, section)
-            curr = getattr(target_obj, attr)
+            # Parse using the schema default, even if the file supplied null or
+            # a malformed value which this higher-priority override replaces.
+            curr = getattr(getattr(defaults, section), attr)
             if env_key == 'JARVIS_MEMORY_ENABLED':
                 normalized = value.strip().lower()
                 if normalized not in ('true', '1', 'yes', 'false', '0', 'no'):
                     raise ValueError('JARVIS_MEMORY_ENABLED must be a boolean (true/false, 1/0, yes/no)')
                 val = normalized in ('true', '1', 'yes')
             elif isinstance(curr, bool):
-                val = value.strip().lower() in ('true', '1', 'yes')
+                normalized = value.strip().lower()
+                if normalized not in ('true', '1', 'yes', 'false', '0', 'no'):
+                    raise ValueError(f'{env_key} must be a boolean (true/false, 1/0, yes/no)')
+                val = normalized in ('true', '1', 'yes')
             elif isinstance(curr, int):
                 try:
                     val = int(value.strip())
                 except ValueError:
-                    continue
+                    raise ValueError(f'{env_key} must be an integer') from None
             elif isinstance(curr, float):
                 try:
                     val = float(value.strip())
                 except ValueError:
-                    continue
+                    raise ValueError(f'{env_key} must be a number') from None
             else:
                 val = value.strip()
             setattr(target_obj, attr, val)
@@ -328,8 +393,8 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
         # Merge sections
         for section_name in ('agent', 'audio', 'vad', 'skills', 'filesystem', 'memory'):
             section_data = data.get(section_name)
-            if section_name == 'memory' and section_name in data and not isinstance(section_data, dict):
-                raise ValueError('memory section must be a mapping')
+            if section_name in data and not isinstance(section_data, dict):
+                raise ValueError(f'{section_name} section must be a mapping')
             if isinstance(section_data, dict):
                 if section_name == 'memory':
                     for key, value in section_data.items():
@@ -378,5 +443,5 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
     if overrides.get('no_interrupt'):
         config.vad.activity_handling = 'NO_INTERRUPTION'
 
-    config.memory.validate()
+    config.validate()
     return config

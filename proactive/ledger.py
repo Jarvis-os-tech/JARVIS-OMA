@@ -21,6 +21,8 @@ class ActivityStatus(str, Enum):
     OBSERVED = "observed"
     PLANNED = "planned"
     RUNNING = "running"
+    UNVERIFIED = "unverified"
+    INTERRUPTED = "interrupted"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -73,18 +75,47 @@ class ActivityLedger:
 
     def _initialize(self) -> None:
         with self._lock, self._session() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            old = connection.execute("SELECT sql FROM sqlite_master WHERE name='proactive_activity'").fetchone()
+            if old and "'unverified'" not in old['sql']:
+                connection.execute("ALTER TABLE proactive_activity RENAME TO proactive_activity_legacy")
             connection.execute("""CREATE TABLE IF NOT EXISTS proactive_activity (
                 id TEXT PRIMARY KEY,
                 event_id TEXT,
                 kind TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 details TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('observed','planned','running','succeeded','failed','cancelled')),
+                status TEXT NOT NULL CHECK(status IN ('observed','planned','running','unverified','interrupted','succeeded','failed','cancelled')),
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )""")
+            if old and "'unverified'" not in old['sql']:
+                connection.execute("INSERT INTO proactive_activity SELECT * FROM proactive_activity_legacy")
+                connection.execute("DROP TABLE proactive_activity_legacy")
             connection.execute("CREATE INDEX IF NOT EXISTS proactive_activity_created ON proactive_activity(created_at, id)")
             connection.execute("CREATE INDEX IF NOT EXISTS proactive_activity_event ON proactive_activity(event_id)")
+            connection.execute("""CREATE TABLE IF NOT EXISTS proactive_execution (
+                activity_id TEXT PRIMARY KEY, record TEXT NOT NULL
+            )""")
+
+    def save_execution(self, activity_id: str, record: Mapping[str, Any]) -> None:
+        encoded = _payload(record)
+        with self._lock, self._session() as connection:
+            connection.execute("INSERT OR REPLACE INTO proactive_execution VALUES (?, ?)",
+                               (activity_id, encoded))
+
+    def executions(self, *, pending_only=False) -> dict[str, dict[str, Any]]:
+        with self._lock, self._session() as connection:
+            query = "SELECT e.activity_id, e.record FROM proactive_execution e JOIN proactive_activity a ON a.id=e.activity_id"
+            if pending_only:
+                query += " WHERE a.status IN ('planned','running')"
+            return {row['activity_id']: json.loads(row['record']) for row in connection.execute(query)}
+
+    def execution(self, activity_id: str) -> dict[str, Any] | None:
+        with self._lock, self._session() as connection:
+            row = connection.execute('SELECT record FROM proactive_execution WHERE activity_id=?',
+                                     (activity_id,)).fetchone()
+            return json.loads(row['record']) if row else None
 
     @staticmethod
     def _row(row: sqlite3.Row) -> Activity:
@@ -149,8 +180,11 @@ class ActivityLedger:
             raise ValueError("unknown activity status") from exc
         allowed = {
             ActivityStatus.OBSERVED: {ActivityStatus.PLANNED, ActivityStatus.CANCELLED},
-            ActivityStatus.PLANNED: {ActivityStatus.RUNNING, ActivityStatus.CANCELLED},
-            ActivityStatus.RUNNING: {ActivityStatus.SUCCEEDED, ActivityStatus.FAILED, ActivityStatus.CANCELLED},
+            ActivityStatus.PLANNED: {ActivityStatus.RUNNING, ActivityStatus.CANCELLED, ActivityStatus.FAILED, ActivityStatus.INTERRUPTED},
+            ActivityStatus.RUNNING: {ActivityStatus.SUCCEEDED, ActivityStatus.FAILED, ActivityStatus.CANCELLED,
+                                     ActivityStatus.UNVERIFIED, ActivityStatus.INTERRUPTED},
+            ActivityStatus.UNVERIFIED: set(),
+            ActivityStatus.INTERRUPTED: set(),
             ActivityStatus.SUCCEEDED: set(),
             ActivityStatus.FAILED: {ActivityStatus.PLANNED, ActivityStatus.CANCELLED},
             ActivityStatus.CANCELLED: set(),

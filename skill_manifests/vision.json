@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "control_vision_mode",
+      "description": "Control real-time video streaming mode for Jarvis. Streams continuous live frames (1 FPS) to Gemini Live. Modes: 'screen' for desktop display sharing, 'camera' for hardware webcam feed, or 'off' to stop streaming.",
+      "adapter": "vision.control_mode",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["screen", "camera", "off"],
+            "description": "Visual streaming feed: screen, camera, or off."
+          },
+          "action": {
+            "type": "string",
+            "enum": ["start", "stop", "status"],
+            "description": "Action to perform: start streaming, stop streaming, or query status."
+          }
+        },
+        "required": ["mode"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "capture_camera_frame",
+      "description": "Capture a single on-demand hardware camera snapshot using direct V4L2 MJPEG capture for visual inspection.",
+      "adapter": "vision.capture_frame",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string",
+            "description": "Optional V4L2 camera device path, e.g. /dev/video0."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_vision_hardware",
+      "description": "Check status of vision hardware and display environment, including V4L2 cameras, Wayland/X11, and PipeWire.",
+      "adapter": "vision.check_hardware",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

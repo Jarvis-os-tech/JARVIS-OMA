@@ -4,12 +4,12 @@ The `core/` package provides the main conversation runtime, worker coordination,
 
 ## Components
 
-- **`agent.py` (`LiveVoice`, `Playback`)**:
+- **`agent.py` (`LiveVoice`)**:
   - Full-duplex voice interaction loop using Google's Gemini Live API via WebSockets.
   - Three concurrent workers:
     1. **Audio Capture Worker**: Pipes 16 kHz mono PCM from PipeWire AEC directly to the Gemini Live session.
     2. **Event Processing Worker**: Handles server-to-client events (audio output parts, text transcripts, tool calls, and interruptions).
-    3. **Playback Worker**: Streams 24 kHz mono PCM to PipeWire playback sinks with bounded queuing and instant interruption flush.
+    3. **Native Playback**: Routes 24 kHz mono PCM through the persistent PortAudio/AEC stream with generation-fenced interruption flush.
   - Signal handling (`SIGINT`, `SIGTERM`), session resumption caching, and dynamic CLI argument parsing.
 
 - **`config.py` (`Config`, `load_config`)**:

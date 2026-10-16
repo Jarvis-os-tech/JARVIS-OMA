@@ -8,7 +8,8 @@ from config import Config, load_config
 
 
 class ConfigTests(unittest.TestCase):
-    def test_default_config(self):
+    @patch('config._find_config_file', return_value=None)
+    def test_default_config(self, _mock_find):
         cfg = load_config(path=None)
         self.assertEqual(cfg.agent.name, 'Jarvis')
         self.assertEqual(cfg.agent.voice, 'Aoede')
@@ -20,9 +21,11 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg.filesystem.enabled)
         self.assertTrue(cfg.filesystem.autonomous)
         self.assertTrue(cfg.filesystem.allow_delete)
-        self.assertTrue(cfg.agent.single_sentence)
+        self.assertFalse(cfg.agent.single_sentence)
         self.assertTrue(cfg.audio.noise_suppression)
-        self.assertEqual(cfg.audio.playback_cushion_s, 0.35)
+        self.assertFalse(cfg.audio.local_barge_in)
+        self.assertFalse(cfg.audio.diagnostic_transcripts)
+        self.assertEqual(cfg.audio.playback_cushion_s, 0.32)
         self.assertEqual(cfg.audio.mic_volume_percent, 80)
         self.assertEqual(cfg.vad.activity_handling, 'START_OF_ACTIVITY_INTERRUPTS')
 
@@ -162,6 +165,105 @@ class ConfigTests(unittest.TestCase):
         cfg_kw = load_config(path=None, no_interrupt=True, single_sentence=False)
         self.assertFalse(cfg_kw.agent.single_sentence)
         self.assertEqual(cfg_kw.vad.activity_handling, 'NO_INTERRUPTION')
+
+    def test_invalid_audio_is_rejected_before_engine_startup(self):
+        cases = {
+            'input_frame_ms': [0, -20, 20.5, True, '20'],
+            'output_frame_ms': [0, -20],
+            'input_sample_rate': [0, 4000, 16000.5],
+            'output_sample_rate': [48000, 16000],
+            'duck_gain': [-0.1, 1.1, float('nan'), float('inf'), True],
+            'voice_band_ratio': [-0.1, 1.1],
+            'playback_cushion_s': [-1, float('inf')],
+            'noise_suppression': ['false', 1],
+            'mic_volume_percent': [0, 101, '80'],
+        }
+        for name, values in cases.items():
+            for value in values:
+                with self.subTest(name=name, value=value):
+                    config = Config()
+                    setattr(config.audio, name, value)
+                    with self.assertRaisesRegex(ValueError, f'audio.{name}'):
+                        config.validate()
+
+    def test_invalid_root_settings_and_sections_are_rejected(self):
+        for section, name, value in [('agent', 'model', ''), ('agent', 'voice', 7),
+                                     ('skills', 'enabled', 'false')]:
+            with self.subTest(section=section, name=name):
+                config = Config()
+                setattr(getattr(config, section), name, value)
+                with self.assertRaisesRegex(ValueError, f'{section}.{name}'):
+                    config.validate()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.json'
+            for section in ('audio', 'vad', 'skills'):
+                path.write_text('{"' + section + '": []}')
+                with self.subTest(section=section):
+                    with self.assertRaisesRegex(ValueError, f'{section} section must be a mapping'):
+                        load_config(path)
+
+    def test_audio_frame_and_interruption_settings_are_coherent(self):
+        config = Config()
+        config.audio.input_sample_rate = 11025
+        with self.assertRaisesRegex(ValueError, 'integral number of samples'):
+            config.validate()
+        config.audio.input_frame_ms = 40
+        config.validate()
+        config.audio.barge_in_after_ms = config.audio.duck_after_ms
+        with self.assertRaisesRegex(ValueError, 'barge_in_after_ms'):
+            config.validate()
+
+    def test_invalid_vad_settings_fail_locally(self):
+        cases = {
+            'enabled': [False, 'true'],
+            'start_sensitivity': ['invalid'],
+            'end_sensitivity': ['START_SENSITIVITY_HIGH'],
+            'activity_handling': ['invalid'],
+            'prefix_padding_ms': [-1, True],
+            'silence_duration_ms': [0, '300'],
+        }
+        for name, values in cases.items():
+            for value in values:
+                with self.subTest(name=name, value=value):
+                    config = Config()
+                    setattr(config.vad, name, value)
+                    with self.assertRaisesRegex(ValueError, f'vad.{name}'):
+                        config.validate()
+
+    def test_toml_fractional_frame_duration_is_not_silently_truncated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('[audio]\ninput_frame_ms = 20.5\n')
+            with self.assertRaisesRegex(ValueError, 'audio.input_frame_ms'):
+                load_config(path)
+
+    def test_environment_types_are_independent_of_replaced_file_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.json'
+            path.write_text('{"audio": {"mic_volume_percent": null, "noise_suppression": "invalid"}}')
+            with patch.dict(os.environ, {'JARVIS_MIC_VOLUME_PERCENT': '90',
+                                         'JARVIS_NOISE_SUPPRESSION': 'false'}):
+                config = load_config(path)
+            self.assertEqual(config.audio.mic_volume_percent, 90)
+            self.assertIs(config.audio.noise_suppression, False)
+
+    @patch('config._find_config_file', return_value=None)
+    def test_invalid_audio_environment_override_is_not_silently_ignored(self, _mock_find):
+        for key, value in [('JARVIS_MIC_VOLUME_PERCENT', 'loud'),
+                           ('JARVIS_NOISE_SUPPRESSION', 'maybe'),
+                           ('JARVIS_PLAYBACK_CUSHION_S', 'nan')]:
+            with self.subTest(key=key), patch.dict(os.environ, {key: value}):
+                with self.assertRaises(ValueError):
+                    load_config()
+
+    @patch('config._find_config_file', return_value=None)
+    def test_model_environment_alias_has_lower_priority(self, _mock_find):
+        with patch.dict(os.environ, {'GEMINI_LIVE_MODEL': 'legacy-model',
+                                     'JARVIS_MODEL': 'preferred-model'}):
+            self.assertEqual(load_config().agent.model, 'preferred-model')
+            self.assertEqual(load_config(model='cli-model').agent.model, 'cli-model')
+        with patch.dict(os.environ, {'GEMINI_LIVE_MODEL': 'legacy-model'}, clear=True):
+            self.assertEqual(load_config().agent.model, 'legacy-model')
 
 
 if __name__ == '__main__':

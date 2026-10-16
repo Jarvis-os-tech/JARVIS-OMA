@@ -10,6 +10,8 @@ import shutil
 import signal
 import uuid
 
+from core.secret_env import sanitized_subprocess_env
+
 AGENTS = ('codex', 'claude', 'opencode', 'gemini', 'hermes', 'omp')
 TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'timed_out'})
 
@@ -145,7 +147,7 @@ class AgentOrchestrator:
                 *self._command_builder(job['agent'], self.executables[job['agent']], prompt),
                 cwd=job['workspace'], stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                start_new_session=True)
+                start_new_session=True, env=sanitized_subprocess_env())
             self.processes[job_id] = process
             job['state'] = 'running'
             if job['cancel_requested']:

@@ -15,10 +15,7 @@ KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=10
 
-# Allow high priority and realtime limits if permitted
-LimitRTPRIO=99
-LimitMEMLOCK=infinity
-Nice=-11
+# Normal process scheduling keeps startup independent of realtime privileges.
 
 # Environmental Buffers
 Environment=PATH=/usr/share/omarchy/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin

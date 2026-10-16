@@ -19,7 +19,7 @@ Thank you for your interest in contributing to JARVIS-OMA!
 
 3. Ensure system audio tools are installed (on Arch/Omarchy):
    ```bash
-   # Requires PipeWire with pw-record, pw-play, and pactl
+   # Requires PipeWire with pactl and PortAudio (libportaudio2)
    ./run.sh --check
    ```
 

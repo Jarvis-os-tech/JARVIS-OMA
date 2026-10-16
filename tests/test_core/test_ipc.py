@@ -189,7 +189,7 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
             sink = 'test-sink'
             source = 'test-source'
 
-            async def start(self, microphone):
+            async def start(self, microphone, *args, **kwargs):
                 pass
 
             async def close(self):
@@ -220,6 +220,7 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
              patch('agent.asyncio.sleep', side_effect=no_wait):
             from config import Config
             configuration = Config()
+            configuration.agent.model = 'test-model'
             with self.assertRaises(asyncio.CancelledError):
                 await run(args, 'fake-key', config=configuration)
 
