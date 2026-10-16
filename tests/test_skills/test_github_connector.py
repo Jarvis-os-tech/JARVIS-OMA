@@ -8,6 +8,66 @@ from connectors import github
 
 
 class GithubConnectorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_repository_analysis_retries_unreadable_candidates(self):
+        ref = 'c' * 40
+        read_paths = []
+
+        async def fetch(path, query=None, *, max_bytes=1_000_000):
+            if path == '/repos/acme/widgets':
+                return {'default_branch': 'main'}
+            if path.endswith('/commits/main'):
+                return {'sha': ref}
+            if '/git/trees/' in path:
+                return {'truncated': False, 'tree': [
+                    {'type': 'blob', 'path': f'{i:02d}.txt', 'size': 30}
+                    for i in range(6)]}
+            if '/contents/' in path:
+                read_paths.append(path)
+                if path.endswith(('00.txt', '01.txt', '02.txt', '03.txt')):
+                    return {'type': 'symlink'}
+                return {'type': 'file', 'path': path.rsplit('/', 1)[-1],
+                        'size': 12, 'encoding': 'base64',
+                        'content': base64.b64encode(b'useful code\n').decode()}
+            raise AssertionError(path)
+
+        with patch.object(github, '_fetch', side_effect=fetch):
+            result = await github.dispatch('github_analyze_repository', {
+                'owner': 'acme', 'repository': 'widgets'})
+        self.assertTrue(result['success'])
+        self.assertEqual([item['path'] for item in result['files']], ['04.txt', '05.txt'])
+        self.assertEqual(len(result['unreadable_paths']), 4)
+        self.assertEqual(len(read_paths), 6)
+
+    def test_repository_analysis_prefers_root_over_nested_overview(self):
+        self.assertGreater(github._file_score('README.md', []),
+                           github._file_score('docs/README.md', []))
+        self.assertGreater(github._file_score('src/main.py', []),
+                           github._file_score('docs/README.md', []))
+
+    async def test_repository_analysis_reports_when_all_candidates_unreadable(self):
+        ref = 'd' * 40
+
+        async def fetch(path, query=None, *, max_bytes=1_000_000):
+            if path == '/repos/acme/widgets':
+                return {'default_branch': 'main'}
+            if path.endswith('/commits/main'):
+                return {'sha': ref}
+            if '/git/trees/' in path:
+                return {'truncated': False, 'tree': [
+                    {'type': 'blob', 'path': 'data.txt', 'size': 3}]}
+            if '/contents/' in path:
+                return {'type': 'file', 'path': 'data.txt', 'size': 3,
+                        'encoding': 'base64',
+                        'content': base64.b64encode(b'a\x00b').decode()}
+            raise AssertionError(path)
+
+        with patch.object(github, '_fetch', side_effect=fetch):
+            result = await github.dispatch('github_analyze_repository', {
+                'owner': 'acme', 'repository': 'widgets'})
+        self.assertFalse(result['success'])
+        self.assertIn('No candidate file content', result['error'])
+        self.assertEqual(result['unreadable_paths'], ['data.txt'])
+
     async def test_repository_analysis_reads_evidence_in_one_call(self):
         ref = 'b' * 40
         calls = []

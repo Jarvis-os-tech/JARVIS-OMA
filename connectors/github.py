@@ -320,6 +320,8 @@ def _mapped(tool, data):
             content = raw.decode('utf-8')
         except (ValueError, UnicodeError, binascii.Error):
             return {'success': False, 'error': 'GitHub file is not readable text'}
+        if '\x00' in content:
+            return {'success': False, 'error': 'GitHub file is not readable text'}
         return {'success': True, 'path': data.get('path'), 'size': data.get('size'),
                 'truncated': len(content) > MAX_FILE_CHARS,
                 'content': content[:MAX_FILE_CHARS]}
@@ -371,8 +373,12 @@ def _file_score(path, terms):
     if name in {'readme.md', 'pyproject.toml', 'package.json', 'cargo.toml',
                 'go.mod', 'requirements.txt', 'config.toml'}:
         score += 2
+        if '/' not in lower:
+            score += 4
     if name in {'main.py', 'app.py', 'index.ts', 'index.js', 'server.py'}:
         score += 2
+        if lower.count('/') <= 2:
+            score += 3
     if any(segment in {'node_modules', 'vendor', 'dist', 'build', '.venv',
                        '__pycache__'} for segment in lower.split('/')):
         score -= 20
@@ -477,15 +483,31 @@ async def _analyze_repository(args):
     if not candidates:
         return {'success': False, 'error': 'No readable repository files were found',
                 'repository': found['repository'], 'ref': found['ref']}
-    selected = [item['path'] for item in candidates[:4]]
-    read = await _read_repository_files({
-        'owner': args.get('owner'), 'repository': args.get('repository'),
-        'ref': found['ref'], 'paths': selected,
-    })
-    return {**read, 'candidate_paths': [item['path'] for item in candidates],
+    # GitHub can list a blob in a tree but decline to return its Contents API
+    # representation (for example a symlink). Try the next candidates instead
+    # of returning an empty analysis after the first unreadable group.
+    evidence = []
+    attempted = []
+    for offset in range(0, len(candidates), 4):
+        paths = [item['path'] for item in candidates[offset:offset + 4]]
+        read = await _read_repository_files({
+            'owner': args.get('owner'), 'repository': args.get('repository'),
+            'ref': found['ref'], 'paths': paths,
+        })
+        attempted.extend(read['files'])
+        evidence.extend(item for item in read['files'] if item['success'])
+        if len(evidence) >= 4:
+            break
+    evidence = evidence[:4]
+    return {'success': bool(evidence),
+            **({} if evidence else {'error': 'No candidate file content could be read'}),
+            'repository': found['repository'],
+            'ref': found['ref'], 'files': evidence,
+            'unreadable_paths': [item['path'] for item in attempted if not item['success']],
+            'candidate_paths': [item['path'] for item in candidates],
             'total_readable_files': found['total_readable_files'],
             'tree_truncated': found['tree_truncated'],
-            'scope': 'Four path-ranked files; request more files for deeper analysis'}
+            'scope': 'Up to four path-ranked files; request more files for deeper analysis'}
 
 
 async def dispatch(tool: str, arguments: dict):

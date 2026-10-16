@@ -1,4 +1,4 @@
-# Jarvis — full-duplex voice agent for Omarchy
+# JARVIS — Full-Duplex Voice & Vision OS for Omarchy / Arch Linux
 
 [![CI](https://github.com/Jarvis-os-tech/JARVIS-OMA/actions/workflows/ci.yml/badge.svg)](https://github.com/Jarvis-os-tech/JARVIS-OMA/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -61,6 +61,31 @@ journalctl --user -u jarvis -f
 
 The service is managed under `graphical-session.target` and receives `SIGTERM` on logout/shutdown, cleanly disconnecting Gemini Live, tearing down microphone streams, and releasing PipeWire echo-cancellation routes without zombie processes.
 
+## Daemon Control Plane (`jarvisctl` / `voicectl`)
+
+JARVIS operates a secure, mode-0600 UNIX domain socket server at `/run/user/$UID/jarvis.sock` for zero-overhead local IPC, external state monitoring, and widget integration (Quickshell, Waybar, or polybar):
+
+```bash
+# Query daemon status (JSON or formatted text)
+./scripts/jarvisctl status
+./scripts/jarvisctl status --json
+
+# Mute / unmute microphone input instantly without dropping the session
+./scripts/jarvisctl toggle
+./scripts/jarvisctl mute
+./scripts/jarvisctl unmute
+
+# Barge-in: immediately cut off active AI speech playback
+./scripts/jarvisctl interrupt
+
+# Stream real-time daemon state and telemetry events
+./scripts/jarvisctl subscribe
+
+# Manage the background user service
+./scripts/jarvisctl start
+./scripts/jarvisctl stop
+./scripts/jarvisctl restart
+```
 
 Optional settings and dynamic configuration:
 
@@ -89,7 +114,10 @@ Skills are enabled by default. At startup Jarvis reads JSON manifests from
 the discovered declarations to Gemini Live. The bundled manifests enable:
 
 - **Capability development**: `start_development`, `development_status`, `list_development_jobs`, and `cancel_development` turn a concrete improvement request into a persisted, tested code proposal; proposals are not automatically activated.
+- **Real-Time Vision & Camera**: `control_vision_mode` (continuous 1 FPS real-time streaming of desktop screen or hardware camera to Gemini Live), `capture_camera_frame` (direct V4L2 MJPEG hardware snapshot via high-speed C++ actuator), and `check_vision_hardware` (audits V4L2 cameras, Wayland/X11, and PipeWire).
 - **Google Workspace connector**: Gmail search/read/drafts, Google Calendar events/calendars, Google Tasks, and read-only Drive, Docs, and Sheets are handled by the local OAuth connector in `connectors/google_workspace.py`. Existing accounts must reconnect once to grant the new Drive read permission; see `docs/voice-capability-wiring.md`.
+- **GitHub connector & Repository Analysis**: `github_analyze_repository` (one-shot repository structure mapping and file excerpt extraction at pinned commits), `github_find_relevant_files`, `github_read_repository_files`, and issue/PR management in `connectors/github.py`.
+- **Internet Search & Web Extraction**: `internet_search` (web search query connector) and `read_web_page` (headless markdown web page extractor in `connectors/browser.py`).
 
 - **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
 - **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)
@@ -210,6 +238,23 @@ conversation-only mode. Application names must exactly match an installed deskto
 entry. Websites are limited to HTTP(S), reject embedded credentials, and block
 localhost and private IP literals.
 
+## Real-time Screen Vision & Hardware Camera Sharing
+
+JARVIS integrates continuous visual perception and high-speed hardware camera access alongside bidirectional voice:
+
+- **Continuous Live Streaming (1 FPS)**:
+  - **Screen Sharing**: Say *"Jarvis, look at my screen"* or *"Start screen sharing"*. JARVIS captures Wayland desktop frames via `grim` and streams them as JPEG image blobs directly into the active Gemini Live bidirectional session while you converse.
+  - **Camera Sharing**: Say *"Jarvis, look through the camera"* or *"Share my camera"*. JARVIS streams real-time frames from your webcam (`/dev/video0`) to the multimodal session.
+  - **Stop Sharing**: Say *"Stop sharing screen"* or *"Turn off the camera"*, immediately resetting vision mode to `off`.
+- **Ultra-Fast Native C++ Actuator (`vision_ctrl`)**:
+  - Located at `skills/native/src/vision_ctrl.cpp`, compiled with C++17 (`make -C skills/native`).
+  - Uses direct POSIX `ioctl(VIDIOC_QUERYCAP)` to query V4L2 devices in < 5ms, filtering out hardware metadata streams and identifying legitimate capture nodes.
+  - Automatically detects Wayland / X11 / Mutter / PipeWire session environments.
+- **On-Demand Inspection**:
+  - `capture_camera_frame`: Captures a single on-demand hardware snapshot for deep inspection without continuous streaming.
+  - `inspect_screen`: Grabs the active focused window or full screen with local Tesseract OCR fallback.
+  - `check_vision_hardware`: Queries available camera devices, resolutions, and display server status.
+
 ## Full-duplex flow
 
 Reminders created by voice use Omarchy's native `omarchy reminder` system, so
@@ -277,36 +322,51 @@ JARVIS-OMA/
 ├── requirements.txt                # Package dependencies
 ├── README.md                       # Repository guide
 │
-├── core/                           # Feature: Core Voice Agent Runtime & Config
-│   ├── agent.py                    # Gemini Live full-duplex session loop & workers
+├── core/                           # Feature: Full-Duplex Voice & Vision OS Core
+│   ├── agent.py                    # Gemini Live loop, realtime audio/vision streaming
 │   ├── config.py                   # Unified configuration loader (TOML, JSON, env)
-│   └── README.md
+│   ├── ipc.py                      # Mode-0600 UNIX domain socket server & telemetry
+│   ├── greeting.py                 # Dynamic proactive greetings generator
+│   ├── secret_env.py               # Protected credential and environment isolation
+│   └── workers.py                  # Bounded concurrency workers & latency guards
 │
-├── audio/                          # Feature: PipeWire Audio & Echo Cancellation
-│   ├── echo_cancel.py              # PipeWire WebRTC AEC setup & node lifecycle
-│   └── README.md
+├── audio/                          # Feature: Isochronous Audio Engine & Echo Cancellation
+│   ├── engine.py                   # PyAudio/PortAudio isochronous loop with ducking & barge-in
+│   ├── downstream.py               # Downstream router with raised-cosine residual smoothing
+│   └── echo_cancel.py              # PipeWire WebRTC AEC setup & node lifecycle
+│
+├── connectors/                     # Feature: Integrations & Web Ecosystem
+│   ├── google_workspace.py         # Gmail, Google Calendar, Google Tasks, Drive, Docs, Sheets
+│   ├── github.py                   # GitHub API: repository analysis, pinned reads, PRs, issues
+│   ├── internet_search.py          # Real-time web search integration
+│   └── browser.py                  # Safe headless web page reader and extractor
 │
 ├── skills/                         # Feature: Dynamic Desktop Skills Engine
 │   ├── skills.py                   # Skill manifest loader & execution dispatcher
 │   ├── input_bar.py                # Loopback multimodal input bar web interface
 │   ├── system_control.py           # Wayland & Omarchy input simulation
 │   ├── manifests/                  # Declarative JSON skill manifests
-│   └── README.md
+│   └── native/                     # High-Speed Native C++ Actuators
+│       ├── src/vision_ctrl.cpp     # C++17 V4L2 ioctl & Wayland/X11 actuator (< 5ms)
+│       └── Makefile                # Native build configuration
 │
 ├── filesystem/                     # Feature: Filesystem Autonomy & Task Runner
 │   ├── filesystem.py               # Sandboxed desktop filesystem security & ops
 │   ├── task_runner.py              # Multi-step filesystem plan executor
 │   └── README.md
 │
-├── orchestration/                  # Feature: Multi-Agent Delegation
+├── orchestration/                  # Feature: Multi-Agent & Evolution Subsystem
 │   ├── agent_orchestrator.py       # Sub-agent process supervisor (Codex, Claude, etc.)
-│   └── README.md
+│   ├── desktop_execution.py        # Desktop action and visual task coordination
+│   └── evolution.py                # Supervised self-evolution engine in sandboxed checkouts
 │
-├── jarvis_memory/                  # Feature: Persistent & Semantic Memory Subsystem
-│   ├── bridge.py                   # Main bridge to SQLite ledger & vector stores
-│   ├── embeddings.py               # Gemini embedding client & dimension caching
-│   ├── hybrid.py                   # Lexical + semantic fused ranking engine
-│   ├── vector_store.py             # Local SQLite vector cache
+├── memory/                         # Feature: Unified Persistent & Semantic Memory
+│   ├── codes-dev/                  # Fact extraction, document store, and vector search
+│   │   ├── 01-facts/               # Fact extraction, schema, and storage service
+│   │   ├── 02-document-store/      # Hybrid BM25, Colbert, and SQLite storage
+│   │   ├── 03-context-injection/   # Dynamic context prompt builder
+│   │   ├── 05-sessions/            # Session compression and state persistence
+│   │   └── 06-trust-gate/          # Prompt injection scanner and trust verification
 │   └── README.md
 │
 ├── proactive/                      # Feature: Proactive Background Autonomy
@@ -316,31 +376,36 @@ JARVIS-OMA/
 │   ├── policy.py                   # User safety & interruption policy
 │   ├── runtime.py                  # Proactive daemon loop & worker manager
 │   ├── storage.py                  # Persistent event database
-│   └── README.md
+│   └── verification.py             # Ground-truth execution and validation gates
 │
-├── scripts/                        # Feature: Maintenance & Diagnostic Scripts
+├── scripts/                        # Feature: Control Plane & Diagnostic Tools
+│   ├── jarvisctl / jarvisctl.py    # Daemon CLI control plane & IPC client
+│   ├── connect_google.py           # Voice-activated Google Workspace OAuth helper
+│   ├── connect_github.py           # GitHub personal token / OAuth connection helper
 │   ├── register_obsidian_vault.py  # Vault registration script
-│   ├── sync_obsidian_memory.py     # Manual Obsidian memory sync trigger
-│   ├── test_agent_delegation.py    # Subagent delegation diagnostic harness
-│   └── README.md
+│   └── sync_obsidian_memory.py     # Manual Obsidian memory sync trigger
+│
+├── systemd/                        # Feature: Systemd User Services
+│   ├── jarvis-oma.service          # User service unit with safe RT limits & socket activation
+│   └── jarvis.service              # Standard graphical-session service unit
 │
 ├── docs/                           # Feature: Architecture & Technical Documentation
 │   ├── architecture.md             # Complete system architectural design
+│   ├── voice-capability-wiring.md  # Voice pipeline and connector wiring specifications
+│   ├── desktop-execution.md        # Desktop execution engine documentation
 │   ├── proactive-runtime.md        # Background intelligence & safety specs
-│   ├── memory-upgrade.md           # Persistent memory specifications
-│   ├── semantic-memory-board.md    # Semantic vector cache benchmarks
-│   ├── TEST_RESULTS.txt            # Test execution logs
 │   └── README.md
 │
-└── tests/                          # Feature-Aligned Test Suite (239 tests)
-    ├── test_core/                  # Core voice loop & configuration tests
-    ├── test_audio/                 # PipeWire AEC & audio routing tests
-    ├── test_skills/                # Skills, input bar, and awareness tests
+└── tests/                          # Feature-Aligned Test Suite
+    ├── test_core/                  # Core loop, IPC, vision streaming, workers tests
+    ├── test_audio/                 # Engine ducking, flush smoothing, AEC tests
+    ├── test_skills/                # Skills, native vision, and awareness tests
+    ├── test_connectors/            # Google, GitHub, and browser connector tests
     ├── test_filesystem/            # Filesystem & task runner tests
-    ├── test_orchestration/         # Sub-agent delegation tests
+    ├── test_orchestration/         # Sub-agent and desktop execution tests
     ├── test_memory/                # Memory, SQLite, and Obsidian tests
-    ├── test_proactive/             # Proactive engine & event loop tests
-    └── README.md
+    ├── test_proactive/             # Proactive engine & verified execution tests
+    └── test_scripts/               # CLI & connector script tests
 ```
 
 ## Verification

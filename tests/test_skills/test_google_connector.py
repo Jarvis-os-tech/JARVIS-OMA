@@ -102,6 +102,33 @@ class GoogleConnectorTests(unittest.TestCase):
             result = google.gmail_read("message-id")
         self.assertEqual(result["body"], "Readable preview")
 
+    def test_gmail_read_skips_plain_text_attachments(self):
+        attachment = base64.urlsafe_b64encode(b"Attachment contents").decode()
+        message = base64.urlsafe_b64encode(b"Actual message").decode()
+        payload = {"mimeType": "multipart/mixed", "parts": [
+            {"mimeType": "text/plain", "filename": "notes.txt",
+             "headers": [{"name": "Content-Disposition", "value": "attachment; filename=notes.txt"}],
+             "body": {"data": attachment}},
+            {"mimeType": "text/plain", "body": {"data": message}},
+        ]}
+        with patch.object(google, "_api", return_value={"snippet": "Preview", "payload": payload}):
+            result = google.gmail_read("message-id")
+        self.assertEqual(result["body"], "Actual message")
+
+    def test_oauth_listener_survives_unrelated_request(self):
+        completed = __import__("threading").Event()
+        class Server:
+            timeout = None
+            calls = 0
+            def handle_request(self):
+                self.calls += 1
+                if self.calls == 2:
+                    completed.set()
+        server = Server()
+        google._serve_auth_callbacks(server, completed, timeout=2)
+        self.assertEqual(server.calls, 2)
+        self.assertLessEqual(server.timeout, 1)
+
     def test_tasks_resolve_default_list_and_preserve_explicit_list(self):
         with patch.object(google, "_api", side_effect=[
             {"items": [{"id": "account-list", "title": "My Tasks"}]},

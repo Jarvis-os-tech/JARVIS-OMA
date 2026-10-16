@@ -376,7 +376,11 @@ def _bounded(value, default=10):
 
 
 def _extract_body(payload):
-    if payload.get("mimeType") == "text/plain":
+    headers = {str(item.get("name", "")).lower(): str(item.get("value", ""))
+               for item in payload.get("headers", [])}
+    disposition = headers.get("content-disposition", "").split(";", 1)[0].strip().lower()
+    if (payload.get("mimeType") == "text/plain" and disposition != "attachment"
+            and not payload.get("filename")):
         data = payload.get("body", {}).get("data", "")
         if data:
             try:
@@ -387,7 +391,7 @@ def _extract_body(payload):
         result = _extract_body(part)
         if result:
             return result
-    return payload.get("snippet", "")
+    return ""
 
 
 def _headers(response):
@@ -580,6 +584,7 @@ def google_authorize():
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     redirect_uri = f"http://localhost:{port}/callback"
+    completed = threading.Event()
 
     class CallbackHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -598,6 +603,7 @@ def google_authorize():
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(b"<html><body><h3>Google authorization was declined.</h3></body></html>")
+                completed.set()
                 return
 
             request = urllib.request.Request(
@@ -653,6 +659,7 @@ def google_authorize():
                     b"<p>Could not exchange authorization code with Google. Please try again.</p>"
                     b"</body></html>"
                 )
+            completed.set()
 
         def log_message(self, *args):
             pass
@@ -677,8 +684,7 @@ def google_authorize():
         def _run_server():
             global _auth_server
             try:
-                server.timeout = 300
-                server.handle_request()
+                _serve_auth_callbacks(server, completed)
             finally:
                 with _auth_lock:
                     if _auth_server == server:
@@ -711,6 +717,17 @@ def google_authorize():
         "auth_url": auth_url,
         **({} if opened else {"error": "Could not open a visible browser window."}),
     }
+
+
+def _serve_auth_callbacks(server, completed, timeout=300):
+    """Keep OAuth available when a browser probe or bad callback arrives first."""
+    deadline = time.monotonic() + timeout
+    while not completed.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        server.timeout = min(1, remaining)
+        server.handle_request()
 
 
 _DISPATCH = {

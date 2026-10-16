@@ -943,6 +943,29 @@ class TestDownstreamFeed(unittest.TestCase):
 
 
 class TestDownstreamFlush(unittest.TestCase):
+    def test_barge_in_discards_partial_frame_before_next_response(self):
+        engine, loop = _make_engine()
+        router = DownstreamRouter(engine)
+        router.feed(np.full(200, 1000, dtype=np.int16).tobytes())
+        engine.handle_barge_in()
+        router.feed(np.full(480, 2000, dtype=np.int16).tobytes())
+        generation, chunk = engine.c_output_queue.get_nowait()
+        self.assertEqual(generation, engine.active_generation)
+        np.testing.assert_array_equal(
+            np.frombuffer(chunk, dtype=np.int16), np.full(480, 2000, dtype=np.int16))
+        self.assertEqual(len(router.residual), 0)
+        loop.close()
+
+    def test_barge_in_drops_stale_partial_frame_on_flush(self):
+        engine, loop = _make_engine()
+        router = DownstreamRouter(engine)
+        router.feed(np.full(200, 1000, dtype=np.int16).tobytes())
+        engine.handle_barge_in()
+        router.flush()
+        self.assertTrue(engine.c_output_queue.empty())
+        self.assertEqual(len(router.residual), 0)
+        loop.close()
+
     def test_flush_pads_with_silence(self):
         engine, loop = _make_engine()
         router = DownstreamRouter(engine)
