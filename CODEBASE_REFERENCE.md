@@ -2,7 +2,7 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-20 13:18:46 IST`
+> **Last Verified & Synchronized**: `2026-10-20 15:57:12 IST`
 > **Active Working Branch**: `main` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
@@ -38,10 +38,11 @@
 ### Branch & Remote Status
 *   **Active Working Branch**: `main`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `b6dc6a170a640011e6289e6a8b769eb69f496515` (`b6dc6a1`)
-*   **Latest Commit Subject**: `docs(readme): document full-duplex vision OS, jarvisctl CLI, and updated feature architecture`
+*   **Latest Commit SHA**: `78c07cb53f4a5f5fdd87a69d415b30848d501667` (`78c07cb`)
+*   **Latest Commit Subject**: `feat(orchestration): decouple ao integration and enable native tmux multi-agent launching`
 
 ### Commit History (Recent Log)
+*   `78c07cb` (2026-10-20): **feat(orchestration): decouple ao integration and enable native tmux multi-agent launching**
 *   `b6dc6a1` (2026-10-16): **docs(readme): document full-duplex vision OS, jarvisctl CLI, and updated feature architecture**
 *   `fd4164c` (2026-10-16): **fix(audio): taper loud residuals on downstream flush and expose playback drains**
 *   `07ad4da` (2026-10-16): **fix(audio): soften final turn edge fades and distinguish idle drains from network stalls**
@@ -56,105 +57,14 @@
 *   `57172e8` (2026-10-14): **feat(audio): implement isochronous engine with 40ms ducking and 300ms barge-in**
 *   `8e28641` (2026-10-14): **docs: add full-duplex voice OS implementation plan**
 *   `e81e5ec` (2026-10-14): **docs: add full-duplex voice OS design specification**
-*   `9215742` (2026-10-14): **feat(connectors): add Google Workspace and GitHub connectors with voice-activated browser authorization**
 
 ### Working Tree Telemetry
 ```text
-M .env.example
- M .github/workflows/ci.yml
- M .gitignore
- M CODEBASE_REFERENCE.md
- M README.md
- M audio/engine.py
- M config.toml.example
- M core/agent.py
- M core/config.py
- M docs/README.md
- M docs/architecture.md
- M docs/capability-development.md
- M docs/proactive-runtime.md
- M docs/voice-capability-wiring.md
- M filesystem/task_runner.py
- M orchestration/agent_orchestrator.py
- M orchestration/desktop_execution.py
- M orchestration/evolution.py
- M proactive/runtime.py
- M run.sh
- M scripts/test_agent_delegation.py
- M scripts/update_codebase_reference.py
- M skill_manifests/agent-orchestration.json
- M skill_manifests/desktop-awareness.json
- M skill_manifests/input-bar.json
- M skill_manifests/omarchy-defaults.json
- M skill_manifests/system-controls.json
- M skills/README.md
- M skills/manifests/desktop-awareness.json
- M skills/manifests/omarchy-defaults.json
- M skills/manifests/system-controls.json
- M skills/native/src/vision_ctrl.cpp
- M skills/skills.py
- M skills/system_control.py
- M tests/README.md
- M tests/test_audio/test_engine.py
- M tests/test_core/test_agent.py
- M tests/test_core/test_config.py
- M tests/test_core/test_vision_stream.py
- M tests/test_memory/test_memory_config.py
- M tests/test_memory/test_memory_integration.py
- M tests/test_orchestration/test_agent_orchestrator.py
- M tests/test_orchestration/test_desktop_execution.py
- M tests/test_orchestration/test_evolution.py
- M tests/test_proactive/test_proactive_runtime.py
- M tests/test_skills/test_awareness.py
- M tests/test_skills/test_google_connector.py
- M tests/test_skills/test_input_bar.py
- M tests/test_skills/test_skills.py
- M tests/test_skills/test_system_control.py
-?? connectors/phone.py
-?? core/desktop_session.py
-?? docs/GUI_CONTROL.md
-?? docs/artemis-desktop-mobile-architecture.md
-?? docs/autonomous-orchestration.md
-?? docs/jarvis-os/
-?? docs/project-scan-2026-10-19.md
-?? docs/system-control-and-information.md
-?? orchestration/model_policy.py
-?? orchestration/personas.py
-?? proactive/calendar.py
-?? pyproject.toml
-?? requirements-dev.txt
-?? skill_manifests/capabilities.json
-?? skill_manifests/gui-control.json
-?? skill_manifests/phone.json
-?? skill_manifests/system-extensions.json
-?? skill_manifests/system-information.json
-?? skills/ground_truth.py
-?? skills/gui_control.py
-?? skills/manifests/phone.json
-?? skills/manifests/system-extensions.json
-?? skills/manifests/system-information.json
-?? skills/modal_healing.py
-?? skills/system_extensions.py
-?? skills/system_information.py
-?? tests/conftest.py
-?? tests/test_core/test_desktop_session.py
-?? tests/test_core/test_phone_monitor.py
-?? tests/test_core/test_vision_pip.py
-?? tests/test_orchestration/test_autonomous_goals.py
-?? tests/test_orchestration/test_model_commands.py
-?? tests/test_orchestration/test_model_policy.py
-?? tests/test_orchestration/test_stop_all.py
-?? tests/test_orchestration/test_visible_batch.py
-?? tests/test_proactive/test_calendar.py
-?? tests/test_skills/test_capabilities.py
-?? tests/test_skills/test_ground_truth.py
-?? tests/test_skills/test_gui_control.py
-?? tests/test_skills/test_modal_healing.py
-?? tests/test_skills/test_phone.py
-?? tests/test_skills/test_plugin_control_reliability.py
-?? tests/test_skills/test_system_extensions.py
-?? tests/test_skills/test_system_information.py
-?? tests/test_skills/test_system_information_wiring.py
+M orchestration/agent_orchestrator.py
+?? docs/jarvis-munder-function-inventory.md
+?? docs/jarvis-munder-integration-blueprint.md
+?? orchestration/harness2_adapter.py
+?? tests/test_orchestration/test_harness2_adapter.py
 ```
 
 ---
@@ -275,9 +185,9 @@ sequenceDiagram
 
 ---
 
-## 5. Complete Module Map (All 360 Files)
+## 5. Complete Module Map (All 364 Files)
 
-Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (360 files cataloged across modular subsections with zero omissions):
+Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (364 files cataloged across modular subsections with zero omissions):
 
 ### 5.1 Modular Core Runtime (`core/`) (9 files)
 
@@ -324,15 +234,16 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [filesystem/filesystem.py](file:///home/g0pi/Projects/JARVIS-OMA/filesystem/filesystem.py) | 344 | 14091 | Autonomous Filesystem Engine | Full autonomy file and directory operations (list, read, write, append, edit, mkdir, move, copy, trash, delete, inspect, search, grep) with root path safety guards. |
 | [filesystem/task_runner.py](file:///home/g0pi/Projects/JARVIS-OMA/filesystem/task_runner.py) | 163 | 7481 | In-Process Bounded Task Runner | Executes multi-step filesystem plans (up to 30 steps) in background workers with per-step tracking and cooperative cancellation. |
 
-### 5.5 Orchestration & Evolution Engine (`orchestration/`) (7 files)
+### 5.5 Orchestration & Evolution Engine (`orchestration/`) (8 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [orchestration/README.md](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/README.md) | 35 | 1231 | Orchestration Subsystem Documentation | Architecture documentation for multi-agent delegation and autonomous evolution. |
 | [orchestration/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/__init__.py) | 4 | 209 | Modular Orchestration Package Marker | Package initialization marker for multi-agent CLI orchestrator and self-evolution engine. |
-| [orchestration/agent_orchestrator.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/agent_orchestrator.py) | 404 | 19908 | System Agent CLI Orchestrator | Discovers, delegates, supervises, and terminates local coding agents (Codex, Claude, OpenCode, Gemini, Hermes, OMP) across bounded non-overlapping workspaces. |
+| [orchestration/agent_orchestrator.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/agent_orchestrator.py) | 413 | 20534 | System Agent CLI Orchestrator | Discovers, delegates, supervises, and terminates local coding agents (Codex, Claude, OpenCode, Gemini, Hermes, OMP) across bounded non-overlapping workspaces. |
 | [orchestration/desktop_execution.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/desktop_execution.py) | 413 | 21551 | Visible Desktop Execution Engine | Supervises coding agents (Codex, Claude) inside dedicated visible tmux terminal panes on Omarchy Wayland desktop. |
 | [orchestration/evolution.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/evolution.py) | 483 | 23406 | Autonomous Evolution Engine | Self-improvement pipeline analyzing tool failures, system diagnostics, and synthesizing code optimizations with rollback gates. |
+| [orchestration/harness2_adapter.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/harness2_adapter.py) | 87 | 3819 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/model_policy.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/model_policy.py) | 25 | 1190 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/personas.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/personas.py) | 38 | 2491 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
@@ -578,7 +489,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [scripts/test_agent_delegation.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/test_agent_delegation.py) | 71 | 3370 | Live Agent Delegation Smoke Harness | End-to-end integration test creating temporary Git workspaces and verifying autonomous delegation to installed agents. |
 | [scripts/update_codebase_reference.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/update_codebase_reference.py) | 809 | 94583 | Codebase Reference Generator | Generates and synchronizes CODEBASE_REFERENCE.md with 100% precision from real-time Git and code telemetry. |
 
-### 5.16 Automated Test Suites (`tests/`) (76 files)
+### 5.16 Automated Test Suites (`tests/`) (77 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -623,6 +534,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_orchestration/test_autonomous_goals.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_autonomous_goals.py) | 59 | 2902 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_orchestration/test_desktop_execution.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_desktop_execution.py) | 129 | 6735 | Desktop Execution Tests | Tests tmux command generation, pane isolation, and agent process monitoring. |
 | [tests/test_orchestration/test_evolution.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_evolution.py) | 434 | 21127 | Evolution Engine Unit Tests | Tests autonomous error diagnostics, code evolution synthesis, test verification, and safety rollback. |
+| [tests/test_orchestration/test_harness2_adapter.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_harness2_adapter.py) | 21 | 964 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_orchestration/test_model_commands.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_model_commands.py) | 60 | 2692 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_orchestration/test_model_policy.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_model_policy.py) | 22 | 1112 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_orchestration/test_stop_all.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_orchestration/test_stop_all.py) | 136 | 6350 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -663,7 +575,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
-| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1150 | 160375 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
+| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1253 | 171929 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
 | [CONTRIBUTING.md](file:///home/g0pi/Projects/JARVIS-OMA/CONTRIBUTING.md) | 43 | 1304 | Contribution Guidelines | Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries. |
 | [LICENSE](file:///home/g0pi/Projects/JARVIS-OMA/LICENSE) | 21 | 1069 | MIT License | Open-source software license for JARVIS-OMA. |
 | [README.md](file:///home/g0pi/Projects/JARVIS-OMA/README.md) | 438 | 30385 | Project Documentation | Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, connectors, and memory matrix. |
@@ -688,7 +600,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [.env.example](file:///home/g0pi/Projects/JARVIS-OMA/.env.example) | 28 | 1154 | Environment Secrets Template | Example template for setting GEMINI_API_KEY and connector keys. |
 | [.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/.gitignore) | 22 | 260 | Git Ignore Specification | Ignores .venv, __pycache__, .env, private tokens, and local SQLite state databases. |
 
-### 5.19 Architectural Documentation & Research Reports (`docs/`) (33 files)
+### 5.19 Architectural Documentation & Research Reports (`docs/`) (35 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -701,6 +613,8 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [docs/capability-development.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/capability-development.md) | 137 | 7935 | Capability Development Specification | Architectural specification for autonomous self-improvement, isolated proposal git worktrees, bubblewrap sandbox, and rollback gates. |
 | [docs/desktop-execution.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/desktop-execution.md) | 38 | 2402 | Desktop Execution Specification | Design specification for visible agent execution in dedicated tmux sessions. |
 | [docs/dynamic-greetings.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/dynamic-greetings.md) | 31 | 2047 | Dynamic Greetings Specification | Architecture specification for state-aware activation greetings and suppression. |
+| [docs/jarvis-munder-function-inventory.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-munder-function-inventory.md) | 2624 | 240109 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [docs/jarvis-munder-integration-blueprint.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-munder-integration-blueprint.md) | 736 | 57567 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/jarvis-os/README.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-os/README.md) | 25 | 1189 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/jarvis-os/capability-map.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-os/capability-map.md) | 99 | 4605 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/jarvis-os/decision-log.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-os/decision-log.md) | 24 | 1433 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -1250,4 +1164,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-20 13:18:46 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-20 15:57:12 IST`.*

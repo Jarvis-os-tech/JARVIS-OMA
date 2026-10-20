@@ -12,6 +12,7 @@ import uuid
 
 from core.secret_env import sanitized_subprocess_env
 from orchestration.personas import PERSONAS
+from orchestration.harness2_adapter import Harness2Adapter
 
 AGENTS = ('codex', 'claude', 'opencode', 'gemini', 'hermes', 'omp', 'pi', 'crush')
 TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'timed_out'})
@@ -72,6 +73,7 @@ class AgentOrchestrator:
         self._closed = False
         self._stopped = False
         self._stop_task = None
+        self.harness2 = Harness2Adapter()
         self._secrets = [value for name, value in os.environ.items()
                          if any(word in name.upper() for word in ('API_KEY', 'TOKEN', 'PASSWORD', 'SECRET'))
                          and len(value) >= 8]
@@ -84,6 +86,7 @@ class AgentOrchestrator:
         return self._response('Installed agent commands discovered; authentication is not verified.',
             agents=[{'name': name, 'available': bool(self.executables.get(name)),
                      'executable': self.executables.get(name), **PERSONAS[name]} for name in AGENTS],
+            harness2=self.harness2.status(),
             unsupported_agents=[{'name': 'antigravity', **PERSONAS['antigravity'],
                                  'available': False, 'reason': 'No verified task executor adapter yet.'}])
 
@@ -170,6 +173,10 @@ class AgentOrchestrator:
             if job['cancel_requested']:
                 job['state'] = 'cancelled'
                 return
+            # Preserve injected builders used by tests and integrations; the
+            # production command path receives the Harness² context.
+            if self._command_builder is command_for:
+                prompt = self.harness2.prepare_prompt(prompt, agent=job['agent'], workspace=job['workspace'])
             arguments = (job['agent'], self.executables[job['agent']], prompt)
             # Existing injected builders use the original three-argument contract.
             command = (command_for(*arguments, model=job.get('model'))
@@ -212,6 +219,8 @@ class AgentOrchestrator:
             if self.events.full():
                 self.events.get_nowait()
             self.events.put_nowait({key: job[key] for key in ('id', 'agent', 'state', 'workspace')})
+            self.harness2.record_outcome(agent=job['agent'], task=job['task_summary'],
+                                         state=job['state'], output=job['output'])
 
     def status(self, job_id, max_chars=6000):
         job = self.jobs.get(job_id)
