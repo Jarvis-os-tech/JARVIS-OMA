@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": [{
+    "name": "list_capabilities",
+    "description": "Search JARVIS's real tool registry before claiming a capability is missing. Returns matching tools, argument schemas, exposed state and missing local dependencies. Read-only; availability does not prove a live operation succeeds.",
+    "adapter": "capabilities.list",
+    "parameters_json_schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "Action or topic, e.g. volume, GUI click, memory, browser, agents."},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }]
+}

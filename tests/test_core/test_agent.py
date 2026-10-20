@@ -1,12 +1,13 @@
 """Offline behavior tests. No microphone, cloud call, or running daemon needed."""
 import asyncio
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from types import SimpleNamespace as NS
 
 
@@ -28,7 +29,7 @@ from agent import (
     LiveVoice, live_config, supervise, run,
     NativeAudioEngine, DownstreamRouter, RenewConnection,
 )
-from skills import DesktopSkills
+from skills import DesktopSkills, SkillError
 
 
 def native_engine():
@@ -36,6 +37,107 @@ def native_engine():
     return NativeAudioEngine(loop=asyncio.get_running_loop())
 
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_proactive_loop_initiates_focus_notice(self):
+        runtime = NS(call=AsyncMock(return_value=[]), tick=AsyncMock(return_value={
+            'status': 'active', 'results': [{'status': 'suggested',
+                'tasks': [{'title': 'Prepare report', 'priority': 'high'}]}]}))
+        skills = NS(get_proactive=AsyncMock(return_value=runtime),
+                    _adapter_google_calendar_list_events=AsyncMock(return_value={'success': True, 'events': []}),
+                    _adapter_list_todos=AsyncMock(return_value={
+                        'tasks': [{'title': 'Prepare report'}]}),
+                    _adapter_list_reminders=AsyncMock(return_value={'reminders': []}))
+        voice = LiveVoice(native_engine(), skills=skills)
+        with patch('core.agent.asyncio.sleep', new=AsyncMock(side_effect=asyncio.CancelledError)):
+            with self.assertRaises(asyncio.CancelledError):
+                await voice.run_proactive(NS())
+        self.assertEqual(runtime.call.await_args_list[1].args[0], 'observe_focus')
+        self.assertEqual(len(voice._notices), 1)
+        self.assertIn('Prepare report', voice._notices[0])
+        self.assertIn('Do not execute suggested tasks', voice._notices[0])
+
+    async def test_calendar_poll_is_bounded_and_failure_does_not_block_tasks(self):
+        runtime = NS(call=AsyncMock(return_value=[]),
+                     tick=AsyncMock(return_value={'results': []}))
+        calendar = AsyncMock(side_effect=SkillError('offline'))
+        skills = NS(get_proactive=AsyncMock(return_value=runtime),
+                    _adapter_google_calendar_list_events=calendar,
+                    _adapter_list_todos=AsyncMock(return_value={'tasks': []}),
+                    _adapter_list_reminders=AsyncMock(return_value={'reminders': []}))
+        voice = LiveVoice(native_engine(), skills=skills)
+        for _ in range(2):
+            with patch('core.agent.asyncio.sleep', new=AsyncMock(side_effect=asyncio.CancelledError)):
+                with self.assertRaises(asyncio.CancelledError):
+                    await voice.run_proactive(NS())
+        self.assertEqual(calendar.await_count, 1)
+        self.assertEqual(runtime.tick.await_count, 2)
+        arguments = calendar.await_args.kwargs
+        self.assertEqual(arguments['calendar_id'], 'primary')
+        self.assertEqual(arguments['max_results'], 50)
+        self.assertIn('+05:30', arguments['time_min'])
+
+    async def test_expired_calendar_notice_is_dropped_before_speech(self):
+        voice = LiveVoice(native_engine())
+        session = NS(send_client_content=AsyncMock())
+        voice._queue_notice('Old meeting', expires_at='2000-01-01T00:00:00+00:00')
+        sender = asyncio.create_task(voice.send_notifications(session))
+        try:
+            for _ in range(10):
+                await asyncio.sleep(0)
+                if not voice._notices:
+                    break
+            self.assertFalse(voice._notices)
+            session.send_client_content.assert_not_awaited()
+            self.assertFalse(voice._response_active)
+        finally:
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
+    async def test_calendar_schedule_and_reminder_reach_voice_notices(self):
+        start = (datetime.now(timezone.utc) + timedelta(minutes=8)).isoformat()
+        agenda = [{'title': 'Project review', 'start': start, 'all_day': False}]
+        runtime = NS(call=AsyncMock(return_value=agenda),
+                     tick=AsyncMock(return_value={'results': [
+                         {'status': 'suggested', 'tasks': [], 'calendar': agenda},
+                         {'status': 'calendar_reminder', 'event': agenda[0]}]}))
+        skills = NS(get_proactive=AsyncMock(return_value=runtime),
+                    _adapter_google_calendar_list_events=AsyncMock(return_value={
+                        'success': True, 'events': [{'id': 'review', 'start': start}]}),
+                    _adapter_list_todos=AsyncMock(return_value={'tasks': []}),
+                    _adapter_list_reminders=AsyncMock(return_value={'reminders': []}))
+        voice = LiveVoice(native_engine(), skills=skills)
+        with patch('core.agent.asyncio.sleep', new=AsyncMock(side_effect=asyncio.CancelledError)):
+            with self.assertRaises(asyncio.CancelledError):
+                await voice.run_proactive(NS())
+        self.assertEqual(runtime.call.await_args_list[0].args[0], 'observe_calendar')
+        self.assertEqual(runtime.call.await_args_list[1].kwargs['calendar'], agenda)
+        self.assertEqual(len(voice._notices), 2)
+        self.assertEqual(voice._notices[0]['expires_at'], start)
+        self.assertIn('Project review', voice._notices[0]['text'])
+        self.assertIn('Project review', voice._notices[1])
+
+    async def test_calendar_voice_notice_waits_for_resume(self):
+        state = NS(can_run=False)
+        runtime = NS(control=NS(get_state=lambda: state), call=AsyncMock(return_value=state))
+        voice = LiveVoice(native_engine(), skills=NS(get_proactive=AsyncMock(return_value=runtime)))
+        voice._queue_notice('Upcoming meeting', expires_at=(
+            datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat())
+        session = NS(send_client_content=AsyncMock())
+        sender = asyncio.create_task(voice.send_notifications(session))
+        try:
+            await asyncio.sleep(.02)
+            session.send_client_content.assert_not_awaited()
+            state.can_run = True
+            for _ in range(30):
+                if session.send_client_content.await_count:
+                    break
+                await asyncio.sleep(.01)
+            session.send_client_content.assert_awaited_once()
+            sent = session.send_client_content.await_args.kwargs['turns'].parts[0].text
+            self.assertIn('Current time:', sent)
+        finally:
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
     async def test_background_notice_waits_for_reply_and_playback(self):
         engine = native_engine()
         voice = LiveVoice(engine)
@@ -101,6 +203,23 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 model_turn=types.Content(parts=[types.Part(inline_data=types.Blob(
                     data=b'\x02\x00', mime_type='audio/pcm;rate=24000'))]))))
         self.assertTrue(engine.c_output_queue.empty())
+
+    async def test_local_barge_in_discards_old_reply_until_server_boundary(self):
+        from google.genai import types
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        engine.handle_barge_in()
+        engine.on_barge_in()
+        audio = types.Content(parts=[types.Part(inline_data=types.Blob(
+            data=b'\x02\x00' * 480, mime_type='audio/pcm;rate=24000'))])
+        await voice.handle(types.LiveServerMessage(
+            server_content=types.LiveServerContent(model_turn=audio)))
+        self.assertTrue(engine.c_output_queue.empty())
+        await voice.handle(types.LiveServerMessage(
+            server_content=types.LiveServerContent(interrupted=True)))
+        await voice.handle(types.LiveServerMessage(
+            server_content=types.LiveServerContent(model_turn=audio)))
+        self.assertFalse(engine.c_output_queue.empty())
 
     async def test_input_keeps_sending_while_output_is_queued(self):
         engine = native_engine()

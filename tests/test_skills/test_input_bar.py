@@ -6,16 +6,16 @@ from unittest.mock import AsyncMock
 from urllib.request import Request, urlopen
 
 try:
-    from skills.input_bar import TestBar
+    from skills.input_bar import TestBar as InputBar
 except ImportError:
-    from test_bar import TestBar
+    from test_bar import TestBar as InputBar
 from skills import DesktopSkills
 from agent import LiveVoice
 
 
 class InputBarTests(unittest.TestCase):
     def test_loopback_submission_and_voice_close(self):
-        bar = TestBar()
+        bar = InputBar()
         try: url = bar.start()
         except PermissionError: self.skipTest('loopback sockets unavailable in sandbox')
         self.addCleanup(bar.close)

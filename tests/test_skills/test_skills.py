@@ -365,23 +365,29 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_system_power_adapter_rejects_dangerous_actions(self):
         skills = self.make_desktop_skills()
-        skills._run = AsyncMock(return_value='')
-        result = await skills.execute('system_power', {'action': 'sleep'})
-        self.assertEqual(result['status'], 'done')
-        skills._run.assert_awaited_once_with(skills._commands['systemctl'], 'suspend')
+        dispatched = {'status': 'unverified', 'action': 'sleep', 'verified': False}
+        with patch('skills.skills.system_control.control_power',
+                   new=AsyncMock(return_value=dispatched)) as control:
+            result = await skills.execute('system_power', {'action': 'sleep'})
+        self.assertEqual(result, dispatched)
+        control.assert_awaited_once_with('sleep')
 
         with self.assertRaises(SkillError):
             await skills.execute('system_power', {'action': 'shutdown'})
 
     async def test_network_adapters(self):
         skills = self.make_desktop_skills()
-        skills._run = AsyncMock(return_value='enabled\n')
-        wifi = await skills.execute('toggle_wifi', {'action': 'status'})
-        self.assertEqual(wifi['wifi'], 'enabled')
-
-        skills._run = AsyncMock(return_value='Soft blocked: no\n')
-        bt = await skills.execute('toggle_bluetooth', {'action': 'status'})
-        self.assertEqual(bt['bluetooth'], 'on')
+        skills._run = AsyncMock(side_effect=AssertionError('legacy mock-only branch must not run'))
+        with patch('skills.skills.system_control.control_wifi', new=AsyncMock(
+                return_value={'status': 'success', 'wifi': {'enabled': True}})) as wifi_control:
+            wifi = await skills.execute('toggle_wifi', {'action': 'status'})
+        self.assertTrue(wifi['wifi']['enabled'])
+        wifi_control.assert_awaited_once_with('status', ssid=None, password=None)
+        with patch('skills.skills.system_control.control_bluetooth', new=AsyncMock(
+                return_value={'status': 'success', 'bluetooth': {'powered': True}})) as bt_control:
+            bt = await skills.execute('toggle_bluetooth', {'action': 'status'})
+        self.assertTrue(bt['bluetooth']['powered'])
+        bt_control.assert_awaited_once_with('status', device=None)
 
     async def test_clipboard_adapters(self):
         skills = self.make_desktop_skills()

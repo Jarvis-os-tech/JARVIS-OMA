@@ -10,7 +10,10 @@
         "properties": {
           "region": {
             "type": "string",
-            "enum": ["full", "active"],
+            "enum": [
+              "full",
+              "active"
+            ],
             "description": "Region to inspect: full screen or focused active window."
           },
           "extract_text": {
@@ -52,7 +55,9 @@
             "description": "Application name (e.g. 'foot', 'firefox'), title keyword, or window address."
           }
         },
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "additionalProperties": false
       }
     },
@@ -69,7 +74,7 @@
     },
     {
       "name": "get_system_resources",
-      "description": "Check real-time hardware health and system performance: CPU load percentage, RAM usage, disk storage, and top resource-consuming processes.",
+      "description": "Read a fresh sourced system overview: sampled CPU utilization (not load-average percent), RAM, disk, OS and battery. Timestamped sections explicitly mark missing readings. Use get_system_information for other sections.",
       "adapter": "system.resources",
       "parameters_json_schema": {
         "type": "object",

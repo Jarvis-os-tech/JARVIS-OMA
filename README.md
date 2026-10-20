@@ -121,15 +121,16 @@ the discovered declarations to Gemini Live. The bundled manifests enable:
 
 - **Application discovery & launch**: `list_applications`, `open_application` (XDG-compliant)
 - **Web browsing**: `open_website` (safe public HTTP/HTTPS URLs)
-- **Audio & display controls**: `adjust_volume`, `adjust_brightness`
-- **Window & workspace management**: `switch_workspace`, `manage_window` (fullscreen, close, minimize, float, center, maximize via `hyprctl`)
-- **System controls**: `lock_screen` (`loginctl`), `take_screenshot` (`grim`), `system_power` (safe sleep/hibernate via `systemctl`)
-- **Network controls**: `toggle_wifi` (`nmcli`), `toggle_bluetooth` (`rfkill`)
+- **Audio & display controls**: `set_volume` (exact percentage, relative adjustment, mute/unmute/toggle), `control_microphone` (mute/unmute/toggle/volume), `set_brightness` (exact percentage, relative adjustment), `control_night_light` (blue light filter toggle/temp) backed by `ac.control-panel`
+- **Window & workspace management**: `switch_workspace`, `manage_window` (fullscreen, close, minimize, float, center, maximize via `hyprctl`), `move_window_to_workspace`
+- **System & power controls**: `control_power` (sleep, hibernate, performance, balanced, power saver, game mode, stay awake), `lock_screen` (`loginctl`), `take_screenshot` (`grim`), `control_theme` (dark/light/toggle), `open_control_panel` (settings GUI)
+- **Network controls**: `control_wifi` (turn on/off, scan, connect, disconnect), `control_bluetooth` (turn on/off, scan, connect, pair, remove) backed by `ac.control-panel`
 - **Clipboard**: `read_clipboard` (`wl-paste`), `write_clipboard` (`wl-copy`)
 - **Notifications**: `show_notification` with dynamic application name (`notify-send`)
 - **Native reminders**: `create_reminder`, `list_reminders`, `cancel_reminder`, and `clear_reminders` through Omarchy's own reminder system
 - **Todo List plugin**: create, search, edit, move, complete, reopen, delete, and clear completed tasks in the installed Omarchy Todo List widget
 - **Desktop awareness & perception**: `inspect_screen` (Wayland capture + fast local OCR), `list_windows` (open apps across all workspaces), `focus_window` (bring apps to foreground), `list_workspaces`, and `get_system_resources` (real-time CPU, RAM, disk, and process monitoring)
+- **Live system evidence and extended controls**: `get_system_information` reads fresh, timestamped CPU, memory, disk, battery, sensor, hardware, OS, network, display, audio, service, process and package data. `get_system_control_status` checks the installed control-panel integration and current settings. `system_control_extension` adds verified audio-device selection, user-service control and optional media actions. Missing readings stay unknown; confirmed control results require readback. See [system controls and information](docs/system-control-and-information.md).
 - **Voice-controlled input bar**: say “open the input bar” to type, paste, or attach text, images, audio, PDFs, and files into the active conversation; say “close the input bar” to dismiss it
 - **Proactive autonomy runtime**: persistent events and activity ledger, bounded planning and agent routing, monitored background delegation, plus global “pause Jarvis”, “resume Jarvis”, and “stop all Jarvis work” voice controls
 - **Filesystem (Full Autonomy)**: `list_files`, `read_file` (with offset and pagination), `write_file`, `append_file`, `edit_file`, `make_directory`, `move_path`, `copy_path`, `trash_path`, `delete_path` (permanent removal with safety guards), `inspect_file` (file/directory metadata and line count), `search_files` (filename search), and `search_file_content` (content grep with line numbers and snippets)

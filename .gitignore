@@ -18,3 +18,5 @@ credentials*.json
 *.pem
 skills/native/bin/
 *.o
+.gravitas/
+external/

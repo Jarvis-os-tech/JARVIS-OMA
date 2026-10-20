@@ -19,7 +19,7 @@ Restart the voice assistant after loading this code, then say something like:
 The voice model calls `start_development` with the goal and absolute repository
 path. Ask for `development_status`, `list_development_jobs`, or
 `cancel_development` using the returned job ID. The standard manifest directory is
-`skills/manifests`; the legacy `skill_manifests` copy also includes these tools.
+`skill_manifests`.
 Custom manifest directories must include `development.json` to expose them.
 
 If a user asks for something with no matching skill, the assistant uses

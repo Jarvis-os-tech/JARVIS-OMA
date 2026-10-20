@@ -340,6 +340,30 @@ class EvolutionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SandboxCommandTests(unittest.TestCase):
+    def test_managed_python_version_alias_is_available_inside_sandbox(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory) / 'python-3.13.15'
+            base.mkdir()
+            alias = Path(directory) / 'python-3.13'
+            alias.symlink_to(base, target_is_directory=True)
+            with patch('orchestration.evolution.shutil.which', return_value='/usr/bin/bwrap'), \
+                 patch('orchestration.evolution.sys.base_prefix', str(base)), \
+                 patch('orchestration.evolution.sys._base_executable', str(alias / 'bin/python')):
+                argv = verification_command('/tmp/checkout')
+            mounts = [argv[i + 1:i + 3] for i, arg in enumerate(argv) if arg == '--ro-bind']
+            self.assertIn([str(base), str(alias)], mounts)
+            self.assertNotIn([directory, directory], mounts)
+
+    def test_external_python_installation_is_mounted_without_parent_home(self):
+        base = '/opt/managed-python/3.13'
+        with patch('orchestration.evolution.shutil.which', return_value='/usr/bin/bwrap'), \
+             patch('orchestration.evolution.sys.base_prefix', base), \
+             patch('orchestration.evolution.sys.prefix', '/opt/project/.venv'):
+            argv = verification_command('/tmp/checkout')
+        mounts = [argv[i + 1:i + 3] for i, arg in enumerate(argv) if arg == '--ro-bind']
+        self.assertIn([base, base], mounts)
+        self.assertNotIn(['/opt', '/opt'], mounts)
+
     def test_generated_tests_have_no_network_or_host_home_and_clean_environment(self):
         with patch('orchestration.evolution.shutil.which', return_value='/usr/bin/bwrap'):
             argv = verification_command('/tmp/private/checkout')

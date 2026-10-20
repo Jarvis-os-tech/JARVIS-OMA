@@ -174,6 +174,8 @@ class GoogleConnectorTests(unittest.TestCase):
     def test_google_authorize_opens_browser(self):
         with patch.object(google, "_client_credentials", return_value=("test-id", "test-secret")), \
              patch("connectors.google_workspace.HTTPServer") as mock_server, \
+             patch.object(google, "_auth_server", None), \
+             patch("connectors.google_workspace.threading.Thread") as mock_thread, \
              patch("connectors.google_workspace.open_url", return_value=True) as mock_open:
             mock_server.return_value = unittest.mock.MagicMock()
             result = google.google_authorize()
@@ -185,6 +187,11 @@ class GoogleConnectorTests(unittest.TestCase):
             self.assertIn(google.DRIVE_READ_SCOPE,
                           parse_qs(urlsplit(result["auth_url"]).query)["scope"][0].split())
             mock_open.assert_called_once()
+            # This test checks launch wiring. A real thread around a mocked
+            # HTTPServer spins for the entire OAuth deadline (five minutes).
+            # Callback-loop behavior is exercised separately above.
+            mock_thread.return_value.start.assert_called_once()
+            self.assertTrue(mock_thread.call_args.kwargs["daemon"])
 
     def test_drive_scope_is_separate_from_existing_google_connection(self):
         old = {"scope": "https://mail.google.com/ https://www.googleapis.com/auth/calendar"}

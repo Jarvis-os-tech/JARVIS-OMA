@@ -1,4 +1,9 @@
-"""Live delegation smoke test. Uses installed agent accounts and temporary repos."""
+"""Live delegation smoke test.
+
+This is intentionally not collected by the normal offline pytest suite. It uses
+installed agent accounts and temporary repositories, and should be run only as
+an explicit smoke test.
+"""
 import argparse
 import asyncio
 import json

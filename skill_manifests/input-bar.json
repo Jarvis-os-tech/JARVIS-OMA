@@ -1,4 +1,4 @@
 {"version":1,"skills":[
-  {"name":"open_input_bar","description":"Open the JARVIS multimodal input bar when the user asks to type, paste, attach, upload, or send a file to the current voice conversation.","adapter":"input_bar.open","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
-  {"name":"close_input_bar","description":"Close the JARVIS input bar when the user asks to close or dismiss it.","adapter":"input_bar.close","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}
+  {"name":"open_input_bar","description":"Open the JARVIS textbar / multimodal input bar HUD when the user asks to open the textbar, input bar, or type, paste, attach, upload, or send text or files to JARVIS.","adapter":"input_bar.open","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
+  {"name":"close_input_bar","description":"Close the JARVIS textbar / input bar HUD when the user asks to close or dismiss it.","adapter":"input_bar.close","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}}
 ]}

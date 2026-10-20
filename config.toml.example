@@ -23,14 +23,14 @@ playback_cushion_s = 0.32               # Network audio held before speech start
 capture_latency_ms = 20                  # PipeWire capture latency
 command_timeout = 8                      # Subprocess command timeout in seconds
 noise_suppression = true                 # WebRTC noise suppression filter
-local_barge_in = false                   # Let Gemini detect interruptions; avoids speaker echo ducking Jarvis
+local_barge_in = true                    # Stop Jarvis for sustained speech on the echo-cancelled mic
 diagnostic_transcripts = false          # Temporarily log spoken transcript fragments for audio troubleshooting
 voice_rms_threshold = 450.0              # Ignore quieter background noise
 voice_band_ratio = 0.55                  # Required energy inside 300-3400 Hz
-duck_after_ms = 40                       # Soften playback for short backchannels
+duck_after_ms = 40                       # Used only when duck_gain is below 1.0
 barge_in_after_ms = 300                  # Flush playback for sustained speech
 release_after_ms = 120                   # Restore volume after speech ends
-duck_gain = 0.30                         # Playback gain while user backchannels
+duck_gain = 1.0                          # Keep speech clear; below 1.0 enables volume ducking
 fade_ms = 10                             # Click-free gain transition
 mic_volume_percent = 80                  # Max mic volume percent to avoid clipping/bleed
 

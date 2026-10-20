@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg.filesystem.allow_delete)
         self.assertFalse(cfg.agent.single_sentence)
         self.assertTrue(cfg.audio.noise_suppression)
-        self.assertFalse(cfg.audio.local_barge_in)
+        self.assertTrue(cfg.audio.local_barge_in)
         self.assertFalse(cfg.audio.diagnostic_transcripts)
         self.assertEqual(cfg.audio.playback_cushion_s, 0.32)
         self.assertEqual(cfg.audio.mic_volume_percent, 80)

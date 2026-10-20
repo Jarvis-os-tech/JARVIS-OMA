@@ -38,34 +38,7 @@
         "additionalProperties": false
       }
     },
-    {
-      "name": "adjust_volume",
-      "description": "Raise, lower, or toggle mute for speaker output.",
-      "adapter": "audio.volume",
-      "parameters_json_schema": {
-        "type": "object",
-        "properties": {
-          "action": {"type": "string", "enum": ["raise", "lower", "mute_toggle"]},
-          "amount": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Percentage points; ignored for mute_toggle."}
-        },
-        "required": ["action"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "adjust_brightness",
-      "description": "Raise or lower display brightness.",
-      "adapter": "display.brightness",
-      "parameters_json_schema": {
-        "type": "object",
-        "properties": {
-          "direction": {"type": "string", "enum": ["raise", "lower"]},
-          "amount": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Percentage points, default 5."}
-        },
-        "required": ["direction"],
-        "additionalProperties": false
-      }
-    },
+
     {
       "name": "switch_workspace",
       "description": "Switch to a numbered, next, or previous Omarchy workspace.",

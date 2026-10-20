@@ -89,6 +89,9 @@ class MemoryIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         output_transcription=SimpleNamespace(text='Understood.' if completed else ''),
                         turn_complete=completed))
                 await voice.handle(event)
+            # Voice capture is queued so SQLite cannot block audio reception.
+            # Drain the writes before asserting or removing their temporary DB.
+            await asyncio.gather(*tuple(skills._memory_writes))
             self.assertEqual(skills.memory.session.messages[-2].content, 'I prefer English.')
             skills.memory.close()
             skills.memory.start()

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "system_control_extension",
+      "description": "Extend control-panel controls with audio input/output selection, current-user services and media playback. First list/status to discover exact targets. Audio: list/status/set_default. User services: list/status/start/stop/restart. Media: list/status/play/pause/play_pause/stop/next/previous. Reports fresh evidence and whether the effect is verified; unavailable backends are explicit.",
+      "adapter": "system.extension",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "audio_output",
+              "audio_input",
+              "user_service",
+              "media"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "status",
+              "set_default",
+              "start",
+              "stop",
+              "restart",
+              "play",
+              "pause",
+              "play_pause",
+              "next",
+              "previous"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "description": "Exact discovered audio device ID/name, user .service unit, or media player name."
+          }
+        },
+        "required": [
+          "category",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

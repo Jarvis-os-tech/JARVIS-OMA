@@ -24,6 +24,57 @@ The proactive runtime (`proactive/`) enables JARVIS to observe desktop activity,
 - **`ledger.py`**: Persistent SQLite activity and execution records.
 - **`verification.py`**: Bounded independent checks of exact artifact bytes.
 
+## Proactive daily focus
+
+The live voice observer checks ongoing Omarchy todos every ten seconds and
+initiates a daily focus briefing without waiting for a spoken request. It selects
+up to three incomplete ongoing tasks, ordered critical, high, medium, then low.
+The existing notification sender waits for the current reply and playback to
+finish before delivering the briefing. No briefing is created for an empty list.
+
+Briefings are deduplicated in the persistent event database per workspace and
+local calendar day, including across restarts. The first scan with eligible tasks
+creates the briefing; it is not a fixed morning alarm. Pause and stop suppress
+creation and processing. Resuming allows a queued briefing to be processed.
+As with other queued notifications, completion records handoff to the voice loop,
+not confirmed audible delivery; a crash during handoff may lose a briefing.
+Task titles are supplied as untrusted context. Suggestions do not authorize or
+launch workers; explicit authorized task requests keep their existing execution
+path. This is a daily prioritization foundation, not predictive desktop awareness.
+
+## Google Calendar briefings and reminders
+
+While the live voice session is running, the observer reads the connected Google
+account's **primary calendar** once per minute through the existing Workspace
+adapter. It requests up to 50 events from today's midnight through ten minutes
+after the next midnight. Existing connector expansion includes recurring event
+instances. This first version does not scan other calendars or paginate beyond
+50 events, and does not run when JARVIS is offline.
+
+Today's timed and all-day events accompany the once-daily task briefing, even
+when there are no ongoing todos. The observer uses `memory.obsidian_timezone`
+(default `Asia/Kolkata`), matching the existing greeting timezone. Timestamped
+events are converted from their UTC offsets; all-day dates remain dates.
+
+Each timed event starting within the next ten minutes creates one read-only
+reminder. The minute polling interval means this usually arrives nine to ten
+minutes beforehand; starting JARVIS later can produce a shorter warning.
+Cancelled events, malformed timestamps, and already-started events do not create
+reminders. All-day events do not receive timed alerts. Reminder identity includes
+the calendar, event ID, and start instant, allowing a rescheduled start to receive
+a new reminder while suppressing repeats across restarts. Schedule changes and
+cancellations have up to one minute of observation delay; cancellation of a
+previously queued voice notice is not implemented.
+
+Pause and stop prevent reminder creation/processing and hold Calendar voice
+reminders. Reminders expire at the event start, including while waiting behind
+speech or a pause. Calendar errors leave the task/reminder loop operational and
+are retried on the next poll; if the task briefing has already been created during
+an outage, the recovered schedule is not added to that day's briefing retroactively.
+Notifications have the same handoff/crash limitation described above. Calendar
+fields are untrusted context, never authorization to change events, join meetings,
+or launch workers. Conflict warnings and change announcements are not included.
+
 ## Verified execution foundation
 
 Observed todos and reminders never authorize execution, including high/critical

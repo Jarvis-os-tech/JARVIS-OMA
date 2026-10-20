@@ -10,7 +10,6 @@ Writes to:
 --------------------------------------------------------------------------------
 """
 
-import os
 import sys
 import subprocess
 import datetime
@@ -36,22 +35,21 @@ def get_line_count(file_path):
 
 def collect_file_inventory():
     inventory = []
-    for root, dirs, files in os.walk(WORKSPACE_ROOT):
-        # Exclude directories
-        dirs[:] = [d for d in dirs if d not in [".git", ".venv", "__pycache__", ".secrets", ".agents", ".aws", ".codex"]]
-        for f in files:
-            if f.endswith(".pyc"):
-                continue
-            full_path = Path(root) / f
-            rel_path = full_path.relative_to(WORKSPACE_ROOT)
-            lines = get_line_count(full_path)
-            size = full_path.stat().st_size
-            inventory.append({
-                "rel_path": str(rel_path),
-                "full_path": str(full_path),
-                "lines": lines,
-                "size": size
-            })
+    paths = subprocess.check_output(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=WORKSPACE_ROOT).decode().split("\0")
+    for rel_path in paths:
+        if not rel_path:
+            continue
+        full_path = WORKSPACE_ROOT / rel_path
+        if not full_path.is_file():
+            continue
+        inventory.append({
+            "rel_path": rel_path,
+            "full_path": str(full_path),
+            "lines": get_line_count(full_path),
+            "size": full_path.stat().st_size,
+        })
     inventory.sort(key=lambda x: x["rel_path"])
     return inventory
 
@@ -112,18 +110,6 @@ KNOWN_ROLES = {
     "skill_manifests/proactive.json": ("Proactive Autonomy Manifest", "Manifest declaring pause_jarvis, resume_jarvis, stop_all_jarvis_work, and activity ledger tools."),
     "skill_manifests/system-controls.json": ("System Controls Manifest", "Manifest declaring 19 volume, brightness, workspace, and power state controls."),
     "skill_manifests/task-runner.json": ("Task Runner Skills Manifest", "Manifest declaring background filesystem task runner plan submission, status, and cancellation tools."),
-    "skills/manifests/agent-orchestration.json": ("Agent Orchestration Manifest (Package Mirror)", "Manifest declaring agent discovery, delegation, job status, and job cancellation tools."),
-    "skills/manifests/desktop-awareness.json": ("Desktop Awareness Manifest (Package Mirror)", "Manifest declaring inspect_screen OCR, window topography, and system resource monitoring tools."),
-    "skills/manifests/development.json": ("Autonomous Development Skills Manifest (Package Mirror)", "Manifest declaring start_development, get_development_status, cancel_development, and list_development_jobs."),
-    "skills/manifests/filesystem.json": ("Filesystem Skills Manifest (Package Mirror)", "Manifest declaring 13 safe autonomous filesystem tools (read, write, list, search, grep, edit, trash, move, copy)."),
-    "skills/manifests/github.json": ("GitHub Skills Manifest (Package Mirror)", "Manifest declaring 8 GitHub voice tools (search repos, view issues/PRs, workflow runs, user inspect)."),
-    "skills/manifests/google-workspace.json": ("Google Workspace Skills Manifest (Package Mirror)", "Manifest declaring 15 Google Workspace tools across Gmail, Calendar, and Tasks."),
-    "skills/manifests/input-bar.json": ("Input Bar Skills Manifest (Package Mirror)", "Manifest declaring multimodal loopback input bar activation and query tools."),
-    "skills/manifests/memory.json": ("Memory Skills Manifest (Package Mirror)", "Manifest declaring 10 memory storage, fact recall, profile update, and search tools."),
-    "skills/manifests/omarchy-defaults.json": ("Omarchy Defaults Manifest (Package Mirror)", "Manifest declaring 19 desktop application, notification, clipboard, and browser control tools."),
-    "skills/manifests/proactive.json": ("Proactive Autonomy Manifest (Package Mirror)", "Manifest declaring pause_jarvis, resume_jarvis, stop_all_jarvis_work, and activity ledger tools."),
-    "skills/manifests/system-controls.json": ("System Controls Manifest (Package Mirror)", "Manifest declaring 19 volume, brightness, workspace, and power state controls."),
-    "skills/manifests/task-runner.json": ("Task Runner Skills Manifest (Package Mirror)", "Manifest declaring background filesystem task runner plan submission, status, and cancellation tools."),
 
     # Proactive Autonomy Subsystem
     "proactive/__init__.py": ("Proactive Module Exports", "Exports AutonomyControl, EventBus, ActivityLedger, AutonomousPlanner, ProactivePolicy, ProactiveMonitor, and ProactiveRuntime."),
@@ -369,7 +355,7 @@ def generate_markdown():
     md.append("# CODEBASE_REFERENCE.md: J.A.R.V.I.S. OMA Technical Reference Manual\n")
     md.append("> **Definitive Codebase & Architectural Specification**  ")
     md.append(f"> **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  ")
-    md.append(f"> **Last Verified & Synchronized**: `{timestamp}`  ")
+    md.append(f"> **Last Verified & Synchronized**: `{timestamp}`")
     md.append(f"> **Active Working Branch**: `{branch}` | **Remote**: `{remote_url}`  \n")
     md.append("---\n")
 
@@ -537,8 +523,8 @@ def generate_markdown():
         ("5.3 External Service Connectors (`connectors/`)", lambda p: p.startswith("connectors/")),
         ("5.4 Modular Filesystem Subsystem (`filesystem/`)", lambda p: p.startswith("filesystem/")),
         ("5.5 Orchestration & Evolution Engine (`orchestration/`)", lambda p: p.startswith("orchestration/")),
-        ("5.6 Dynamic Skills Engine & Overlays (`skills/`)", lambda p: p.startswith("skills/") and not p.startswith("skills/manifests/")),
-        ("5.7 Dynamic Skill Manifests (`skill_manifests/` & `skills/manifests/`)", lambda p: p.startswith("skill_manifests/") or p.startswith("skills/manifests/")),
+        ("5.6 Dynamic Skills Engine & Overlays (`skills/`)", lambda p: p.startswith("skills/")),
+        ("5.7 Dynamic Skill Manifests (`skill_manifests/`)", lambda p: p.startswith("skill_manifests/")),
         ("5.8 Proactive Autonomy Subsystem (`proactive/`)", lambda p: p.startswith("proactive/")),
         ("5.9 Backward Compatibility Shims (`jarvis_memory/`)", lambda p: p.startswith("jarvis_memory/")),
         ("5.10 Unified Memory Package & Active Engine (`memory/` & `memory/codes-dev/jarvis_memory/`)", lambda p: p in ("memory/README.md", "memory/__init__.py") or p.startswith("memory/codes-dev/jarvis_memory/")),

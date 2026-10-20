@@ -28,7 +28,7 @@ graph TD
    - `audio/echo_cancel.py`: Session-owned PipeWire WebRTC AEC module. Guarantees echo-free full-duplex conversation by routing playback through a reference sink and capture through an echo-cancelled source.
 
 3. **Skills Engine (`skills/`)**:
-   - Declarative JSON manifests (`skills/manifests/`) validated with strict schemas.
+   - Declarative JSON manifests (`skill_manifests/`) validated with strict schemas.
    - Self-declaring dependency checks (`ADAPTER_COMMANDS`) providing graceful degradation.
    - Zero-latency multimodal input bar (`skills/input_bar.py`) for live typing and file attachments.
 

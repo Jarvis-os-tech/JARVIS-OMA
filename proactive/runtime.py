@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 import hashlib
@@ -15,6 +16,7 @@ from .planner import AutonomousPlanner
 from .policy import Action, ActionEffect, ProactivePolicy
 from .monitor import ProactiveMonitor
 from .verification import validate_checks, verify_files
+from .calendar import calendar_agenda
 
 
 class ProactiveRuntime:
@@ -74,6 +76,48 @@ class ProactiveRuntime:
                                details={'priority': priority, 'workspace': workspace})
             observed.append(event_id)
         return observed
+
+    def observe_focus(self, tasks, workspace, *, now=None, calendar=None):
+        """Schedule one local-day focus suggestion without authorizing work."""
+        if not self.control.get_state().can_run:
+            return []
+        today = (now or datetime.now().astimezone()).date().isoformat()
+        event_id = 'focus:' + today + ':' + hashlib.sha256(
+            str(Path(workspace).resolve()).encode()).hexdigest()[:16]
+        if self.bus.get(event_id):
+            return []
+        priorities = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+        candidates = [item for item in tasks if isinstance(item, dict)
+                      and not item.get('completed')
+                      and item.get('status', 'ongoing') == 'ongoing'
+                      and isinstance(item.get('title'), str) and item['title'].strip()]
+        candidates.sort(key=lambda item: priorities.get(str(item.get('priority')), 2))
+        selected = [{'title': item['title'].strip()[:200],
+                     'priority': str(item.get('priority', 'medium'))[:20]}
+                    for item in candidates[:3]]
+        if not selected and not calendar:
+            return []
+        self.bus.publish('focus_suggested', {'tasks': selected, 'workspace': str(workspace),
+                         'calendar': calendar or [],
+                         'authorized': False}, event_id=event_id)
+        return [event_id]
+
+    def observe_calendar(self, events, *, now=None, calendar_id='primary'):
+        """Persist deduplicated read-only reminders; return the daily agenda."""
+        now = now or datetime.now().astimezone()
+        agenda, reminders = calendar_agenda(events, now)
+        if not self.control.get_state().can_run:
+            return agenda
+        for item in reminders:
+            instant = datetime.fromisoformat(item['start']).astimezone(timezone.utc).isoformat()
+            identity = '\x1f'.join((calendar_id, item['id'], instant))
+            event_id = 'calendar:' + hashlib.sha256(identity.encode()).hexdigest()[:32]
+            if self.bus.get(event_id):
+                continue
+            self.bus.publish('calendar_reminder', {
+                'event': item, 'expires_at': item['start'], 'authorized': False},
+                event_id=event_id)
+        return agenda
 
     def observe_reminders(self, reminders, workspace):
         observed = []
@@ -135,13 +179,30 @@ class ProactiveRuntime:
         await self._reconcile_jobs()
         state = await self.call(self.control.get_state)
         if state.stop_all:
-            for job in list(self.orchestrator.workers):
-                await self.orchestrator.cancel(job)
+            await self.orchestrator.stop_all()
             return {'status': 'stopped', 'cancelled': True}
         if state.paused:
             return {'status': 'paused'}
         results = []
         for event in await self.call(self.bus.claim, limit=4):
+            if event.type == 'calendar_reminder':
+                expired = datetime.fromisoformat(event.payload['expires_at']) <= datetime.now(timezone.utc)
+                await self.call(self.ledger.append, 'calendar_reminder',
+                                'Expired calendar reminder' if expired else 'Upcoming calendar event',
+                                event_id=event.id, details=event.payload)
+                await self.call(self.bus.transition, event.id, EventStatus.COMPLETED)
+                if not expired:
+                    results.append({'event_id': event.id, 'status': 'calendar_reminder',
+                                    'event': event.payload['event']})
+                continue
+            if event.type == 'focus_suggested':
+                await self.call(self.ledger.append, 'focus_suggested',
+                                'Daily focus suggestion', event_id=event.id, details=event.payload)
+                await self.call(self.bus.transition, event.id, EventStatus.COMPLETED)
+                results.append({'event_id': event.id, 'status': 'suggested',
+                                'tasks': event.payload['tasks'],
+                                'calendar': event.payload.get('calendar', [])})
+                continue
             activity = await self.call(self.ledger.append, 'plan', 'Planning ' + event.type,
                                           event_id=event.id, details=event.payload,
                                           status=ActivityStatus.PLANNED)
@@ -237,13 +298,17 @@ class ProactiveRuntime:
             await self.call(self.ledger.transition, activity_id, target)
 
     async def stop_all(self):
-        state = await self.call(self.control.stop_all)
-        for job in list(self.orchestrator.workers):
-            await self.orchestrator.cancel(job)
+        self.orchestrator.stop_admission()
+        try:
+            state = await self.call(self.control.stop_all)
+        finally:
+            await self.orchestrator.stop_all()
         return {'status': 'stopped', 'state': asdict(state)}
 
     def pause(self): return {'status': 'paused', 'state': asdict(self.control.pause())}
-    def resume(self): return {'status': 'active', 'state': asdict(self.control.resume())}
+    def resume(self):
+        self.orchestrator.resume()
+        return {'status': 'active', 'state': asdict(self.control.resume())}
     def status(self):
         state = self.control.get_state()
         recent = [{**asdict(item), 'execution': self.ledger.execution(item.id)}

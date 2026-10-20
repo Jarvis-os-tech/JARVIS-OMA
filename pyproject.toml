@@ -1,0 +1,25 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+norecursedirs = [
+  ".git",
+  ".venv",
+  "memory/codes-dev",
+  "__pycache__",
+]
+markers = [
+  "offline: deterministic tests that do not require live desktop, cloud, or agent services",
+  "live_desktop: requires a running graphical desktop and desktop-control dependencies",
+  "live_agent: requires an installed and authenticated external coding agent",
+  "slow: takes longer than the normal offline test budget",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["core", "audio", "skills", "filesystem", "orchestration", "proactive", "memory"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true

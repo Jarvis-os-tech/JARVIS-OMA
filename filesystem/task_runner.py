@@ -79,7 +79,18 @@ class TaskRunner:
                 job['updated_at'] = _now()
                 try:
                     result = await self._execute(step['tool'], step['args'])
+                    if task_id in self._cancel_requested:
+                        step['status'] = 'completed'
+                        step['result'] = result
+                        job['completed_steps'] += 1
+                        job['status'] = 'cancelled'
+                        break
+                    await self._verify_step_ground_truth(step['tool'], step['args'])
                 except Exception as error:
+                    if task_id in self._cancel_requested:
+                        step['status'] = 'cancelled'
+                        job['status'] = 'cancelled'
+                        break
                     step['status'] = 'failed'
                     step['error'] = str(error)[:300]
                     job['status'] = 'failed'
@@ -96,6 +107,34 @@ class TaskRunner:
         finally:
             job['updated_at'] = _now()
             self._cancel_requested.discard(task_id)
+
+    async def _verify_step_ground_truth(self, tool: str, args: dict) -> None:
+        """Deterministically verify physical ground truth on disk after step execution."""
+        from pathlib import Path
+        if tool in ('write_file', 'append_file', 'edit_file'):
+            raw_path = args.get('path', '')
+            if raw_path:
+                path = Path(raw_path).expanduser().resolve()
+                if not path.is_file() or path.stat().st_size == 0:
+                    raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} not found or empty')
+        elif tool == 'make_directory':
+            raw_path = args.get('path', '')
+            if raw_path:
+                path = Path(raw_path).expanduser().resolve()
+                if not path.is_dir():
+                    raise TaskPlanError(f'Ground-truth verification failed: directory {raw_path} does not exist')
+        elif tool == 'copy_path':
+            raw_dst = args.get('destination', '')
+            if raw_dst:
+                dst = Path(raw_dst).expanduser().resolve()
+                if not dst.exists():
+                    raise TaskPlanError(f'Ground-truth verification failed: copy destination {raw_dst} does not exist')
+        elif tool == 'move_path':
+            raw_dst = args.get('destination', '')
+            if raw_dst:
+                dst = Path(raw_dst).expanduser().resolve()
+                if not dst.exists():
+                    raise TaskPlanError(f'Ground-truth verification failed: move destination {raw_dst} does not exist')
 
     def status(self, task_id: str) -> dict:
         job = self._jobs.get(task_id)

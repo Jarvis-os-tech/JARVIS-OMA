@@ -102,6 +102,15 @@ class DesktopAwarenessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res2['status'], 'focused')
         self.assertEqual(res2['window']['class'], 'firefox')
 
+        # Match by app textbar query
+        skills._run = AsyncMock(side_effect=[
+            json.dumps(SAMPLE_CLIENTS),
+            'ok',
+        ])
+        res3 = await skills.execute('focus_window', {'query': 'firefox textbar'})
+        self.assertEqual(res3['status'], 'focused')
+        self.assertEqual(res3['window']['class'], 'firefox')
+
         # No match error
         skills._run = AsyncMock(return_value=json.dumps(SAMPLE_CLIENTS))
         with self.assertRaisesRegex(SkillError, 'no open window found'):
@@ -157,22 +166,16 @@ class DesktopAwarenessTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_system_resources(self):
         skills = self.make_desktop_skills()
-        ps_output = "node 15.2 3.1\ncode 10.1 5.4\nfoot 2.0 0.5\n"
-        skills._run = AsyncMock(return_value=ps_output)
-
-        with patch('os.getloadavg', return_value=(1.5, 1.2, 1.0)), \
-             patch('os.cpu_count', return_value=8), \
-             patch('shutil.disk_usage', return_value=(100 * 1024**3, 40 * 1024**3, 60 * 1024**3)):
+        observation = {'section': 'overview', 'status': 'partial',
+                       'observed_at': '2026-10-20T08:00:00+00:00',
+                       'sources': ['/proc/stat'], 'data': {'cpu': {'data': {
+                           'utilization_percent': 15.2}}}, 'errors': []}
+        with patch('skills.system_information.get_system_information',
+                   new=AsyncMock(return_value=observation)) as query:
             res = await skills.execute('get_system_resources', {})
-
-        self.assertIn('cpu_load_percent', res)
-        self.assertEqual(res['cpu_cores'], 8)
-        self.assertIn('ram_total_gb', res)
-        self.assertIn('ram_used_percent', res)
-        self.assertIn('disk_total_gb', res)
-        self.assertIsInstance(res['top_processes'], list)
-        self.assertEqual(res['top_processes'][0]['name'], 'node')
-        self.assertEqual(res['top_processes'][0]['cpu_percent'], 15.2)
+        self.assertEqual(res, observation)
+        self.assertNotIn('cpu_load_percent', res)
+        query.assert_awaited_once_with(section='overview', detail=None, limit=10)
 
     async def test_desktop_context_includes_open_windows_count(self):
         skills = self.make_desktop_skills()

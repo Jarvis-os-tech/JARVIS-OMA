@@ -91,7 +91,7 @@ class NativeAudioEngine:
     release_after_ms : int
         Duration of silence before restoring ducked playback (default 120ms = 6 frames).
     duck_gain : float
-        Output gain multiplier when ducked (default 0.30 = -10.5 dB).
+        Optional output gain while the user speaks (default 1.0, no volume dip).
     fade_ms : int
         Duration of linear gain ramps in milliseconds (default 10ms).
     on_barge_in : Callable[[], None], optional
@@ -116,7 +116,7 @@ class NativeAudioEngine:
         duck_after_ms: int = 40,
         barge_in_after_ms: int = 300,
         release_after_ms: int = 120,
-        duck_gain: float = 0.30,
+        duck_gain: float = 1.0,
         fade_ms: int = 10,
         allow_barge_in: bool = True,
         double_talk_ratio: float = 1.8,
@@ -159,12 +159,15 @@ class NativeAudioEngine:
                         else round(playback_cushion_s * 1000))
         self._playback_prebuffer_frames = min(30, max(1, (prebuffer_ms + output_frame_ms - 1)
                                                         // output_frame_ms))
+        self._playback_initial_prebuffer_frames = self._playback_prebuffer_frames
         self._playback_primed = False
         self._playback_need_fade_in = True
         self.playback_rebuffers = 0
         self.playback_drains = 0
         self.output_underflows = 0
         self.output_callback_errors = 0
+        self.output_edge_repairs = 0
+        self.interruption_edge_repairs = 0
         self.playback_recoveries = 0
         self._last_output_status_log_at = 0.0
         self._last_output_enqueue_at = 0.0
@@ -181,6 +184,14 @@ class NativeAudioEngine:
         self.speaking: bool = False
         self.state: str = 'listening'  # 'listening' | 'speaking' | 'ducked' | 'barged_in'
         self.allow_barge_in: bool = bool(allow_barge_in)
+        self._aec_input_bound = False
+        self.voice_gate_frames = 0
+        self.voice_candidate_frames = 0
+        self.voice_rejected_rms_frames = 0
+        self.voice_rejected_echo_frames = 0
+        self.voice_rejected_band_frames = 0
+        self.local_barge_ins = 0
+        self.peak_speaking_mic_rms = 0.0
         self.double_talk_ratio: float = float(double_talk_ratio)
         self.echo_cancellation_ratio: float = float(echo_cancellation_ratio)
 
@@ -378,23 +389,28 @@ class NativeAudioEngine:
         samples -= float(samples.mean())
         rms = float(np.sqrt(np.mean(samples * samples)))
         if rms < self.voice_rms_threshold:
+            self.voice_rejected_rms_frames += 1
             return False
 
-        # Double-talk and echo gating:
-        # If output is actively playing or recently reverberating in the room,
-        # ensure mic energy is significantly above the echo reference before
-        # considering it as genuine user speech.
+        # An AEC-bound microphone has already removed the speaker reference.
+        # Comparing its residual level with the original speaker level rejects
+        # ordinary user speech whenever Jarvis is speaking loudly. Keep the
+        # stricter comparison only when capture is bound to a plain microphone.
         echo_ref = self._get_echo_reference()
-        if echo_ref > 0.005:
+        if echo_ref > 0.005 and not self._aec_input_bound:
             # Normalized RMS of mic signal
             mic_normalized_rms = rms / 32768.0
             if mic_normalized_rms <= (echo_ref * self.double_talk_ratio):
+                self.voice_rejected_echo_frames += 1
                 return False
 
         spectrum = np.abs(np.fft.rfft(samples))
         vocal_energy = float(spectrum[self._vocal_mask].sum())
         total_spec_energy = float(spectrum[1:].sum()) + 1e-9
-        return (vocal_energy / total_spec_energy) >= self.voice_band_ratio
+        if (vocal_energy / total_spec_energy) < self.voice_band_ratio:
+            self.voice_rejected_band_frames += 1
+            return False
+        return True
 
     def _update_voice_gate(self, raw_bytes: bytes):
         """Duck short backchannels and flush only sustained user speech."""
@@ -402,21 +418,22 @@ class NativeAudioEngine:
             self._voice_frames = self._quiet_frames = 0
             self._barge_fired = False
             return
+        self.voice_gate_frames += 1
+        self.peak_speaking_mic_rms = max(self.peak_speaking_mic_rms, self.input_rms)
         if self._is_voice(raw_bytes):
+            self.voice_candidate_frames += 1
             self._voice_frames += 1
             self._quiet_frames = 0
-            if self._voice_frames >= self.duck_frames:
+            if self.duck_gain < 1.0 and self._voice_frames >= self.duck_frames:
                 self.set_output_gain(self.duck_gain)
                 self._set_state('ducked')
             if self._voice_frames >= self.barge_frames and not self._barge_fired:
                 self._barge_fired = True
+                self.local_barge_ins += 1
                 self.handle_barge_in()
                 if self.on_barge_in is not None:
                     try:
-                        if self.loop.is_running():
-                            self.loop.call_soon_threadsafe(self.on_barge_in)
-                        else:
-                            self.on_barge_in()
+                        self.on_barge_in()
                     except Exception:
                         pass
         else:
@@ -461,8 +478,17 @@ class NativeAudioEngine:
                         if self._fade_out_audio else np.empty(0, dtype=np.int16))
                 self._fade_out_audio = None
                 if len(tail) >= ramp_len:
-                    ramp = (tail[:ramp_len].astype(np.float32) *
-                            self._fade_out_edge[:ramp_len]).astype(np.int16)
+                    source = tail[:ramp_len].astype(np.float32)
+                    gap = int(self._last_output_sample) - int(tail[0])
+                    if abs(gap) > 1:
+                        # The queued frame may not start where the device left
+                        # off. Join it over 2 ms before releasing the waveform.
+                        span = min(ramp_len, self.output_rate // 500)
+                        source[:span] += np.linspace(gap, 0, span, endpoint=False)
+                        if abs(gap) > 6000:
+                            self.interruption_edge_repairs += 1
+                    ramp = np.clip(source * self._fade_out_edge[:ramp_len],
+                                   -32768, 32767).astype(np.int16)
                 else:
                     ramp = (self._fade_out_edge[:ramp_len] *
                             float(self._last_output_sample)).astype(np.int16)
@@ -565,6 +591,9 @@ class NativeAudioEngine:
                 if finished:
                     self._playback_primed = False
                     self._playback_need_fade_in = True
+                    # Jitter recovery belongs to this speech burst. Carrying
+                    # its larger cushion forward slows every later reply.
+                    self._playback_prebuffer_frames = self._playback_initial_prebuffer_frames
                     self._set_state('listening')
                 return
 
@@ -590,6 +619,15 @@ class NativeAudioEngine:
                 samples[:fade_len] = (samples[:fade_len].astype(np.float32) *
                                       self._fade_in_edge[:fade_len]).astype(np.int16)
                 self._playback_need_fade_in = False
+            elif n and abs(int(samples[0]) - int(self._last_output_sample)) > 6000:
+                # Keep a rare discontinuity at a PCM frame join from clicking.
+                span = min(n, self.output_rate // 500)
+                samples = samples.copy()
+                correction = np.linspace(int(self._last_output_sample) - int(samples[0]),
+                                         0, span, endpoint=False)
+                samples[:span] = np.clip(samples[:span].astype(np.float32) + correction,
+                                         -32768, 32767).astype(np.int16)
+                self.output_edge_repairs += 1
 
             if outdata.ndim == 2:
                 outdata[:n, 0] = samples[:n]
@@ -724,12 +762,16 @@ class NativeAudioEngine:
                     for block in out.split('Source Output #'):
                         if 'PipeWire ALSA' in block:
                             sid = block.splitlines()[0].strip()
-                            subprocess.run(
+                            moved = subprocess.run(
                                 ['pactl', 'move-source-output', sid, source_name],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL,
                             )
-                            log.info('PortAudio capture stream #%s bound to AEC source: %s', sid, source_name)
+                            if moved.returncode == 0:
+                                self._aec_input_bound = True
+                                log.info('PortAudio capture stream #%s bound to AEC source: %s', sid, source_name)
+                            else:
+                                log.warning('Could not bind PortAudio capture stream #%s to AEC source', sid)
                             break
                 if sink_name:
                     out = subprocess.check_output(
@@ -770,6 +812,9 @@ class NativeAudioEngine:
             os.environ['PULSE_SINK'] = sink_name
 
         in_id, out_id = self.resolve_aec_devices(source_name, sink_name)
+        self._aec_input_bound = bool(
+            source_name and source_name.lower() in
+            sd.query_devices(in_id).get('name', '').lower())
 
         try:
             self.input_stream = sd.InputStream(
@@ -835,6 +880,7 @@ class NativeAudioEngine:
             self.speaking = False
             self._playback_primed = False
             self._playback_need_fade_in = True
+            self._playback_prebuffer_frames = self._playback_initial_prebuffer_frames
         self._set_state('barged_in')
 
 

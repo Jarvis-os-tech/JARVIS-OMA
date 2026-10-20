@@ -5,7 +5,7 @@ The `skills/` package houses dynamic desktop automation tools, declarative JSON 
 ## Components
 
 - **`skills.py` (`DesktopSkills`, `SkillError`)**:
-  - Dynamically discovers and loads declarative JSON manifests from `skills/manifests/`.
+  - Dynamically discovers and loads declarative JSON manifests from `skill_manifests/`.
   - Performs strict JSON schema validation for tool declarations and function arguments.
   - Implements graceful degradation: auto-excludes skills whose command dependencies (`ADAPTER_COMMANDS`) are absent.
   - Dispatches calls to native desktop adapters:

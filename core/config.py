@@ -53,7 +53,7 @@ class AudioConfig:
     capture_latency_ms: int = 30
     command_timeout: int = 8
     noise_suppression: bool = True
-    local_barge_in: bool = False
+    local_barge_in: bool = True
     diagnostic_transcripts: bool = False
     mic_volume_percent: int | None = 80
     playback_cushion_s: float = 0.32
@@ -62,7 +62,7 @@ class AudioConfig:
     duck_after_ms: int = 40
     barge_in_after_ms: int = 300
     release_after_ms: int = 120
-    duck_gain: float = 0.30
+    duck_gain: float = 1.0
     fade_ms: int = 10
 
     def validate(self):

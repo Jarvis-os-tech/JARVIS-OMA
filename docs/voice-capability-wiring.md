@@ -1,6 +1,6 @@
 # Jarvis voice capability wiring
 
-The current voice session declares 125 skills from `skills/manifests/`. `DesktopSkills.execute` validates each declared tool and routes it to an adapter. `LiveVoice._execute_tool` returns the actual result to the original Gemini Live function call, including operations that take longer than 150 ms. This is essential for any request where Jarvis needs to read data before speaking.
+The voice session loads skills from `skill_manifests/`. `DesktopSkills.execute` validates each declared tool and routes it to an adapter. `LiveVoice._execute_tool` returns the actual result to the original Gemini Live function call, including operations that take longer than 150 ms. This is essential for any request where Jarvis needs to read data before speaking.
 
 | Area | Jarvis voice route | Current scope |
 | --- | --- | --- |

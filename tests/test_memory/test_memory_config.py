@@ -97,9 +97,7 @@ class MemoryConfigTests(unittest.TestCase):
 
     def test_manifest_contract(self):
         root = Path(__file__).resolve().parents[2]
-        manifest = root / 'skills' / 'manifests' / 'memory.json'
-        if not manifest.is_file():
-            manifest = root / 'skill_manifests' / 'memory.json'
+        manifest = root / 'skill_manifests' / 'memory.json'
         skills = json.loads(manifest.read_text(encoding='utf-8'))['skills']
         self.assertEqual({item['adapter'] for item in skills}, {
             'memory.remember', 'memory.recall', 'memory.forget', 'memory.clear',

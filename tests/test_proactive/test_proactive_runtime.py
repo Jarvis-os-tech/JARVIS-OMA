@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,8 +14,58 @@ class FakeOrchestrator:
     async def cancel(self, job):
         self.workers.pop(job, None)
         self.jobs[job]['state'] = 'cancelled'
+    def stop_admission(self): self.stopped = True
+    def resume(self): self.stopped = False
+    async def stop_all(self):
+        self.stop_admission()
+        for job in list(self.workers):
+            await self.cancel(job)
 
 class ProactiveRuntimeTests(unittest.TestCase):
+    def test_focus_is_proactive_prioritized_and_durable(self):
+        async def scenario(root):
+            orchestrator = FakeOrchestrator()
+            runtime = ProactiveRuntime(root, orchestrator)
+            today = datetime(2026, 10, 18, tzinfo=timezone.utc)
+            tasks = [{'title': 'Low task', 'priority': 'low'},
+                     {'title': 'Critical task', 'priority': 'critical'},
+                     {'title': 'Done', 'completed': True},
+                     {'title': 'Backlog', 'status': 'backlog'}]
+            self.assertEqual(len(runtime.observe_focus(tasks, root, now=today)), 1)
+            result = await runtime.tick()
+            suggestion = result['results'][0]
+            self.assertEqual(suggestion['status'], 'suggested')
+            self.assertEqual([item['title'] for item in suggestion['tasks']],
+                             ['Critical task', 'Low task'])
+            self.assertEqual(orchestrator.calls, [])
+            await runtime.close()
+            restarted = ProactiveRuntime(root, orchestrator)
+            self.assertEqual(restarted.observe_focus(tasks, root, now=today), [])
+            self.assertEqual(len(restarted.observe_focus(
+                tasks, root, now=today + timedelta(days=1))), 1)
+            await restarted.close()
+        with tempfile.TemporaryDirectory() as root:
+            asyncio.run(scenario(root))
+
+    def test_focus_respects_controls_and_empty_lists(self):
+        async def scenario(root):
+            runtime = ProactiveRuntime(root, FakeOrchestrator())
+            tasks = [{'title': 'Prepare report'}]
+            self.assertEqual(runtime.observe_focus([], root), [])
+            runtime.pause()
+            self.assertEqual(runtime.observe_focus(tasks, root), [])
+            runtime.resume()
+            self.assertEqual(len(runtime.observe_focus(tasks, root)), 1)
+            runtime.pause()
+            self.assertEqual((await runtime.tick())['status'], 'paused')
+            runtime.resume()
+            self.assertEqual((await runtime.tick())['results'][0]['status'], 'suggested')
+            await runtime.stop_all()
+            self.assertEqual(runtime.observe_focus(tasks, root), [])
+            await runtime.close()
+        with tempfile.TemporaryDirectory() as root:
+            asyncio.run(scenario(root))
+
     def test_queue_plan_delegate_and_persist_activity(self):
         with tempfile.TemporaryDirectory() as root:
             orchestrator=FakeOrchestrator(); runtime=ProactiveRuntime(Path(root), orchestrator)

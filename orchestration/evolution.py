@@ -67,6 +67,18 @@ def verification_command(checkout):
             argv += ['--ro-bind', directory, directory]
     if sys.prefix != sys.base_prefix:
         argv += ['--ro-bind', sys.prefix, sys.prefix]
+    # uv/pyenv environments can point at an interpreter outside /usr. Mount
+    # only that Python installation, never its containing home directory.
+    base = Path(sys.base_prefix).resolve()
+    if not any(base.is_relative_to(root) for root in ('/usr', '/bin', '/lib', '/lib64')):
+        if base == Path('/') or base == Path.home():
+            raise EvolutionError('Python installation root is too broad to sandbox safely')
+        argv += ['--ro-bind', str(base), str(base)]
+    # Managed Python may also use a version alias (3.13 -> 3.13.15). The
+    # virtualenv symlink refers to that alias, which is otherwise absent.
+    alias = Path(getattr(sys, '_base_executable', sys.executable)).parent.parent
+    if alias != base and alias.resolve() == base:
+        argv += ['--ro-bind', str(base), str(alias)]
     argv += ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
              '--dir', '/tmp/home', '--bind', str(checkout), '/workspace',
              '--chdir', '/workspace', '--setenv', 'HOME', '/tmp/home',

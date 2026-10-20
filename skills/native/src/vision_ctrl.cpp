@@ -199,11 +199,14 @@ FrameCaptureResult capture_webcam_frame(const std::string& target_path, const st
         (void)std::system(mkdir_cmd.c_str());
     }
 
+    std::string tmp_path = out_path + ".tmp";
+
     // Try 1: Fast direct MJPEG stream copy via ffmpeg (sub-40ms, zero transcoding)
-    std::string mjpeg_cmd = "ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i " + dev + " -vframes 1 \"" + out_path + "\" -y >/dev/null 2>&1";
+    std::string mjpeg_cmd = "ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i " + dev + " -vframes 1 \"" + tmp_path + "\" -y >/dev/null 2>&1";
     if (std::system(mjpeg_cmd.c_str()) == 0) {
         struct stat st;
-        if (stat(out_path.c_str(), &st) == 0 && st.st_size > 0) {
+        if (stat(tmp_path.c_str(), &st) == 0 && st.st_size > 0) {
+            std::rename(tmp_path.c_str(), out_path.c_str());
             res.success = true;
             res.file_size = st.st_size;
             res.method = "ffmpeg-mjpeg";
@@ -212,10 +215,11 @@ FrameCaptureResult capture_webcam_frame(const std::string& target_path, const st
     }
 
     // Try 2: Standard v4l2 raw grab via ffmpeg
-    std::string ffmpeg_cmd = "ffmpeg -f v4l2 -video_size 1280x720 -i " + dev + " -vframes 1 \"" + out_path + "\" -y >/dev/null 2>&1";
+    std::string ffmpeg_cmd = "ffmpeg -f v4l2 -video_size 1280x720 -i " + dev + " -vframes 1 \"" + tmp_path + "\" -y >/dev/null 2>&1";
     if (std::system(ffmpeg_cmd.c_str()) == 0) {
         struct stat st;
-        if (stat(out_path.c_str(), &st) == 0 && st.st_size > 0) {
+        if (stat(tmp_path.c_str(), &st) == 0 && st.st_size > 0) {
+            std::rename(tmp_path.c_str(), out_path.c_str());
             res.success = true;
             res.file_size = st.st_size;
             res.method = "ffmpeg-v4l2";
@@ -224,10 +228,11 @@ FrameCaptureResult capture_webcam_frame(const std::string& target_path, const st
     }
 
     // Try 3: fswebcam fallback
-    std::string fswebcam_cmd = "fswebcam -d " + dev + " -r 1280x720 --no-banner \"" + out_path + "\" >/dev/null 2>&1";
+    std::string fswebcam_cmd = "fswebcam -d " + dev + " -r 1280x720 --no-banner \"" + tmp_path + "\" >/dev/null 2>&1";
     if (std::system(fswebcam_cmd.c_str()) == 0) {
         struct stat st;
-        if (stat(out_path.c_str(), &st) == 0 && st.st_size > 0) {
+        if (stat(tmp_path.c_str(), &st) == 0 && st.st_size > 0) {
+            std::rename(tmp_path.c_str(), out_path.c_str());
             res.success = true;
             res.file_size = st.st_size;
             res.method = "fswebcam";

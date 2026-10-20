@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from orchestration.desktop_execution import DesktopAgentOrchestrator, interactive_command
-from orchestration.agent_orchestrator import OrchestrationError
+from orchestration.desktop_execution import DesktopAgentOrchestrator, interactive_command, CLAUDE_MODELS
+from orchestration.agent_orchestrator import AGENTS, OrchestrationError
 
 
 class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
@@ -44,6 +44,36 @@ class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(launch_index, attach_index)
         self.assertIn('COLORTERM=truecolor', calls[launch_index][-1])
 
+    async def test_visible_tmux_execution_for_all_agents(self):
+        for agent in AGENTS:
+            with self.subTest(agent=agent):
+                runner = DesktopAgentOrchestrator({agent: f'/bin/{agent}'})
+                screens = iter(['Booting...', '❯ Ready for command'])
+                dead = iter(['0 ', '1 0'])
+
+                async def tmux(*args):
+                    if args[0] == 'capture-pane':
+                        return next(screens)
+                    if args[0] == 'display-message':
+                        if args[-1] == '#{session_attached}':
+                            return '1'
+                        return next(dead)
+                    return ''
+
+                runner._tmux = AsyncMock(side_effect=tmux)
+                launcher = AsyncMock()
+                launcher.returncode = None
+                with tempfile.TemporaryDirectory() as workspace, patch(
+                        'shutil.which', return_value='/bin/tool'), patch(
+                        'asyncio.create_subprocess_exec', return_value=launcher):
+                    res = runner.delegate(agent, 'Do some task', workspace, visible=True)
+                    key = res['job']['id']
+                    self.assertEqual(res['job']['execution_mode'], 'visible')
+                    self.assertEqual(res['job']['surface'], 'terminal')
+                    await runner.workers[key]
+                job = runner.status(key)['job']
+                self.assertEqual(job['state'], 'completed')
+
     async def test_background_agent_uses_existing_supervised_runner(self):
         for agent in ('opencode', 'gemini', 'hermes', 'omp'):
             with self.subTest(agent=agent):
@@ -51,7 +81,7 @@ class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
                     {agent: sys.executable},
                     lambda name, executable, prompt: [executable, '-c', "print('delegated')"])
                 with tempfile.TemporaryDirectory() as workspace:
-                    result = runner.delegate(agent, 'Inspect this project', workspace)
+                    result = runner.delegate(agent, 'Inspect this project', workspace, visible=False)
                     key = result['job']['id']
                     await runner.workers[key]
                 job = runner.status(key)['job']
@@ -81,3 +111,19 @@ class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('auto/best-coding', interactive_command('claude', 'claude'))
         with self.assertRaises(OrchestrationError):
             interactive_command('claude', 'claude', 'sonnet')
+
+    def test_interactive_commands_all_supported_agents(self):
+        expected_executables = {agent: f'/bin/{agent}' for agent in AGENTS}
+        for agent, exe in expected_executables.items():
+            cmd = interactive_command(agent, exe)
+            self.assertEqual(cmd[0], exe)
+
+    def test_discover_shows_visible_and_background_support(self):
+        runner = DesktopAgentOrchestrator({agent: f'/bin/{agent}' for agent in AGENTS})
+        with patch('shutil.which', return_value='/bin/tool'):
+            info = runner.discover()
+            self.assertTrue(info['desktop_execution']['available'])
+            self.assertEqual(len(info['agents']), len(AGENTS))
+            for agent_info in info['agents']:
+                self.assertTrue(agent_info['visible_supported'])
+                self.assertTrue(agent_info['background_supported'])

@@ -1,6 +1,6 @@
 # Test Suite (`tests/`)
 
-The `tests/` directory houses the complete test suite for JARVIS-OMA (239 unit & integration tests), organized into domain packages matching the project's feature architecture.
+The `tests/` directory houses the unit and integration suite for JARVIS-OMA, organized into domain packages matching the project's feature architecture.
 
 ## Test Directory Structure
 
@@ -47,6 +47,26 @@ tests/
 ```
 
 ## Running Tests
+
+Supported isolated test run:
+
+```sh
+uv pip install --python .venv/bin/python -r requirements.txt -r requirements-dev.txt
+timeout -k 5 180 .venv/bin/python -m pytest -q
+```
+
+Pytest collects only `tests/`; preserved upstream memory tests and live agent
+smoke scripts are excluded from default discovery. Tests isolate connector
+credentials and use a local executable search path. Local UNIX sockets and
+loopback listeners must be allowed for IPC tests. Mock tests do not certify
+live desktop or cloud behavior. The unittest commands below do not apply the
+isolation fixtures in `conftest.py`.
+
+For real Linux sandbox verification (requires `bwrap` and permitted user
+namespaces), run `JARVIS_TEST_SANDBOX=1 .venv/bin/python -m pytest -q`.
+These extra tests use temporary repositories and fake agents; they do not
+contact paid models. They exercise the real sandbox's filesystem, environment,
+and network boundaries.
 
 Run the full suite across all feature packages:
 ```sh

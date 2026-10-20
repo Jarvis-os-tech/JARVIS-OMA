@@ -279,6 +279,29 @@ class TestOutputCallback(unittest.TestCase):
 
 
 class TestPlaybackJitter(unittest.TestCase):
+    def test_network_stall_does_not_delay_next_completed_turn(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.06)
+        frame = np.full(480, 1000, dtype=np.int16).tobytes()
+        output = np.zeros((480, 1), dtype=np.int16)
+        for _ in range(3):
+            engine.enqueue_output(0, frame)
+        for _ in range(4):
+            engine._output_callback(output, 480, None, None)
+        self.assertEqual(engine._playback_prebuffer_frames, 7)
+        engine.mark_turn_complete()
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(engine._playback_prebuffer_frames, 3)
+        for _ in range(3):
+            engine.enqueue_output(0, frame)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[-1, 0], 1000)
+
+    def test_barge_in_resets_stall_cushion(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.06)
+        engine._playback_prebuffer_frames = 30
+        engine.handle_barge_in()
+        self.assertEqual(engine._playback_prebuffer_frames, 3)
+
     def test_device_underflow_softens_resume_without_growing_network_cushion(self):
         engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
         frame = np.full(480, 12000, dtype=np.int16).tobytes()
@@ -340,6 +363,18 @@ class TestPlaybackJitter(unittest.TestCase):
         self.assertEqual(output[239, 0], 12000)
         self.assertEqual(output[240, 0], 12000)
         self.assertEqual(engine.output_callback_errors, 0)
+
+    def test_large_frame_join_is_smoothed_without_muting_speech(self):
+        engine = NativeAudioEngine(loop=MagicMock(), playback_cushion_s=0.02)
+        output = np.zeros((480, 1), dtype=np.int16)
+        engine.enqueue_output(0, np.full(480, 12000, dtype=np.int16).tobytes())
+        engine.enqueue_output(0, np.full(480, -12000, dtype=np.int16).tobytes())
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[-1, 0], 12000)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(output[0, 0], 12000)
+        self.assertEqual(output[-1, 0], -12000)
+        self.assertEqual(engine.output_edge_repairs, 1)
 
     def test_prebuffer_and_smooth_rebuffer_edges(self):
         engine = NativeAudioEngine(loop=MagicMock(), playback_latency_ms=60)
@@ -520,12 +555,23 @@ class TestVoiceGate(unittest.TestCase):
 
     def test_short_backchannel_ducks_without_flushing(self):
         engine, loop = _make_engine()
+        engine.duck_gain = 0.30
         engine.speaking = True
         frame = self.voice_frame()
         engine._update_voice_gate(frame)
         engine._update_voice_gate(frame)
         self.assertEqual(engine._target_gain, 0.30)
         self.assertEqual(engine.active_generation, 0)
+        loop.close()
+
+    def test_default_barge_in_does_not_modulate_playback_gain(self):
+        engine, loop = _make_engine()
+        engine.speaking = True
+        frame = self.voice_frame()
+        for _ in range(engine.barge_frames):
+            engine._update_voice_gate(frame)
+        self.assertEqual(engine.active_generation, 1)
+        self.assertEqual(engine._target_gain, 1.0)
         loop.close()
 
     def test_sustained_voice_flushes_without_restarting_stream(self):
@@ -576,6 +622,21 @@ class TestVoiceGate(unittest.TestCase):
             engine._update_voice_gate(loud_frame)
         self.assertEqual(engine.active_generation, 1)
         self.assertTrue(engine._barge_fired)
+        callback.assert_called_once()
+        loop.close()
+
+    def test_aec_microphone_accepts_sustained_normal_voice_during_loud_reply(self):
+        engine, loop = _make_engine()
+        engine.speaking = True
+        engine._aec_input_bound = True
+        engine._recent_output_rms.append(0.20)
+        callback = MagicMock()
+        engine.on_barge_in = callback
+        t = np.arange(320) / 16000
+        frame = (np.sin(2 * np.pi * 700 * t) * 1200).astype(np.int16).tobytes()
+        for _ in range(engine.barge_frames):
+            engine._update_voice_gate(frame)
+        self.assertEqual(engine.active_generation, 1)
         callback.assert_called_once()
         loop.close()
 
@@ -641,6 +702,19 @@ class TestOutputMicroFade(unittest.TestCase):
         np.testing.assert_array_equal(output[:engine._edge_fade_samples, 0], expected)
         self.assertTrue((output[engine._edge_fade_samples:, 0] == 0).all())
         self.assertIsNone(engine._fade_out_audio)
+        loop.close()
+
+    def test_barge_in_fade_joins_last_output_sample(self):
+        engine, loop = _make_engine()
+        engine._last_output_sample = np.int16(-10000)
+        next_frame = np.full(480, 10000, dtype=np.int16)
+        engine.enqueue_output(0, next_frame.tobytes())
+        engine.handle_barge_in()
+        output = np.zeros((480, 1), dtype=np.int16)
+        engine._output_callback(output, 480, None, None)
+        self.assertEqual(int(output[0, 0]), -10000)
+        self.assertEqual(engine.interruption_edge_repairs, 1)
+        self.assertEqual(int(output[engine._edge_fade_samples - 1, 0]), 0)
         loop.close()
 
     def test_micro_fade_executed_on_barge_in(self):

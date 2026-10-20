@@ -120,3 +120,20 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             watcher.cancel()
             sender.cancel()
             await asyncio.gather(watcher, sender, return_exceptions=True)
+
+    async def test_team_runs_assignments_sequentially_in_shared_workspace(self):
+        runner = self.runner("print('specialist completed')")
+        with tempfile.TemporaryDirectory() as directory:
+            result = runner.delegate_team('Ship the feature', [
+                {'agent': 'codex', 'prompt': 'Implement it'},
+                {'agent': 'claude', 'prompt': 'Review and fix it'},
+            ], directory)
+            team_id = result['team']['id']
+            await runner.team_workers[team_id]
+            team = runner.team_status(team_id)['team']
+            self.assertEqual(team['state'], 'completed')
+            self.assertEqual(len(team['jobs']), 2)
+            first, second = (runner.jobs[key] for key in team['jobs'])
+            self.assertEqual(first['state'], 'completed')
+            self.assertEqual(second['state'], 'completed')
+            self.assertIn('Shared team goal: Ship the feature', second['task_summary'])

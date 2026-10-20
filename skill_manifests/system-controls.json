@@ -59,8 +59,8 @@
       }
     },
     {
-      "name": "system_power",
-      "description": "Put the computer to sleep or hibernate.",
+      "name": "control_power",
+      "description": "Manage system power profile and sleep states: sleep, hibernate, performance, balanced, power_saver, game_mode, stay_awake, or status.",
       "adapter": "system.power",
       "parameters_json_schema": {
         "type": "object",
@@ -69,9 +69,15 @@
             "type": "string",
             "enum": [
               "sleep",
-              "hibernate"
+              "hibernate",
+              "performance",
+              "balanced",
+              "power_saver",
+              "game_mode",
+              "stay_awake",
+              "status"
             ],
-            "description": "Power state action: sleep or hibernate."
+            "description": "Power profile or state action."
           }
         },
         "required": [
@@ -81,8 +87,8 @@
       }
     },
     {
-      "name": "toggle_wifi",
-      "description": "Turn Wi-Fi on, turn Wi-Fi off, or check Wi-Fi connection status.",
+      "name": "control_wifi",
+      "description": "Control Wi-Fi networking: turn on/off, check status, scan networks, connect, or disconnect.",
       "adapter": "network.wifi",
       "parameters_json_schema": {
         "type": "object",
@@ -92,9 +98,20 @@
             "enum": [
               "on",
               "off",
-              "status"
+              "status",
+              "scan",
+              "connect",
+              "disconnect"
             ],
-            "description": "Wi-Fi action: on, off, or status."
+            "description": "Wi-Fi action: on, off, status, scan, connect, or disconnect."
+          },
+          "ssid": {
+            "type": "string",
+            "description": "Network SSID/name to connect to or disconnect from."
+          },
+          "password": {
+            "type": "string",
+            "description": "Optional Wi-Fi password for connecting to a secured network."
           }
         },
         "required": [
@@ -104,8 +121,8 @@
       }
     },
     {
-      "name": "toggle_bluetooth",
-      "description": "Turn Bluetooth on, turn Bluetooth off, or check Bluetooth status.",
+      "name": "control_bluetooth",
+      "description": "Control Bluetooth: turn on/off, check status, scan nearby devices, or connect/disconnect/pair/remove devices.",
       "adapter": "network.bluetooth",
       "parameters_json_schema": {
         "type": "object",
@@ -115,9 +132,18 @@
             "enum": [
               "on",
               "off",
-              "status"
+              "status",
+              "scan",
+              "connect",
+              "disconnect",
+              "pair",
+              "remove"
             ],
-            "description": "Bluetooth action: on, off, or status."
+            "description": "Bluetooth action: on, off, status, scan, connect, disconnect, pair, remove."
+          },
+          "device": {
+            "type": "string",
+            "description": "Device MAC address or name to connect, disconnect, pair, or remove."
           }
         },
         "required": [
@@ -157,14 +183,22 @@
     },
     {
       "name": "type_text",
-      "description": "Type text into the currently active/focused window. Supports multi-line blocks via clipboard paste.",
+      "description": "Type text into a target application or window. If target_window is specified (e.g. 'antigravity', 'chrome', 'browser', 'terminal', or window title/class), automatically focuses and verifies the target window before typing. If the user mentions an application textbar (such as 'antigravity textbar'), target_window focuses that application. If target_window is omitted, types into the active non-terminal window or focused window.",
       "adapter": "input.type",
       "parameters_json_schema": {
         "type": "object",
         "properties": {
           "text": {
             "type": "string",
-            "description": "Text to type into the focused application."
+            "description": "Text to type into the focused application or target window."
+          },
+          "target_window": {
+            "type": "string",
+            "description": "Target window or application to type into (e.g. 'antigravity' or 'antigravity textbar', 'chrome', 'browser', 'terminal', or window title/class). Automatically focuses and verifies target before typing to prevent typing into the wrong window."
+          },
+          "press_enter": {
+            "type": "boolean",
+            "description": "Optional flag to press Return/Enter immediately after typing."
           }
         },
         "required": [
@@ -175,7 +209,7 @@
     },
     {
       "name": "press_key",
-      "description": "Press a keyboard key or key combination with modifiers (e.g. Return, Escape, Tab, Super+Return, Ctrl+C).",
+      "description": "Press a keyboard key or key combination with modifiers (e.g. Return, Escape, Tab, Super+Return, Ctrl+C). If target_window is specified, focuses and verifies the target window before pressing key.",
       "adapter": "input.key",
       "parameters_json_schema": {
         "type": "object",
@@ -187,6 +221,10 @@
           "modifiers": {
             "type": "string",
             "description": "Optional modifier keys, e.g. super, ctrl, alt, shift, or combinations like ctrl+alt."
+          },
+          "target_window": {
+            "type": "string",
+            "description": "Optional target window or application to focus and verify before pressing key (e.g. 'textbar', 'terminal', 'browser')."
           }
         },
         "required": [
@@ -284,7 +322,7 @@
     },
     {
       "name": "set_volume",
-      "description": "Set master speaker output volume to an exact percentage (0 to 100).",
+      "description": "Control speaker output volume: set exact percentage (0 to 100), adjust relatively ('raise' or 'lower'), or mute/unmute/toggle.",
       "adapter": "audio.volume_set",
       "parameters_json_schema": {
         "type": "object",
@@ -294,17 +332,32 @@
             "minimum": 0,
             "maximum": 100,
             "description": "Exact volume level percentage (0 to 100)."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "raise",
+              "lower",
+              "mute",
+              "unmute",
+              "toggle"
+            ],
+            "description": "Relative adjustment or mute action."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Percentage points to raise or lower (default 5)."
           }
         },
-        "required": [
-          "percent"
-        ],
+        "required": [],
         "additionalProperties": false
       }
     },
     {
       "name": "control_microphone",
-      "description": "Mute, unmute, or toggle default microphone mute state.",
+      "description": "Control default microphone: mute, unmute, toggle mute, check status, or set input volume percentage.",
       "adapter": "audio.mic_control",
       "parameters_json_schema": {
         "type": "object",
@@ -314,9 +367,17 @@
             "enum": [
               "mute",
               "unmute",
-              "toggle"
+              "toggle",
+              "status",
+              "volume"
             ],
-            "description": "Microphone action: mute, unmute, or toggle."
+            "description": "Microphone action: mute, unmute, toggle, status, or volume."
+          },
+          "volume_percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Optional input volume level percentage (0 to 100)."
           }
         },
         "required": [
@@ -327,7 +388,7 @@
     },
     {
       "name": "set_brightness",
-      "description": "Set display brightness to an exact percentage (1 to 100).",
+      "description": "Control display brightness: set exact percentage (1 to 100) or adjust relatively ('raise' or 'lower').",
       "adapter": "display.brightness_set",
       "parameters_json_schema": {
         "type": "object",
@@ -337,11 +398,23 @@
             "minimum": 1,
             "maximum": 100,
             "description": "Exact brightness level percentage (1 to 100)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "raise",
+              "lower"
+            ],
+            "description": "Direction to adjust brightness: 'raise' or 'lower'."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Percentage points to adjust (default 5)."
           }
         },
-        "required": [
-          "percent"
-        ],
+        "required": [],
         "additionalProperties": false
       }
     },
@@ -362,6 +435,264 @@
         "required": [
           "workspace"
         ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "detect_desktop_dialogs",
+      "description": "Scan and list open desktop dialogs, confirmation prompts, file overwrite alerts, and authentication prompts across workspaces.",
+      "adapter": "system.detect_dialogs",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "handle_desktop_dialog",
+      "description": "Safely dismiss, cancel, or confirm an active desktop dialog or alert. Strictly blocks autonomous confirmation of authentication/polkit prompts for security.",
+      "adapter": "system.handle_dialog",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "dismiss",
+              "cancel",
+              "confirm"
+            ],
+            "description": "Action to take on the dialog: 'dismiss' (Escape / Close), 'cancel' (Escape), or 'confirm' (Enter)."
+          },
+          "dialog_id": {
+            "type": "string",
+            "description": "Optional window address of the dialog to handle. Defaults to active dialog."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "heal_window_focus",
+      "description": "Diagnose and restore window focus to a target application if focus was stolen by a background process, notification, or pop-up.",
+      "adapter": "system.heal_focus",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_window": {
+            "type": "string",
+            "description": "Target application name, title keyword, or window address to re-align focus to."
+          }
+        },
+        "required": [
+          "target_window"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "verify_ground_truth",
+      "description": "Deterministically verify physical ground truth on the system before completing tasks: checks real filesystem state, active process existence, window mapping/focus, or clipboard text.",
+      "adapter": "system.verify_ground_truth",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "process",
+              "window",
+              "clipboard"
+            ],
+            "description": "Category of ground-truth state to verify."
+          },
+          "criteria": {
+            "type": "object",
+            "description": "Validation criteria: path, min_bytes, expected_content for files; process_name or pid for processes; target_window, expected_active for windows; expected_snippet for clipboard.",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "min_bytes": {
+                "type": "integer"
+              },
+              "expected_content": {
+                "type": "string"
+              },
+              "is_dir": {
+                "type": "boolean"
+              },
+              "process_name": {
+                "type": "string"
+              },
+              "pid": {
+                "type": "integer"
+              },
+              "expected_running": {
+                "type": "boolean"
+              },
+              "query": {
+                "type": "string"
+              },
+              "window_query": {
+                "type": "string"
+              },
+              "target_window": {
+                "type": "string"
+              },
+              "expected_active": {
+                "type": "boolean"
+              },
+              "expected_open": {
+                "type": "boolean"
+              },
+              "expected_snippet": {
+                "type": "string"
+              },
+              "min_length": {
+                "type": "integer"
+              },
+              "timeout": {
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "target_type",
+          "criteria"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_night_light",
+      "description": "Control screen night light / blue light filter (on, off, toggle, status, or set color temperature).",
+      "adapter": "display.night_light",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "toggle",
+              "status",
+              "temperature"
+            ],
+            "description": "Night light action: on, off, toggle, status, or temperature."
+          },
+          "temperature": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 10000,
+            "description": "Color temperature in Kelvin (e.g. 4000) when action is temperature."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_notifications",
+      "description": "Control system notifications and Do Not Disturb (DND) mode.",
+      "adapter": "notification.control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "dnd_status",
+              "dnd_on",
+              "dnd_off",
+              "dnd_toggle",
+              "clear",
+              "history",
+              "dismiss_all"
+            ],
+            "description": "Read status/history, explicitly set DND on/off, toggle, clear history, or dismiss current notifications."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_theme",
+      "description": "Read installed Omarchy themes and select an exact theme name. Use list/get/status before set. Dark/light aliases work only if such a theme is installed; do not assume a global dark/light toggle exists.",
+      "adapter": "theme.control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "get",
+              "list",
+              "set",
+              "status",
+              "dark",
+              "light",
+              "toggle"
+            ],
+            "description": "Inspect get/list/status, or set an exact installed theme using theme_name."
+          },
+          "theme_name": {
+            "type": "string",
+            "description": "Exact installed theme from list; required for action set."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_control_panel",
+      "description": "Open or summon the Omarchy Control Panel GUI, optionally focused on a specific settings category.",
+      "adapter": "control_panel.open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "display",
+              "audio",
+              "network",
+              "bluetooth",
+              "power",
+              "notifications",
+              "defaults",
+              "storage"
+            ],
+            "description": "Optional category page to open in the Control Panel."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "open",
+              "close"
+            ],
+            "description": "Open or close the control-panel GUI."
+          }
+        },
+        "required": [],
         "additionalProperties": false
       }
     }
