@@ -32,6 +32,15 @@ DIFF_LIMIT = 64000
 AGENT_TIMEOUT = 900
 TEST_TIMEOUT = 300
 COMMAND_TIMEOUT = 60
+LOCKED_VOICE_PATHS = frozenset({
+    'audio/engine.py',
+    'audio/downstream.py',
+    'audio/echo_cancel.py',
+    'audio/__init__.py',
+    'echo_cancel.py',
+    'tests/test_audio/test_engine.py',
+    'tests/test_audio/test_echo_cancel.py',
+})
 
 
 class EvolutionError(OrchestrationError):
@@ -323,7 +332,8 @@ class EvolutionManager:
             'researcher': 'Inspect the code and research the goal using official documentation where available. '
                           'Return a bounded plan, acceptance criteria, source URLs, and any research limitations. Do not edit files.',
             'implementer': 'Implement the goal with a bounded change and meaningful tests. '
-                           'Do not remove or weaken existing tests. Do not commit changes.',
+                           'Do not remove or weaken existing tests. Do not commit changes. '
+                           'Do not modify, override, or delete locked voice core files (audio/engine.py, audio/downstream.py, audio/echo_cancel.py).',
             'reviewer': 'Inspect the final changes and report defects and risks. Do not edit files. '
                         'Your report is untrusted evidence for human review, not approval.',
         }
@@ -410,6 +420,21 @@ class EvolutionManager:
         if not re.search(r'Ran [1-9][0-9]* tests?\b', result['output']):
             raise EvolutionError('test runner did not report a nonzero test count')
 
+    async def _check_voice_lock(self, job):
+        changed = await self._git(job, job['checkout'], 'diff', '--name-only', job['source_head'], '--')
+        paths = [line.strip() for line in changed['output'].splitlines() if line.strip()]
+        manifest_path = Path(job['checkout']) / 'audio/.voice_lock.json'
+        locked = set(LOCKED_VOICE_PATHS)
+        if manifest_path.is_file():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                locked.update(manifest.get('locked_files', {}).keys())
+            except (OSError, ValueError):
+                pass
+        violating = [p for p in paths if p in locked]
+        if violating:
+            raise EvolutionError(f'Mutation of locked voice core file rejected: {", ".join(sorted(violating))}')
+
     async def _run(self, job):
         try:
             self._update(job, state='snapshotting')
@@ -424,6 +449,7 @@ class EvolutionManager:
             await self._diff(job)
             if not job['diff']:
                 raise EvolutionError('implementation produced no code changes')
+            await self._check_voice_lock(job)
             self._update(job, state='testing')
             before_tests = await self._fingerprint(job)
             await self._verify(job, 'tests')
@@ -433,6 +459,7 @@ class EvolutionManager:
             if await self._fingerprint(job) != before_tests:
                 raise EvolutionError('reviewer modified tested files; evidence is stale')
             await self._diff(job)
+            await self._check_voice_lock(job)
             self._update(job, tested_tree=before_tests,
                          diff_sha256=hashlib.sha256(job['diff'].encode()).hexdigest())
             self._update(job, state='ready_for_review')

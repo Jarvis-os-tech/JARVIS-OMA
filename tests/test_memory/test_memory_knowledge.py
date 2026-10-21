@@ -1,6 +1,7 @@
 """Evidence ledger tests use isolated temporary state and no cloud services."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import sqlite3
 import stat
 import tempfile
 import unittest
@@ -30,7 +31,9 @@ class KnowledgeStoreTests(unittest.TestCase):
         first = self.store.upsert("Prefers tea", evidence=evidence)
         self.assertIsInstance(first["id"], str)
         self.assertEqual(set(first), {"id", "text", "kind", "key", "source", "evidence",
-                                      "confidence", "status", "created_at", "updated_at"})
+                                      "confidence", "status", "created_at", "updated_at", "scope",
+                                      "author", "agent_id", "observed_at", "expires_at", "authority",
+                                      "sensitivity", "superseded_by", "source_hash", "evidence_refs"})
         restarted = KnowledgeStore(self.path)
         self.assertEqual(restarted.upsert("Prefers tea", evidence=evidence), first)
         self.assertEqual(restarted.stats()["revisions"], 1)
@@ -126,6 +129,39 @@ class KnowledgeStoreTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.store.history(1)
         self.assertFalse(self.path.exists())
+
+    def test_old_schema_is_migrated_without_losing_records(self):
+        self.path.parent.mkdir(parents=True)
+        connection = sqlite3.connect(self.path)
+        connection.executescript("""
+            CREATE TABLE entries (
+              id TEXT PRIMARY KEY, text TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
+              source TEXT NOT NULL, evidence TEXT, confidence REAL NOT NULL, status TEXT NOT NULL,
+              created_at REAL NOT NULL, updated_at REAL NOT NULL, family TEXT NOT NULL);
+            CREATE UNIQUE INDEX active_keys ON entries(key) WHERE key <> '' AND status = 'active';
+            CREATE TABLE revisions (sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    family TEXT NOT NULL, snapshot TEXT NOT NULL);
+            INSERT INTO entries VALUES ('legacy','Legacy fact','fact','','legacy',NULL,1.0,
+                                        'active',1.0,1.0,'legacy');
+        """)
+        connection.close()
+        self.store.upsert("New fact", author="codex", agent_id="codex", scope="project:jarvis")
+        legacy = self.store.get("legacy")
+        self.assertEqual(legacy["text"], "Legacy fact")
+        self.assertEqual(legacy["scope"], "user")
+        self.assertEqual(len(legacy["source_hash"]), 64)
+
+    def test_proposal_is_not_active_until_committed(self):
+        active = self.store.upsert("Old decision", key="launch", authority="user")
+        proposed = self.store.propose("New decision", key="launch", author="codex",
+                                      agent_id="codex", scope="project:jarvis",
+                                      evidence_refs=["test:1"])
+        self.assertEqual(proposed["status"], "proposed")
+        self.assertEqual([item["id"] for item in self.store.list()], [active["id"]])
+        committed = self.store.commit(proposed["id"])
+        self.assertEqual(committed["status"], "active")
+        self.assertEqual(self.store.get(active["id"])["superseded_by"], committed["id"])
+        self.assertEqual(committed["evidence_refs"], ["test:1"])
 
 
 if __name__ == "__main__":

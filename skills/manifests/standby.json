@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "enter_standby",
+      "description": "Enter private standby after confirming; 'Hey Jarvis' resumes. Use when the user says standby mode, mute, mute yourself, mute Jarvis, go to sleep, keep silent, be quiet, don't speak until recalled, or don't disturb me. A bare 'mute' means mute Jarvis via standby, never the system speaker or microphone. Do not use for an explicit request to mute system audio, mute the system microphone, pause media, or stop only the current response.",
+      "adapter": "standby.enter",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

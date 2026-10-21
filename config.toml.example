@@ -47,6 +47,11 @@ enabled = true                           # Enable desktop controls
 exclude_unavailable = true               # Exclude skills if system binary is missing
 # manifest_dirs = ["/custom/manifest/path"]
 
+[standby]
+enabled = true                           # Stop cloud voice while retaining local wake listening
+threshold = 0.3                          # Balanced for accents and laptop microphones
+vad_threshold = 0.0                      # Avoid rejecting a valid wake phrase before scoring it
+
 [filesystem]
 enabled = true                           # Enable filesystem skills
 autonomous = true                        # Grant full autonomous access for file management

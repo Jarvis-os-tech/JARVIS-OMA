@@ -20,3 +20,5 @@ skills/native/bin/
 *.o
 .gravitas/
 external/
+*.db
+*.lock

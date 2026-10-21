@@ -21,5 +21,10 @@ def apply_model_policy(assignments, profile='budget', environ=None):
             if model.startswith('-') or len(model) > 200 or any(ord(c) < 32 for c in model):
                 raise ValueError(f'Invalid budget model for {agent}')
             item['model'] = model
+            # OpenCode's native TUI deliberately uses its configured model.
+            # Budget work requires an explicit per-task model, so select the
+            # finite batch route that supports --model before any stage starts.
+            if agent == 'opencode':
+                item['batch'] = True
         result.append(item)
     return result

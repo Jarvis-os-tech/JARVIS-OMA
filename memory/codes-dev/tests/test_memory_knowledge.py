@@ -30,7 +30,9 @@ class KnowledgeStoreTests(unittest.TestCase):
         first = self.store.upsert("Prefers tea", evidence=evidence)
         self.assertIsInstance(first["id"], str)
         self.assertEqual(set(first), {"id", "text", "kind", "key", "source", "evidence",
-                                      "confidence", "status", "created_at", "updated_at"})
+                                      "confidence", "status", "created_at", "updated_at", "scope",
+                                      "author", "agent_id", "observed_at", "expires_at", "authority",
+                                      "sensitivity", "superseded_by", "source_hash", "evidence_refs"})
         restarted = KnowledgeStore(self.path)
         self.assertEqual(restarted.upsert("Prefers tea", evidence=evidence), first)
         self.assertEqual(restarted.stats()["revisions"], 1)

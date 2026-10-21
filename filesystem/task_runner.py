@@ -13,6 +13,7 @@ TASK_TOOLS = frozenset({
 })
 MAX_STEPS = 30
 MAX_JOBS = 20
+MAX_EVENTS = 32
 
 
 class TaskPlanError(ValueError):
@@ -30,6 +31,7 @@ class TaskRunner:
         self._jobs: dict[str, dict] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._cancel_requested: set[str] = set()
+        self.events: asyncio.Queue[dict] = asyncio.Queue(maxsize=MAX_EVENTS)
 
     def start(self, description: str, plan_json: str) -> dict:
         if not isinstance(description, str) or not 1 <= len(description.strip()) <= 200:
@@ -107,6 +109,18 @@ class TaskRunner:
         finally:
             job['updated_at'] = _now()
             self._cancel_requested.discard(task_id)
+            event = {
+                'kind': 'task',
+                'id': job['id'],
+                'description': job['description'],
+                'status': job['status'],
+                'completed_steps': job['completed_steps'],
+                'total_steps': job['total_steps'],
+                'updated_at': job['updated_at'],
+            }
+            if self.events.full():
+                self.events.get_nowait()
+            self.events.put_nowait(event)
 
     async def _verify_step_ground_truth(self, tool: str, args: dict) -> None:
         """Deterministically verify physical ground truth on disk after step execution."""

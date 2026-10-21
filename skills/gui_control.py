@@ -97,7 +97,7 @@ class GuiControl:
         windows = result.get('windows', [])
         if not isinstance(windows, list):
             raise GuiControlError('GUI driver returned an invalid window list')
-        return {'windows': [{k: w.get(k) for k in ('pid', 'window_id', 'app_name', 'title', 'bounds', 'is_on_screen')}
+        return {'windows': [{k: w.get(k) for k in ('pid', 'window_id', 'address', 'app_name', 'title', 'bounds', 'is_on_screen')}
                             for w in windows[:50] if isinstance(w, dict)]}
 
     async def inspect_window(self, pid: int, window_id: int) -> dict:
@@ -157,16 +157,32 @@ class GuiControl:
     async def click_desktop(self, x: int, y: int,
                             target_window_id: int | None = None,
                             verify_active: bool = False) -> dict:
-        await self._verify_action_point(x, y, target_window_id=target_window_id, verify_active=verify_active)
-        result = await self._call('click', {'x': x, 'y': y,
-                                           'target': {'kind': 'desktop', 'display_id': 'primary'},
-                                           'button': 'left',
-                                           'delivery_mode': 'foreground',
-                                           'session': self.session})
+        verification = await self._verify_action_point(
+            x, y, target_window_id=target_window_id, verify_active=verify_active)
+        target = {'kind': 'desktop', 'display_id': 'primary'}
+        action = 'click'
+        if target_window_id is not None:
+            target = {'kind': 'window', 'window_id': target_window_id}
+        if verify_active:
+            # This distinct driver action is an atomic verify-and-click contract;
+            # a generic coordinate click cannot safely close the focus-change race.
+            action = 'click_window'
+            target['address'] = verification['window_address']
+            target['require_active'] = True
+        result = await self._call(action, {
+            'x': x, 'y': y, 'target': target, 'button': 'left',
+            'delivery_mode': 'foreground', 'session': self.session,
+        })
+        if verify_active:
+            acknowledged = self._window_address(result.get('target_address'))
+            if result.get('target_verified') is not True or acknowledged != verification['window_address']:
+                raise GuiControlError('GUI driver did not atomically verify the target window')
         self._desktop = None
         return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
-                'target_verified': bool(target_window_id or verify_active)}
+                **verification,
+                'target_verified': verification['bounds_verified'] and
+                (not verify_active or verification['focus_verified'])}
 
     def _require_desktop_point(self, x: int, y: int):
         observed = self._desktop
@@ -197,7 +213,11 @@ class GuiControl:
                                    target_window_id: int | None = None,
                                    verify_active: bool = False):
         self._require_desktop_point(x, y)
+        if verify_active and target_window_id is None:
+            raise GuiControlError('verify_active requires an exact target_window_id')
         target = None
+        bounds_verified = False
+        focus_verified = False
         if target_window_id is not None:
             windows = (await self.list_windows()).get('windows', [])
             target = next((w for w in windows if w.get('window_id') == target_window_id), None)
@@ -215,26 +235,52 @@ class GuiControl:
                     raise GuiControlError(
                         f'Coordinates ({x}, {y}) are outside the bounds of target window {target_window_id} [x={bx}, y={by}, w={bw}, h={bh}]'
                     )
+                bounds_verified = True
             elif isinstance(bounds, (list, tuple)) and len(bounds) == 4:
                 bx, by, bw, bh = bounds
                 if not (bx <= x < bx + bw and by <= y < by + bh):
                     raise GuiControlError(
                         f'Coordinates ({x}, {y}) are outside the bounds of target window {target_window_id} [x={bx}, y={by}, w={bw}, h={bh}]'
                     )
+                bounds_verified = True
+            else:
+                raise GuiControlError(
+                    f'Target window {target_window_id} has no verifiable bounds')
 
         if verify_active:
             active = await self._query_active_window()
-            if active and target and target.get('pid') and active.get('pid'):
-                if target['pid'] != active['pid']:
-                    raise GuiControlError(
-                        f'Target window (pid {target["pid"]}) is not the active window (active pid {active["pid"]})'
-                    )
+            requested_identity = self._window_address(
+                target.get('address') if isinstance(target, dict) else None)
+            active_identity = self._window_address(
+                active.get('address') if isinstance(active, dict) else None)
+            if requested_identity is None or active_identity is None:
+                raise GuiControlError('Active window could not be verified with exact window identity')
+            if requested_identity != active_identity:
+                raise GuiControlError(
+                    f'Target window {target_window_id} is not the active window {active_identity}')
+            focus_verified = True
+        return {'bounds_verified': bounds_verified, 'focus_verified': focus_verified,
+                'window_address': requested_identity if verify_active else None}
+
+    @staticmethod
+    def _window_address(value) -> str | None:
+        """Normalize only canonical Hyprland address values, never numeric IDs."""
+        if not isinstance(value, str):
+            return None
+        value = value.strip().lower()
+        if not value.startswith('0x'):
+            return None
+        try:
+            identity = int(value, 16)
+        except ValueError:
+            return None
+        return f'0x{identity:x}' if identity > 0 else None
 
     async def scroll_desktop(self, direction: str, x: int, y: int, amount: int,
                              target_window_id: int | None = None) -> dict:
         if direction not in ('up', 'down', 'left', 'right') or not 1 <= amount <= 10:
             raise GuiControlError('Invalid scroll direction or amount')
-        await self._verify_action_point(x, y, target_window_id=target_window_id)
+        verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
         result = await self._call('scroll', {
             'direction': direction, 'amount': amount, 'by': 'line', 'x': x, 'y': y,
             'target': {'kind': 'desktop', 'display_id': 'primary'},
@@ -243,11 +289,11 @@ class GuiControl:
         self._desktop = None
         return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
-                'target_verified': bool(target_window_id)}
+                **verification, 'target_verified': verification['bounds_verified']}
 
     async def type_at(self, x: int, y: int, text: str,
                       target_window_id: int | None = None) -> dict:
-        await self._verify_action_point(x, y, target_window_id=target_window_id)
+        verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
         if not text or len(text) > 4000:
             raise GuiControlError('Text must contain 1 to 4000 characters')
         result = await self._call('type_text', {
@@ -258,12 +304,12 @@ class GuiControl:
         self._desktop = None
         return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
-                'target_verified': bool(target_window_id)}
+                **verification, 'target_verified': verification['bounds_verified']}
 
     async def press_key_at(self, x: int, y: int, key: str,
                            modifiers: list[str] | None = None,
                            target_window_id: int | None = None) -> dict:
-        await self._verify_action_point(x, y, target_window_id=target_window_id)
+        verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
         if not key or len(key) > 30:
             raise GuiControlError('Invalid key')
         modifiers = modifiers or []
@@ -282,7 +328,7 @@ class GuiControl:
         self._desktop = None
         return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
-                'target_verified': bool(target_window_id)}
+                **verification, 'target_verified': verification['bounds_verified']}
 
     async def browser_bind(self, pid: int, window_id: int) -> dict:
         if pid <= 0 or window_id <= 0:

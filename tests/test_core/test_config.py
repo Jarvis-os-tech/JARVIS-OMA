@@ -28,6 +28,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.audio.playback_cushion_s, 0.32)
         self.assertEqual(cfg.audio.mic_volume_percent, 80)
         self.assertEqual(cfg.vad.activity_handling, 'START_OF_ACTIVITY_INTERRUPTS')
+        self.assertTrue(cfg.standby.enabled)
+        self.assertEqual(cfg.standby.threshold, 0.05)
+        self.assertEqual(cfg.standby.vad_threshold, 0.0)
+
+    def test_standby_config_loads_and_validates(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.toml', delete=False) as f:
+            f.write('[standby]\nenabled = true\nthreshold = 0.7\nvad_threshold = 0.4\n')
+            temp_path = f.name
+        try:
+            cfg = load_config(path=temp_path)
+            self.assertEqual(cfg.standby.threshold, 0.7)
+            self.assertEqual(cfg.standby.vad_threshold, 0.4)
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
 
     def test_filesystem_config_and_overrides(self):
         # Env override

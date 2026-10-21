@@ -223,6 +223,48 @@ class VisionStreamTests(unittest.IsolatedAsyncioTestCase):
                     mock_exec.assert_called_once()
 
 
+class CameraLifecycleResponsivenessTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        engine = MagicMock()
+        engine.async_input_queue = asyncio.Queue()
+        self.voice = LiveVoice(engine)
+
+    async def test_camera_lifecycle_does_not_block_event_loop(self):
+        ticks = 0
+
+        def slow_start():
+            time.sleep(0.05)
+
+        async def heartbeat():
+            nonlocal ticks
+            deadline = asyncio.get_running_loop().time() + 0.08
+            while asyncio.get_running_loop().time() < deadline:
+                ticks += 1
+                await asyncio.sleep(0.005)
+
+        with patch.object(self.voice, '_start_camera_stream_blocking', side_effect=slow_start):
+            self.voice.set_vision_mode('camera')
+            await asyncio.gather(self.voice._camera_stream_task, heartbeat())
+
+        self.assertGreaterEqual(ticks, 5)
+
+    async def test_camera_lifecycle_task_is_cancellable(self):
+        started = asyncio.Event()
+        started_loop = asyncio.get_running_loop()
+
+        def slow_start():
+            started_loop.call_soon_threadsafe(started.set)
+            time.sleep(0.2)
+
+        with patch.object(self.voice, '_start_camera_stream_blocking', side_effect=slow_start):
+            self.voice.set_vision_mode('camera')
+            await asyncio.wait_for(started.wait(), 0.2)
+            task = self.voice._camera_stream_task
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+
 def contextlib_suppress(*exceptions):
     import contextlib
     return contextlib.suppress(*exceptions)

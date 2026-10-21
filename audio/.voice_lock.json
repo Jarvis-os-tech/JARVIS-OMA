@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "locked_at": "2026-10-20T16:16:00Z",
+  "policy": "IMMUTABLE_CORE",
+  "description": "Cryptographic lock preventing autonomous or delegated agents from modifying, deleting, or overriding existing voice features. New features must use audio/extension.py.",
+  "locked_files": {
+    "audio/engine.py": {
+      "sha256": "02f2860c73f42c35a90f4f136c70878d65599c3aeccccc23177cd44c027c43bc",
+      "role": "NativeAudioEngine PortAudio C-thread stream engine, AEC, VAD, and barge-in"
+    },
+    "audio/downstream.py": {
+      "sha256": "2dc40b51e69109cf36adf53cd687223db98a973f8597d1a0b12feff549abdaf3",
+      "role": "DownstreamRouter frame accumulator and turn flush"
+    },
+    "audio/echo_cancel.py": {
+      "sha256": "779b7ac39e6d2cc5b1e8ba0b4881edca6134ff3165a4341020946cb385b5a658",
+      "role": "EchoCancellation PipeWire WebRTC AEC virtual nodes and volume controls"
+    },
+    "audio/__init__.py": {
+      "sha256": "1df085dce9c32aad4fa40515ee0c315033d74581468cbd86d05d41e436b227df",
+      "role": "Public audio package exports"
+    },
+    "echo_cancel.py": {
+      "sha256": "93203b16c167b5669252824e978074796d55d6fc6fff0857d38ac2b2e38e930d",
+      "role": "Root backward-compatibility module forwarder"
+    },
+    "tests/test_audio/test_engine.py": {
+      "sha256": "aca308865ad1447c98f7c5dade76941b1286270e2f2b9dca4e4fb94254d96d1f",
+      "role": "NativeAudioEngine unit test suite"
+    },
+    "tests/test_audio/test_echo_cancel.py": {
+      "sha256": "6ccb6c4618f7bb4cb3ccadecbabe06003a4c4a7dec60b025754b19e4a5d77307",
+      "role": "EchoCancellation unit test suite"
+    }
+  }
+}

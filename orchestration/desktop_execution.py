@@ -1,8 +1,10 @@
 """Visible, isolated terminal sessions for delegated agents."""
 import asyncio
+import os
 import re
 import shlex
 import shutil
+import stat
 import json
 from pathlib import Path
 import tempfile
@@ -124,6 +126,133 @@ def interactive_command(agent, executable, task_type='coding', model=None):
 class DesktopAgentOrchestrator(AgentOrchestrator):
     """Keep execution visible while monitoring only JARVIS-owned tmux panes."""
 
+    _COMPLETION_REPORT_LIMIT = 4096
+
+    def _completion_path(self, job):
+        parent = Path(tempfile.mkdtemp(prefix='jarvis-completion-'))
+        flags = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+        directory_fd = os.open(parent, flags)
+        identity = os.fstat(directory_fd)
+        completion = parent / 'result.json'
+        job['completion_file'] = str(completion)
+        job['completion_directory_fd'] = directory_fd
+        job['completion_directory_identity'] = (identity.st_dev, identity.st_ino)
+        return completion
+
+    @staticmethod
+    def _completion_task(prompt, completion):
+        return (prompt + '\n\nJARVIS handoff protocol: when your assignment is finished, '
+                'write a JSON object to ' + str(completion) + ' with state "completed" '
+                'and a brief summary. If blocked, write state "failed" and explain why. '
+                'Write this file as your final tool action, then give your normal final response. '
+                'This is a task-completion report, not independent proof of correctness.')
+
+    def _read_completion_report(self, completion, job=None):
+        descriptor = None
+        try:
+            flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+            directory_fd = job.get('completion_directory_fd') if job else None
+            if directory_fd is not None:
+                descriptor = os.open(completion.name, flags, dir_fd=directory_fd)
+            else:
+                descriptor = os.open(completion, flags)
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > self._COMPLETION_REPORT_LIMIT:
+                return None
+            payload = os.read(descriptor, self._COMPLETION_REPORT_LIMIT + 1)
+            if len(payload) > self._COMPLETION_REPORT_LIMIT:
+                return None
+            report = json.loads(payload.decode('utf-8'))
+        except (OSError, UnicodeError, ValueError):
+            return None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+        if not isinstance(report, dict) or report.get('state') not in ('completed', 'failed'):
+            return None
+        summary = report.get('summary')
+        if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 2000:
+            return None
+        if any((ord(char) < 32 and char not in '\n\t') or ord(char) == 127
+               for char in summary):
+            return None
+        return {'state': report['state'], 'summary': summary.strip()}
+
+    def _accept_completion_report(self, job, completion):
+        report = self._read_completion_report(completion, job)
+        if report is None:
+            return False
+        job['state'] = report['state']
+        job['completion_report'] = report
+        job['completion_source'] = 'agent report; process retirement pending'
+        job['terminal_state'] = 'open'
+        self._append(job, '\nAgent handoff report: ' + json.dumps(report) + '\n')
+        return True
+
+    async def _retire_completed_process(self, job, target):
+        """Stop a reported-complete TUI while retaining an inspectable dead pane."""
+        reported_state = job['state']
+        try:
+            await self._tmux(
+                'respawn-pane', '-k', '-t', target,
+                'printf "\\nJARVIS task finished; captured output is available in job history.\\n"',
+            )
+        except OrchestrationError as error:
+            job['reported_state'] = reported_state
+            job['state'] = 'cleanup_failed'
+            job['terminal_state'] = 'open'
+            job['completion_source'] = 'agent report; process retirement could not be confirmed'
+            self._append(job, f'\nAgent process cleanup could not be confirmed: {error}\n')
+            return False
+        job['terminal_state'] = 'closed'
+        job['completion_source'] = (
+            'agent report; terminal process retired for safe workspace release')
+        return True
+
+    @staticmethod
+    def _cleanup_completion_path(completion, job=None):
+        if completion is None:
+            return
+        directory_fd = job.pop('completion_directory_fd', None) if job else None
+        expected = job.pop('completion_directory_identity', None) if job else None
+        try:
+            if directory_fd is not None:
+                try:
+                    os.unlink(completion.name, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    pass
+                current = os.lstat(completion.parent)
+                opened = os.fstat(directory_fd)
+                if (not stat.S_ISLNK(current.st_mode)
+                        and (current.st_dev, current.st_ino) == expected
+                        and (opened.st_dev, opened.st_ino) == expected):
+                    completion.parent.rmdir()
+            else:
+                completion.unlink(missing_ok=True)
+                completion.parent.rmdir()
+        except OSError:
+            pass
+        finally:
+            if directory_fd is not None:
+                os.close(directory_fd)
+
+    async def _cleanup_tmux(self, kind, target):
+        """Best-effort cleanup for a pane/session owned by this orchestrator."""
+        try:
+            await self._tmux('kill-' + kind, '-t', target)
+            return True
+        except OrchestrationError:
+            return False
+
+    def _emit_team_event(self, team_id):
+        team = self.teams[team_id]
+        if self.events.full():
+            self.events.get_nowait()
+        self.events.put_nowait({
+            'kind': 'team', 'id': team_id, 'state': team['state'],
+            'workspace': team['workspace'],
+        })
+
     async def _tmux(self, *args):
         process = await asyncio.create_subprocess_exec(
             'tmux', '-L', 'jarvis-desktop', *args,
@@ -156,7 +285,27 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             agent['background_supported'] = agent['available']
         return result
 
-    def delegate(self, agent, prompt, workspace, timeout_seconds=900, task_type='coding', model=None, visible=True, batch=False, yolo=False):
+    def _preflight_team(self, assignments):
+        """Build every planned command before creating a team or terminal."""
+        shared_terminal = all(assignment['visible'] for assignment in assignments)
+        for assignment in assignments:
+            agent = assignment['agent']
+            executable = self.executables.get(agent)
+            model = assignment.get('model')
+            if shared_terminal:
+                builder = visible_batch_command if assignment.get('batch') else native_task_command
+                builder(agent, executable, assignment['prompt'], model=model,
+                        yolo=assignment.get('yolo', False))
+            elif assignment['visible']:
+                if assignment.get('batch'):
+                    visible_batch_command(agent, executable, assignment['prompt'], model=model,
+                                          yolo=assignment.get('yolo', False))
+                interactive_command(agent, executable,
+                                    task_type=assignment.get('task_type', 'coding'), model=model)
+            else:
+                command_for(agent, executable, assignment['prompt'], model=model)
+
+    def delegate(self, agent, prompt, workspace, timeout_seconds=900, task_type='coding', model=None, visible=True, batch=False, yolo=True):
         if batch:
             visible_batch_command(agent, self.executables.get(agent), prompt, model, yolo)
         if visible:
@@ -190,11 +339,11 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             assignment['agent'], prompt, workspace, timeout_seconds,
             task_type=assignment['task_type'], model=assignment['model'],
             visible=assignment['visible'], batch=assignment.get('batch', False),
-            yolo=assignment.get('yolo', False))
+            yolo=assignment.get('yolo', True))
         if assignment.get('_pane'):
             self.jobs[result['job']['id']].update(
                 shared_pane=assignment['_pane'], model=assignment.get('model'),
-                batch=assignment.get('batch', False), yolo=assignment.get('yolo', False))
+                batch=assignment.get('batch', False), yolo=assignment.get('yolo', True))
         return result
 
     async def _run_team(self, team_id, timeout_seconds):
@@ -203,10 +352,15 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             return await super()._run_team(team_id, timeout_seconds)
         session = 'jarvis-' + team_id
         team['tmux_session'] = session
+        session_created = False
+        session_setup_started = False
+        delegated = False
         try:
             placeholder = shlex.join(['tmux', '-L', 'jarvis-desktop', 'wait-for', session + '-idle'])
+            session_setup_started = True
             first = (await self._tmux('new-session', '-d', '-P', '-F', '#{pane_id}',
                 '-s', session, '-c', team['workspace'], '-x', '180', '-y', '50', placeholder)).strip()
+            session_created = True
             panes = [first]
             await self._tmux('set-option', '-t', session, 'remain-on-exit', 'on')
             await self._tmux('set-option', '-t', session, 'pane-border-status', 'top')
@@ -225,27 +379,53 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             await asyncio.create_subprocess_exec(
                 'xdg-terminal-exec', 'tmux', '-L', 'jarvis-desktop', 'attach-session', '-t', session,
                 cwd=team['workspace'], start_new_session=True, env=sanitized_subprocess_env())
+            delegated = True
             await super()._run_team(team_id, timeout_seconds)
         except asyncio.CancelledError:
-            team.update(state='cancelled', current_assignment=None, updated_at=now())
+            if session_setup_started:
+                team['state'] = 'cleaning_up'
+                if await self._cleanup_tmux('session', session):
+                    session_created = False
+            if session_created:
+                team.update(state='cleanup_failed', failure_state='cancelled')
+            else:
+                team['state'] = 'cancelled'
+            team.update(current_assignment=None, updated_at=now())
             raise
         except Exception as error:
-            team.update(state='failed', error=str(error)[:500], updated_at=now())
+            if session_setup_started:
+                team['state'] = 'cleaning_up'
+                if await self._cleanup_tmux('session', session):
+                    session_created = False
+            if session_created:
+                team.update(state='cleanup_failed', failure_state='failed')
+            else:
+                team['state'] = 'failed'
+            team.update(error=str(error)[:500], updated_at=now())
         finally:
-            if team['cancel_requested']:
-                try:
-                    await self._tmux('kill-session', '-t', session)
-                except OrchestrationError:
-                    pass
+            if session_created and team['state'] in ('failed', 'cancelled', 'timed_out', 'cleanup_failed'):
+                if await self._cleanup_tmux('session', session):
+                    session_created = False
+                    if team['state'] == 'cleanup_failed':
+                        team['state'] = team.pop('failure_state')
+                else:
+                    team.setdefault('failure_state', team['state'])
+                    team['state'] = 'cleanup_failed'
+            if not delegated:
+                self._emit_team_event(team_id)
 
     async def _run(self, job_id, prompt, timeout_seconds):
         job = self.jobs[job_id]
         if job['execution_mode'] == 'background':
             return await super()._run(job_id, prompt, timeout_seconds)
+        # Visible terminals have their own execution loop, so prepare the
+        # prompt here before either batch or interactive submission.
+        prompt = self._prepare_prompt(job, prompt)
         session = job['session']
         if job.get('shared_pane'):
-            return await self._run_shared_pane(job_id, prompt, timeout_seconds)
+            return await self._run_shared_pane(job_id, prompt, timeout_seconds, prepared=True)
         launcher = None
+        completion = None
         try:
             deadline = asyncio.get_running_loop().time() + timeout_seconds
             if job.get('batch'):
@@ -253,6 +433,8 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     job['agent'], self.executables[job['agent']], prompt,
                     model=job.get('model'), yolo=job.get('yolo', False)))
             else:
+                completion = self._completion_path(job)
+                prompt = self._completion_task(prompt, completion)
                 command = shlex.join(interactive_command(job['agent'], self.executables[job['agent']],
                                                          task_type=job.get('task_type', 'coding'),
                                                          model=job.get('model')))
@@ -285,6 +467,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             await self._tmux('respawn-pane', '-k', '-t', session, '-c', job['workspace'],
                              'exec env TERM=tmux-256color COLORTERM=truecolor ' + command)
             job['state'] = 'running'
+            job['terminal_state'] = 'open'
             while not job['cancel_requested']:
                 if launcher.returncode not in (None, 0):
                     raise OrchestrationError('Terminal application failed to launch.')
@@ -315,49 +498,56 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     await self._tmux('send-keys', '-t', session, '-l', '\x1b[201~')
                     await self._tmux('send-keys', '-t', session, 'Enter')
                     job['submission_state'] = 'submitted'
+                if completion is not None and self._accept_completion_report(job, completion):
+                    await self._retire_completed_process(job, session)
+                    break
                 dead = await self._tmux('display-message', '-p', '-t', session,
                                         '#{pane_dead} #{pane_dead_status}')
                 if dead.startswith('1 '):
                     job['exit_code'] = int(dead.split()[1])
                     job['state'] = 'completed' if job['exit_code'] == 0 else 'failed'
+                    job['terminal_state'] = 'closed'
                     break
                 if asyncio.get_running_loop().time() >= deadline:
                     job['state'] = 'timed_out'
                     await self._tmux('kill-session', '-t', session)
+                    job['terminal_state'] = 'closed'
                     break
                 await asyncio.sleep(.5)
             if job['cancel_requested']:
                 job['state'] = 'cancelled'
                 await self._tmux('kill-session', '-t', session)
+                job['terminal_state'] = 'closed'
         except Exception as error:
             job['state'] = 'failed'
             self._append(job, f'\nVisible launch failed: {error}\n')
             try:
                 await self._tmux('kill-session', '-t', session)
+                job['terminal_state'] = 'closed'
             except OrchestrationError:
                 pass
         finally:
+            self._cleanup_completion_path(completion, job)
             job['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()
             self.events.put_nowait({key: job[key] for key in ('id', 'agent', 'state', 'workspace')})
 
-    async def _run_shared_pane(self, job_id, prompt, timeout_seconds):
+    async def _run_shared_pane(self, job_id, prompt, timeout_seconds, prepared=False):
         job = self.jobs[job_id]
+        if not prepared:
+            prompt = self._prepare_prompt(job, prompt)
         pane = job['shared_pane']
         completion = None
         seed_task = None
+        pane_alive = False
         try:
             if job.get('batch'):
                 command = visible_batch_command(job['agent'], self.executables[job['agent']],
                     prompt, model=job.get('model'), yolo=job.get('yolo', False))
             else:
-                completion = Path(tempfile.mkdtemp(prefix='jarvis-completion-')) / 'result.json'
-                task = (prompt + '\n\nJARVIS handoff protocol: when your assignment is finished, '
-                    'write a JSON object to ' + str(completion) + ' with state "completed" '
-                    'and a brief summary. If blocked, write state "failed" and explain why. '
-                    'Write this file as your final tool action, then give your normal final response. '
-                    'This is a task-completion report, not independent proof of correctness.')
+                completion = self._completion_path(job)
+                task = self._completion_task(prompt, completion)
                 command = native_task_command(job['agent'], self.executables[job['agent']],
                     task, model=job.get('model'), yolo=job.get('yolo', False))
                 if job['agent'] == 'hermes':
@@ -365,13 +555,14 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     # actual composer appears instead of assuming startup worked.
                     command = command[:-2]
                     seed_task = task
-                job['completion_file'] = str(completion)
             await self._tmux('respawn-pane', '-k', '-t', pane, '-c', job['workspace'],
                 'exec env TERM=tmux-256color COLORTERM=truecolor ' + shlex.join(command))
+            pane_alive = True
             await self._tmux('select-pane', '-Z', '-t', pane)
             if (await self._tmux('display-message', '-p', '-t', pane, '#{window_zoomed_flag}')).strip() == '0':
                 await self._tmux('resize-pane', '-Z', '-t', pane)
             job['state'] = 'running'
+            job['terminal_state'] = 'open'
             deadline = asyncio.get_running_loop().time() + timeout_seconds
             while True:
                 output = await self._tmux('capture-pane', '-p', '-t', pane, '-S', '-2000')
@@ -381,32 +572,43 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     await self._tmux('send-keys', '-t', pane, '-l', '\x1b[200~' + seed_task + '\x1b[201~')
                     await self._tmux('send-keys', '-t', pane, 'Enter')
                     seed_task = None
-                if completion is not None and completion.is_file() and completion.stat().st_size <= 4096:
-                    try:
-                        report = json.loads(completion.read_text())
-                    except (ValueError, OSError):
-                        report = None
-                    if isinstance(report, dict) and report.get('state') in ('completed', 'failed'):
-                        job['state'] = report['state']
-                        job['completion_report'] = report
-                        job['completion_source'] = 'agent report; interactive frontend stays open'
-                        self._append(job, '\nAgent handoff report: ' + json.dumps(report) + '\n')
-                        break
+                if completion is not None and self._accept_completion_report(job, completion):
+                    pane_alive = not await self._retire_completed_process(job, pane)
+                    break
                 dead = (await self._tmux('display-message', '-p', '-t', pane,
                                         '#{pane_dead} #{pane_dead_status}')).strip()
                 if dead.startswith('1 '):
+                    pane_alive = False
+                    job['terminal_state'] = 'closed'
                     job['exit_code'] = int(dead.split()[1])
                     job['state'] = 'completed' if completion is None and job['exit_code'] == 0 else 'failed'
                     break
                 if job['cancel_requested'] or asyncio.get_running_loop().time() >= deadline:
                     job['state'] = 'cancelled' if job['cancel_requested'] else 'timed_out'
                     await self._tmux('kill-pane', '-t', pane)
+                    pane_alive = False
+                    job['terminal_state'] = 'closed'
                     break
                 await asyncio.sleep(.5)
+        except asyncio.CancelledError:
+            if pane_alive:
+                await self._cleanup_tmux('pane', pane)
+            job['state'] = 'cancelled'
+            raise
         except Exception as error:
-            job['state'] = 'failed'
             self._append(job, f'\nPane execution failed: {error}\n')
+            if pane_alive:
+                cleaned = await self._cleanup_tmux('pane', pane)
+                if not cleaned:
+                    self._append(job, '\nPane cleanup could not be confirmed; workspace remains reserved.\n')
+                    job['state'] = 'cleanup_failed'
+                else:
+                    pane_alive = False
+                    job['state'] = 'failed'
+            else:
+                job['state'] = 'failed'
         finally:
+            self._cleanup_completion_path(completion, job)
             job['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()

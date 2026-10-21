@@ -152,14 +152,20 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
         control = GuiControl('/usr/bin/cua-driver')
         control._desktop = (time.monotonic(), 1920, 1080)
         control.list_windows = AsyncMock(return_value={'windows': [
-            {'window_id': 100, 'pid': 555, 'bounds': {'x': 100, 'y': 100, 'width': 600, 'height': 400}, 'is_on_screen': True}
+            {'window_id': 100, 'address': '0x64', 'pid': 555,
+             'bounds': {'x': 100, 'y': 100, 'width': 600, 'height': 400},
+             'is_on_screen': True}
         ]})
-        control._call = AsyncMock(return_value={'ok': True})
+        control._call = AsyncMock(return_value={
+            'ok': True, 'target_verified': True, 'target_address': '0x64',
+        })
         
         # In-bounds click
         result = await control.click_desktop(250, 250, target_window_id=100)
         self.assertEqual(result['status'], 'dispatched')
         self.assertTrue(result['target_verified'])
+        self.assertTrue(result['bounds_verified'])
+        self.assertFalse(result['focus_verified'])
 
         # Out-of-bounds click
         control._desktop = (time.monotonic(), 1920, 1080)
@@ -186,21 +192,91 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
         control = GuiControl('/usr/bin/cua-driver')
         control._desktop = (time.monotonic(), 1920, 1080)
         control.list_windows = AsyncMock(return_value={'windows': [
-            {'window_id': 100, 'pid': 555, 'bounds': {'x': 100, 'y': 100, 'width': 600, 'height': 400}, 'is_on_screen': True}
+            {'window_id': 100, 'address': '0x64', 'pid': 555,
+             'bounds': {'x': 100, 'y': 100, 'width': 600, 'height': 400},
+             'is_on_screen': True}
         ]})
-        control._call = AsyncMock(return_value={'ok': True})
+        control._call = AsyncMock(return_value={
+            'ok': True, 'target_verified': True, 'target_address': '0x64',
+        })
 
-        # Active window matches
-        control._query_active_window = AsyncMock(return_value={'pid': 555, 'class': 'test-app'})
+        # Active window matches by exact Hyprland window identity.
+        control._query_active_window = AsyncMock(return_value={
+            'pid': 555, 'address': '0x64', 'class': 'test-app',
+        })
         result = await control.click_desktop(250, 250, target_window_id=100, verify_active=True)
         self.assertEqual(result['status'], 'dispatched')
         self.assertTrue(result['target_verified'])
+        self.assertTrue(result['bounds_verified'])
+        self.assertTrue(result['focus_verified'])
 
-        # Active window does not match (focus lost/stolen)
+        # A different window from the same process is still the wrong target.
         control._desktop = (time.monotonic(), 1920, 1080)
-        control._query_active_window = AsyncMock(return_value={'pid': 9999, 'class': 'other-app'})
+        control._query_active_window = AsyncMock(return_value={
+            'pid': 555, 'address': '0xc8', 'class': 'test-app',
+        })
         with self.assertRaisesRegex(GuiControlError, 'not the active window'):
             await control.click_desktop(250, 250, target_window_id=100, verify_active=True)
+
+    async def test_active_verification_requires_exact_target_and_positive_evidence(self):
+        control = GuiControl('/usr/bin/cua-driver')
+        control._call = AsyncMock(return_value={'ok': True})
+
+        control._desktop = (time.monotonic(), 1920, 1080)
+        with self.assertRaisesRegex(GuiControlError, 'target_window_id'):
+            await control.click_desktop(250, 250, verify_active=True)
+
+        control.list_windows = AsyncMock(return_value={'windows': [
+            {'window_id': 100, 'address': '0x64', 'pid': 555,
+             'bounds': {'x': 100, 'y': 100, 'width': 600, 'height': 400},
+             'is_on_screen': True}
+        ]})
+        for active in (None, {'pid': 555}, {'address': 'not-a-window'}):
+            with self.subTest(active=active):
+                control._desktop = (time.monotonic(), 1920, 1080)
+                control._query_active_window = AsyncMock(return_value=active)
+                with self.assertRaisesRegex(GuiControlError, 'could not be verified'):
+                    await control.click_desktop(
+                        250, 250, target_window_id=100, verify_active=True)
+
+        control._call.assert_not_awaited()
+
+    async def test_active_click_requires_bounds_canonical_addresses_and_atomic_driver_ack(self):
+        control = GuiControl('/usr/bin/cua-driver')
+        control._query_active_window = AsyncMock(return_value={'address': '0x64'})
+
+        for window in (
+            {'window_id': 100, 'address': '0x64', 'is_on_screen': True},
+            {'window_id': 100, 'address': 100,
+             'bounds': {'x': 0, 'y': 0, 'width': 500, 'height': 500},
+             'is_on_screen': True},
+        ):
+            with self.subTest(window=window):
+                control._desktop = (time.monotonic(), 1920, 1080)
+                control.list_windows = AsyncMock(return_value={'windows': [window]})
+                with self.assertRaises(GuiControlError):
+                    await control.click_desktop(100, 100, target_window_id=100,
+                                                verify_active=True)
+
+        control.list_windows = AsyncMock(return_value={'windows': [{
+            'window_id': 100, 'address': '0x64', 'is_on_screen': True,
+            'bounds': {'x': 0, 'y': 0, 'width': 500, 'height': 500},
+        }]})
+        for reply in (
+            {'target_verified': False, 'target_address': '0x64'},
+            {'target_verified': True, 'target_address': '0xc8'},
+            {},
+        ):
+            with self.subTest(reply=reply):
+                control._desktop = (time.monotonic(), 1920, 1080)
+                control._call = AsyncMock(return_value=reply)
+                with self.assertRaisesRegex(GuiControlError, 'atomically verify'):
+                    await control.click_desktop(100, 100, target_window_id=100,
+                                                verify_active=True)
+                self.assertEqual(control._call.await_args.args[0], 'click_window')
+                payload = control._call.await_args.args[1]
+                self.assertEqual(payload['target']['address'], '0x64')
+                self.assertTrue(payload['target']['require_active'])
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -159,6 +160,39 @@ class PhoneConnectorTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_phone_file_readers_do_not_block_event_loop(self):
+        skills = object.__new__(DesktopSkills)
+        skills._phone = MagicMock()
+
+        def slow_contacts(**_kwargs):
+            time.sleep(0.05)
+            return [{"name": "Alice"}]
+
+        def slow_calls(**_kwargs):
+            time.sleep(0.05)
+            return [{"name": "Alice", "direction": "incoming"}]
+
+        ticks = 0
+
+        async def heartbeat():
+            nonlocal ticks
+            deadline = asyncio.get_running_loop().time() + 0.08
+            while asyncio.get_running_loop().time() < deadline:
+                ticks += 1
+                await asyncio.sleep(0.005)
+
+        with patch.object(skills.phone, "list_contacts", side_effect=slow_contacts), \
+             patch.object(skills.phone, "get_recent_calls", side_effect=slow_calls):
+            contacts, calls, _ = await asyncio.gather(
+                skills._adapter_phone_list_contacts(),
+                skills._adapter_phone_recent_calls(),
+                heartbeat(),
+            )
+
+        self.assertEqual(contacts["count"], 1)
+        self.assertEqual(calls["count"], 1)
+        self.assertGreaterEqual(ticks, 5)
+
     async def test_phone_skills_registered_and_executable(self):
         skills = DesktopSkills()
         declared_names = {s["name"] for s in skills.declarations}
@@ -222,6 +256,156 @@ class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("INCOMING PHONE CALL ALERT", notice_text)
         self.assertIn("Dad", notice_text)
         self.assertIn("+919949617551", notice_text)
+
+    async def test_outgoing_call_hung_off_queues_proactive_notice(self):
+        from core.agent import LiveVoice
+        skills = DesktopSkills()
+        voice = LiveVoice(None, skills=skills)
+
+        async def fake_listen(callback, stop_event):
+            await callback({
+                "event": "outgoing_disconnected",
+                "call_path": "/org/pipewire/Telephony/ag0/call2",
+                "number": "+917680935265",
+                "name": "Nagendra",
+                "reason": "unanswered_or_rejected",
+            })
+
+        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+            monitor = asyncio.create_task(voice.monitor_phone_calls())
+            try:
+                await asyncio.wait_for(voice._notice_event.wait(), 1)
+            finally:
+                monitor.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await monitor
+
+        self.assertEqual(len(voice._notices), 1)
+        notice_item = voice._notices[0]
+        notice_text = notice_item if isinstance(notice_item, str) else notice_item["text"]
+        self.assertIn("OUTGOING PHONE CALL UPDATE", notice_text)
+        self.assertIn("Nagendra", notice_text)
+        self.assertIn("hung off", notice_text)
+
+    async def test_incoming_missed_call_queues_proactive_notice(self):
+        from core.agent import LiveVoice
+        skills = DesktopSkills()
+        voice = LiveVoice(None, skills=skills)
+
+        async def fake_listen(callback, stop_event):
+            await callback({
+                "event": "incoming_missed",
+                "call_path": "/org/pipewire/Telephony/ag0/call3",
+                "number": "+919949617551",
+                "name": "Dad",
+            })
+
+        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+            monitor = asyncio.create_task(voice.monitor_phone_calls())
+            try:
+                await asyncio.wait_for(voice._notice_event.wait(), 1)
+            finally:
+                monitor.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await monitor
+
+        self.assertEqual(len(voice._notices), 1)
+        notice_item = voice._notices[0]
+        notice_text = notice_item if isinstance(notice_item, str) else notice_item["text"]
+        self.assertIn("MISSED PHONE CALL ALERT", notice_text)
+        self.assertIn("Dad", notice_text)
+        self.assertIn("hung up", notice_text)
+
+    async def test_call_connected_and_ended_queues_notices(self):
+        from core.agent import LiveVoice
+        skills = DesktopSkills()
+        voice = LiveVoice(None, skills=skills)
+
+        events_to_send = [
+            {"event": "call_connected", "number": "+919949617551", "name": "Dad"},
+            {"event": "call_ended", "number": "+919949617551", "name": "Dad", "duration": 42},
+        ]
+
+        async def fake_listen(callback, stop_event):
+            for ev in events_to_send:
+                await callback(ev)
+
+        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+            monitor = asyncio.create_task(voice.monitor_phone_calls())
+            try:
+                await asyncio.sleep(0.1)
+            finally:
+                monitor.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await monitor
+
+        self.assertEqual(len(voice._notices), 2)
+        connected_notice = voice._notices[0] if isinstance(voice._notices[0], str) else voice._notices[0]["text"]
+        ended_notice = voice._notices[1] if isinstance(voice._notices[1], str) else voice._notices[1]["text"]
+        self.assertIn("PHONE CALL CONNECTED", connected_notice)
+        self.assertIn("PHONE CALL ENDED", ended_notice)
+        self.assertIn("42 seconds", ended_notice)
+
+    async def test_watch_recents_detects_hung_off_outgoing_call(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        try:
+            recents_file = Path(temp_dir.name) / "recents.json"
+            recents_file.write_text("[]", encoding="utf-8")
+
+            connector = PhoneConnector(recents_path=recents_file)
+            received = []
+
+            async def mock_callback(event_data):
+                received.append(event_data)
+
+            stop_event = asyncio.Event()
+            watch_task = asyncio.create_task(connector._watch_recents(mock_callback, stop_event))
+
+            await asyncio.sleep(0.1)
+
+            # Simulate omyphone-helper writing a hung-off call record
+            new_record = [{"number": "+917680935265", "direction": "outgoing", "start": 1792492897, "duration": 0}]
+            recents_file.write_text(json.dumps(new_record), encoding="utf-8")
+
+            # Allow watcher loop to process the file change
+            for _ in range(20):
+                if received:
+                    break
+                await asyncio.sleep(0.1)
+
+            stop_event.set()
+            await watch_task
+
+            self.assertEqual(len(received), 1)
+            self.assertEqual(received[0]["event"], "outgoing_disconnected")
+            self.assertEqual(received[0]["number"], "+917680935265")
+            self.assertEqual(received[0]["duration"], 0)
+        finally:
+            temp_dir.cleanup()
+
+    async def test_handle_call_terminated_outgoing_unanswered(self):
+        connector = PhoneConnector()
+        received = []
+
+        async def mock_callback(event_data):
+            received.append(event_data)
+
+        info = {
+            "path": "/org/pipewire/Telephony/ag0/call1",
+            "number": "+917680935265",
+            "name": "Nagendra",
+            "incoming": False,
+            "answered": False,
+            "declined": False,
+            "hung_up_by_user": False,
+            "active_at": None,
+        }
+
+        await connector._handle_call_terminated(info, info["path"], mock_callback)
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0]["event"], "outgoing_disconnected")
+        self.assertEqual(received[0]["name"], "Nagendra")
+        self.assertEqual(received[0]["reason"], "unanswered_or_rejected")
 
 
 if __name__ == "__main__":

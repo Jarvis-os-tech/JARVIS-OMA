@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from orchestration.agent_orchestrator import AgentOrchestrator, OrchestrationError, command_for
+from orchestration.agent_orchestrator import AgentOrchestrator, OrchestrationError, clear_task_brief, command_for
 from orchestration.desktop_execution import DesktopAgentOrchestrator, interactive_command
 
 
@@ -16,6 +16,25 @@ def test_batch_model_option_preserves_prompt(agent):
     assert command[-1].endswith('test assignment')
     if agent == 'hermes':
         assert command[command.index('-z') + 1] == command[-1]
+
+
+def test_json_envelope_is_rendered_as_clear_english_brief():
+    prompt = '{"task":"Fix the listener","context":"The service must remain responsive.","deliverables":["Add a regression test"],"constraints":["Do not touch audio files"]}'
+    brief = clear_task_brief(prompt)
+    assert brief == (
+        "Task\nFix the listener\n\nContext\nThe service must remain responsive.\n\n"
+        "Expected result\n- Add a regression test\n\nConstraints\n- Do not touch audio files"
+    )
+    command = command_for('claude', 'claude', prompt)
+    message = command[-1]
+    assert 'Task\nFix the listener' in message
+    assert '{"task"' not in message
+
+
+@pytest.mark.parametrize('agent', ['codex', 'claude', 'opencode', 'gemini', 'omp', 'pi'])
+def test_worker_prompt_uses_human_readable_output(agent):
+    command = command_for(agent, agent, 'Explain the change')
+    assert not any('json' in str(value).lower() or 'stream-' in str(value).lower() for value in command[:-1])
 
 
 @pytest.mark.parametrize('model', ['', ' ', '--flag', 'a\nb', 123])

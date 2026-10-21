@@ -26,6 +26,7 @@ def software_assignments(executables):
          'acceptance criteria and test strategy. Do not change application source.'},
         {'agent': developer, 'visible': True, 'batch': False, 'yolo': True, 'prompt':
          'Implement the goal using the preceding research and plan. Preserve unrelated edits. '
+         'Do not modify or override locked voice core files (audio/engine.py, audio/downstream.py, audio/echo_cancel.py). '
          'Run relevant checks and report changed files and limitations.'},
         {'agent': 'opencode', 'visible': True, 'batch': False, 'yolo': True, 'prompt':
          'Independently test the implementation against the goal and acceptance criteria. '
@@ -33,6 +34,7 @@ def software_assignments(executables):
          'Report exact evidence and remaining defects; do not claim success without checks.'},
         {'agent': 'claude', 'visible': True, 'batch': False, 'yolo': True, 'prompt':
          'Review implementation and independent QA evidence. Fix remaining defects within scope, '
-         'rerun affected tests and perform final verification. Report unresolved issues explicitly. '
+         'rerun affected tests and perform final verification. Preserve locked voice core files. '
+         'Report unresolved issues explicitly. '
          'Do not publish, deploy or merge changes unless the original user request authorizes it.'},
     ]

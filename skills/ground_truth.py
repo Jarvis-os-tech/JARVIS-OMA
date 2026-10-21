@@ -16,6 +16,41 @@ import time
 from typing import Any
 
 log = logging.getLogger(__name__)
+MAX_FILE_CONTENT_SCAN_BYTES = 1024 * 1024
+
+
+def _inspect_file_state(
+    target: Path,
+    *,
+    min_bytes: int,
+    expected_content: str | None,
+    is_dir: bool,
+) -> tuple[dict[str, Any], bool]:
+    """Inspect one file-system snapshot without blocking the event loop caller."""
+    if not target.exists():
+        return {"path": str(target), "exists": False}, False
+    st = target.stat()
+    details = {
+        "path": str(target),
+        "exists": True,
+        "is_dir": target.is_dir(),
+        "size_bytes": st.st_size,
+        "modified_time": st.st_mtime,
+    }
+    if is_dir:
+        return details, target.is_dir()
+    if not target.is_file() or st.st_size < min_bytes:
+        return details, False
+    if expected_content is None:
+        return details, True
+    with target.open("rb") as stream:
+        content = stream.read(MAX_FILE_CONTENT_SCAN_BYTES)
+    details["content_scan_bytes"] = len(content)
+    details["content_scan_truncated"] = st.st_size > len(content)
+    matched = expected_content in content.decode("utf-8", errors="replace")
+    if matched:
+        details["content_matched"] = True
+    return details, matched
 
 
 def _desktop_env() -> dict[str, str]:
@@ -55,49 +90,31 @@ async def verify_file_state(
     if not path:
         return {"verified": False, "target_type": "file", "reason": "no path provided", "details": {}}
 
-    target = Path(path).expanduser().resolve()
+    target = Path(os.path.abspath(os.path.expanduser(path)))
     deadline = time.monotonic() + max(0.1, timeout)
     last_stat: dict[str, Any] = {}
 
     while time.monotonic() <= deadline:
-        if target.exists():
-            try:
-                st = target.stat()
-                last_stat = {
-                    "path": str(target),
-                    "exists": True,
-                    "is_dir": target.is_dir(),
-                    "size_bytes": st.st_size,
-                    "modified_time": st.st_mtime,
-                }
-
-                if is_dir:
-                    if target.is_dir():
-                        return {"verified": True, "target_type": "file", "details": last_stat, "reason": None}
-                else:
-                    if target.is_file():
-                        if st.st_size >= min_bytes:
-                            if expected_content is not None:
-                                # Check content match
-                                try:
-                                    content = target.read_text(encoding="utf-8", errors="replace")
-                                    if expected_content in content:
-                                        last_stat["content_matched"] = True
-                                        return {"verified": True, "target_type": "file", "details": last_stat, "reason": None}
-                                except OSError:
-                                    pass
-                            else:
-                                return {"verified": True, "target_type": "file", "details": last_stat, "reason": None}
-            except OSError:
-                pass
+        try:
+            last_stat, matched = await asyncio.to_thread(
+                _inspect_file_state,
+                target,
+                min_bytes=min_bytes,
+                expected_content=expected_content,
+                is_dir=is_dir,
+            )
+            if matched:
+                return {"verified": True, "target_type": "file", "details": last_stat, "reason": None}
+        except OSError:
+            pass
         await asyncio.sleep(0.08)
 
     # Failed verification
     reason = "file does not exist"
-    if target.exists():
-        if is_dir and not target.is_dir():
+    if last_stat.get("exists"):
+        if is_dir and not last_stat.get("is_dir"):
             reason = "path exists but is not a directory"
-        elif not is_dir and not target.is_file():
+        elif not is_dir and last_stat.get("is_dir"):
             reason = "path exists but is not a regular file"
         elif not is_dir and last_stat.get("size_bytes", 0) < min_bytes:
             reason = f"file size {last_stat.get('size_bytes')} bytes is less than expected {min_bytes} bytes"

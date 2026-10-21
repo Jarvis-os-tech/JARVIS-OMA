@@ -322,7 +322,7 @@
     },
     {
       "name": "set_volume",
-      "description": "Control speaker output volume: set exact percentage (0 to 100), adjust relatively ('raise' or 'lower'), or mute/unmute/toggle.",
+      "description": "Control system speaker output volume. Use mute only when the user explicitly says to mute the speakers, system audio, or computer sound. A bare 'mute', 'mute yourself', or 'mute Jarvis' means enter_standby instead and must not change system audio.",
       "adapter": "audio.volume_set",
       "parameters_json_schema": {
         "type": "object",
@@ -349,6 +349,10 @@
             "minimum": 1,
             "maximum": 50,
             "description": "Percentage points to raise or lower (default 5)."
+          },
+          "explicit_system_target": {
+            "type": "boolean",
+            "description": "Set true only when the user explicitly named speakers, system audio, or computer sound. Required for action=mute; otherwise mute is redirected to JARVIS standby."
           }
         },
         "required": [],
@@ -357,7 +361,7 @@
     },
     {
       "name": "control_microphone",
-      "description": "Control default microphone: mute, unmute, toggle mute, check status, or set input volume percentage.",
+      "description": "Inspect, unmute, or adjust the system default microphone. JARVIS is not permitted to mute or toggle the microphone because doing so disables standby wake detection. Requests to mute Jarvis mean enter_standby.",
       "adapter": "audio.mic_control",
       "parameters_json_schema": {
         "type": "object",
@@ -365,13 +369,11 @@
           "action": {
             "type": "string",
             "enum": [
-              "mute",
               "unmute",
-              "toggle",
               "status",
               "volume"
             ],
-            "description": "Microphone action: mute, unmute, toggle, status, or volume."
+            "description": "Allowed microphone action: unmute, status, or volume."
           },
           "volume_percent": {
             "type": "integer",

@@ -20,6 +20,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 import unicodedata
 from typing import Any, Awaitable, Callable
 
@@ -73,11 +74,32 @@ class PhoneConnector:
         self,
         contacts_path: Path | None = None,
         history_path: Path | None = None,
+        recents_path: Path | None = None,
     ) -> None:
         self.contacts_path = Path(contacts_path) if contacts_path else self.CONTACTS_PATH
         self.history_path = Path(history_path) if history_path else self.HISTORY_PATH
+        self.recents_path = Path(recents_path) if recents_path else self.RECENTS_PATH
         self._busctl = shutil.which("busctl")
         self._wpctl = shutil.which("wpctl")
+        self._last_dialed: dict[str, Any] = {}
+        self._tracked_calls: dict[str, dict[str, Any]] = {}
+        self._announced_cache: dict[tuple[str, str], float] = {}
+        self._has_gateways: bool | None = None
+
+    def _mark_announced(self, event_type: str, number: str) -> None:
+        clean = clean_phone_number(number) if number else "system"
+        now = time.time()
+        self._announced_cache[(event_type, clean)] = now
+        for k, v in list(self._announced_cache.items()):
+            if now - v > 60.0:
+                self._announced_cache.pop(k, None)
+
+    def _is_announced(self, event_type: str, number: str, window: float = 20.0) -> bool:
+        clean = clean_phone_number(number) if number else "system"
+        ts = self._announced_cache.get((event_type, clean))
+        if ts is not None and (time.time() - ts) < window:
+            return True
+        return False
 
     # ── D-Bus Execution Helper ──────────────────────────────────────────
 
@@ -180,6 +202,11 @@ class PhoneConnector:
             raise PhoneError(f"Dial failed: {err or out or 'Unknown D-Bus error'}")
 
         display_name = matched_name if matched_name else cleaned
+        self._last_dialed = {
+            "number": cleaned,
+            "name": display_name,
+            "time": time.time(),
+        }
         return {
             "status": "dialing",
             "number": cleaned,
@@ -205,6 +232,11 @@ class PhoneConnector:
         if code != 0:
             raise PhoneError(f"Failed to answer call: {err or out or 'Call may have ended'}")
 
+        if target_path and target_path in self._tracked_calls:
+            self._tracked_calls[target_path]["answered"] = True
+            self._tracked_calls[target_path]["active_at"] = time.time()
+            self._tracked_calls[target_path]["state"] = "active"
+
         return {
             "status": "answered",
             "call_path": target_path,
@@ -225,6 +257,9 @@ class PhoneConnector:
         ])
         if code != 0:
             raise PhoneError(f"Failed to hang up call: {err or out or 'Call already ended'}")
+
+        if target_path and target_path in self._tracked_calls:
+            self._tracked_calls[target_path]["hung_up_by_user"] = True
 
         return {
             "status": "hung_up",
@@ -249,6 +284,9 @@ class PhoneConnector:
         ])
         if code != 0:
             raise PhoneError(f"Failed to decline call: {err or out or 'Call already ended'}")
+
+        if target_path and target_path in self._tracked_calls:
+            self._tracked_calls[target_path]["declined"] = True
 
         return {
             "status": "declined",
@@ -434,21 +472,194 @@ class PhoneConnector:
             "has_calls": len(calls) > 0,
         }
 
-    # ── Real-time Incoming Call Signal Listener ─────────────────────────
+    # ── Real-time Call Lifecycle & Recents Listener ─────────────────────
+
+    async def _watch_recents(
+        self,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+        stop_event: asyncio.Event,
+    ) -> None:
+        """Poll recents.json to guarantee call completion & hang-off announcements."""
+        seen_keys: set[tuple[Any, ...]] = set()
+        if self.recents_path.exists():
+            try:
+                data = json.loads(self.recents_path.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    for e in data:
+                        if isinstance(e, dict):
+                            seen_keys.add((e.get("start"), e.get("number"), e.get("direction")))
+            except Exception:
+                pass
+
+        last_mtime = 0.0
+        try:
+            if self.recents_path.exists():
+                last_mtime = self.recents_path.stat().st_mtime
+        except OSError:
+            pass
+
+        while not stop_event.is_set():
+            try:
+                await asyncio.sleep(0.5)
+                if not self.recents_path.exists():
+                    continue
+                try:
+                    cur_mtime = self.recents_path.stat().st_mtime
+                except OSError:
+                    continue
+
+                if cur_mtime <= last_mtime:
+                    continue
+                last_mtime = cur_mtime
+
+                try:
+                    entries = json.loads(self.recents_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+
+                if not isinstance(entries, list):
+                    continue
+
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    key = (entry.get("start"), entry.get("number"), entry.get("direction"))
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+
+                    number = entry.get("number", "")
+                    direction = entry.get("direction", "")
+                    duration = int(entry.get("duration", 0))
+                    name = self.resolve_number_to_name(number) or number or "Unknown"
+
+                    if direction == "outgoing":
+                        if duration == 0:
+                            if not self._is_announced("outgoing_disconnected", number):
+                                self._mark_announced("outgoing_disconnected", number)
+                                await callback({
+                                    "event": "outgoing_disconnected",
+                                    "number": number,
+                                    "name": name,
+                                    "duration": 0,
+                                    "direction": "outgoing",
+                                    "reason": "unanswered_or_rejected",
+                                })
+                        else:
+                            if not self._is_announced("call_ended", number):
+                                self._mark_announced("call_ended", number)
+                                await callback({
+                                    "event": "call_ended",
+                                    "number": number,
+                                    "name": name,
+                                    "duration": duration,
+                                    "direction": "outgoing",
+                                })
+                    elif direction == "missed" or (direction == "incoming" and duration == 0):
+                        if not self._is_announced("incoming_missed", number):
+                            self._mark_announced("incoming_missed", number)
+                            await callback({
+                                "event": "incoming_missed",
+                                "number": number,
+                                "name": name,
+                                "duration": 0,
+                                "direction": "incoming",
+                            })
+                    elif direction == "incoming" and duration > 0:
+                        if not self._is_announced("call_ended", number):
+                            self._mark_announced("call_ended", number)
+                            await callback({
+                                "event": "call_ended",
+                                "number": number,
+                                "name": name,
+                                "duration": duration,
+                                "direction": "incoming",
+                            })
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.debug("Recents file monitor error: %s", e)
+
+    async def _handle_call_terminated(
+        self,
+        info: dict[str, Any],
+        path: str,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        """Process termination for a tracked call."""
+        num = info.get("number", "")
+        nm = info.get("name", "") or num or "Unknown"
+        dur = int(round(time.time() - info["active_at"])) if info.get("answered") and info.get("active_at") else 0
+
+        try:
+            if info.get("incoming"):
+                if not info.get("answered") and not info.get("declined"):
+                    if not self._is_announced("incoming_missed", num):
+                        self._mark_announced("incoming_missed", num)
+                        await callback({
+                            "event": "incoming_missed",
+                            "call_path": path,
+                            "number": num,
+                            "name": nm,
+                        })
+                elif info.get("declined"):
+                    await callback({
+                        "event": "call_declined",
+                        "call_path": path,
+                        "number": num,
+                        "name": nm,
+                    })
+                elif info.get("answered"):
+                    if not self._is_announced("call_ended", num):
+                        self._mark_announced("call_ended", num)
+                        await callback({
+                            "event": "call_ended",
+                            "call_path": path,
+                            "number": num,
+                            "name": nm,
+                            "duration": dur,
+                            "direction": "incoming",
+                        })
+            else:  # Outgoing call
+                if not info.get("answered"):
+                    if not self._is_announced("outgoing_disconnected", num):
+                        self._mark_announced("outgoing_disconnected", num)
+                        await callback({
+                            "event": "outgoing_disconnected",
+                            "call_path": path,
+                            "number": num,
+                            "name": nm,
+                            "reason": "unanswered_or_rejected",
+                            "hung_up_by_user": info.get("hung_up_by_user", False),
+                        })
+                else:
+                    if not self._is_announced("call_ended", num):
+                        self._mark_announced("call_ended", num)
+                        await callback({
+                            "event": "call_ended",
+                            "call_path": path,
+                            "number": num,
+                            "name": nm,
+                            "duration": dur,
+                            "direction": "outgoing",
+                        })
+        except Exception as cb_err:
+            log.error("Error in call termination callback: %s", cb_err)
 
     async def listen_for_calls(
         self,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
         stop_event: asyncio.Event,
     ) -> None:
-        """Monitor D-Bus signals for incoming calls and invoke callback."""
+        """Monitor D-Bus signals and recents for full phone call lifecycle events."""
         proc = await asyncio.create_subprocess_exec(
             "busctl", "--user", "monitor", SERVICE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
 
-        log.info("Started real-time D-Bus phone call listener")
+        recents_task = asyncio.create_task(self._watch_recents(callback, stop_event))
+        log.info("Started real-time D-Bus phone call listener and recents monitor")
         try:
             while not stop_event.is_set():
                 if proc.stdout is None:
@@ -457,24 +668,128 @@ class PhoneConnector:
                 if not line_bytes:
                     break
                 line = line_bytes.decode(errors="replace")
-                # Look for CallAdded or PropertyChanged signals
-                if "CallAdded" in line or "org.ofono.VoiceCallManager" in line:
-                    await asyncio.sleep(0.3)  # brief settle to read call properties
-                    calls = await self.get_calls()
-                    incoming = [c for c in calls if c.get("state") in ("incoming", "waiting")]
-                    for inc in incoming:
+
+                # Handle Modem signals
+                if "ModemAdded" in line:
+                    self._has_gateways = True
+                    if not self._is_announced("phone_connected", "bt"):
+                        self._mark_announced("phone_connected", "bt")
                         try:
-                            await callback({
-                                "event": "incoming_call",
-                                "call_path": inc["path"],
-                                "number": inc["number"],
-                                "name": inc["name"] or inc["number"],
-                            })
-                        except Exception as cb_err:
-                            log.error("Error in phone call listener callback: %s", cb_err)
+                            await callback({"event": "phone_connected"})
+                        except Exception as err:
+                            log.error("Error in phone_connected callback: %s", err)
+                    continue
+                if "ModemRemoved" in line:
+                    self._has_gateways = False
+                    if not self._is_announced("phone_disconnected", "bt"):
+                        self._mark_announced("phone_disconnected", "bt")
+                        try:
+                            await callback({"event": "phone_disconnected"})
+                        except Exception as err:
+                            log.error("Error in phone_disconnected callback: %s", err)
+                    continue
+
+                # Handle Call signals
+                if any(k in line for k in ("CallAdded", "CallRemoved", "PropertyChanged", "VoiceCallManager")):
+                    await asyncio.sleep(0.15)
+                    try:
+                        active_calls = await self.get_calls()
+                    except Exception:
+                        active_calls = []
+
+                    active_by_path = {c["path"]: c for c in active_calls}
+
+                    # Check for newly added or updated calls
+                    for path, call in active_by_path.items():
+                        state = call.get("state", "unknown")
+                        number = call.get("number", "")
+                        name = call.get("name", "")
+
+                        if path not in self._tracked_calls:
+                            is_incoming = state in ("incoming", "waiting")
+                            if not is_incoming and not number:
+                                if self._last_dialed and (time.time() - self._last_dialed.get("time", 0) < 30):
+                                    number = self._last_dialed.get("number", "")
+                                    name = self._last_dialed.get("name", "")
+                            if not name and number:
+                                name = self.resolve_number_to_name(number) or number
+
+                            self._tracked_calls[path] = {
+                                "path": path,
+                                "number": number,
+                                "name": name or number or "Unknown",
+                                "incoming": is_incoming,
+                                "state": state,
+                                "answered": (state == "active"),
+                                "declined": False,
+                                "hung_up_by_user": False,
+                                "start_time": time.time(),
+                                "active_at": time.time() if state == "active" else None,
+                            }
+
+                            if is_incoming:
+                                if not self._is_announced("incoming_call", number):
+                                    self._mark_announced("incoming_call", number)
+                                    try:
+                                        await callback({
+                                            "event": "incoming_call",
+                                            "call_path": path,
+                                            "number": number,
+                                            "name": name or number or "Unknown",
+                                        })
+                                    except Exception as cb_err:
+                                        log.error("Error in incoming_call callback: %s", cb_err)
+                            else:
+                                try:
+                                    await callback({
+                                        "event": "outgoing_call",
+                                        "call_path": path,
+                                        "number": number,
+                                        "name": name or number or "Unknown",
+                                        "state": state,
+                                    })
+                                except Exception as cb_err:
+                                    log.error("Error in outgoing_call callback: %s", cb_err)
+                        else:
+                            info = self._tracked_calls[path]
+                            if number and not info.get("number"):
+                                info["number"] = number
+                                if not info.get("name") or info["name"] == "Unknown":
+                                    info["name"] = self.resolve_number_to_name(number) or number
+                            if state == "active" and not info.get("answered"):
+                                info["answered"] = True
+                                info["active_at"] = time.time()
+                                info["state"] = "active"
+                                if not self._is_announced("call_connected", info["number"]):
+                                    self._mark_announced("call_connected", info["number"])
+                                    try:
+                                        await callback({
+                                            "event": "call_connected",
+                                            "call_path": path,
+                                            "number": info["number"],
+                                            "name": info["name"],
+                                        })
+                                    except Exception as cb_err:
+                                        log.error("Error in call_connected callback: %s", cb_err)
+                            elif state == "disconnected":
+                                self._tracked_calls.pop(path, None)
+                                await self._handle_call_terminated(info, path, callback)
+                            else:
+                                info["state"] = state
+
+                    # Check for calls that were removed from active list
+                    for path in list(self._tracked_calls.keys()):
+                        if path not in active_by_path:
+                            info = self._tracked_calls.pop(path)
+                            await self._handle_call_terminated(info, path, callback)
         except asyncio.CancelledError:
             raise
         finally:
+            recents_task.cancel()
+            try:
+                await recents_task
+            except (asyncio.CancelledError, Exception):
+                pass
             if proc.returncode is None:
                 try:
                     proc.kill()

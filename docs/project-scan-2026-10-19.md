@@ -45,6 +45,8 @@ Sources: [stop_all](../proactive/runtime.py#L301), [team setup](../orchestration
 
 ### 3. P1 — A shared-pane monitoring failure can leave an agent running without supervision
 
+**Update, 21 October 2026:** fixed. Owned panes and sessions are now cleaned up on monitoring and partial-setup failures, terminal events are emitted consistently, and an unconfirmed cleanup leaves the job or team in `cleanup_failed` so the workspace remains reserved. Completion reports also retire the live agent process before releasing its workspace while leaving dead tmux output inspectable.
+
 Source: [pane error handling](../orchestration/desktop_execution.py#L390).
 
 If capture or another monitoring operation fails after launch, the exception handler marks the job failed but does not terminate its pane. The team then stops tracking that stage, and the workspace is considered free because reservation checks use job state. The previous agent may still be editing it.
@@ -56,6 +58,8 @@ A related launch path at [line 222](../orchestration/desktop_execution.py#L222) 
 **Fix:** track pane/session ownership through cleanup, preserve workspace reservation until termination is confirmed, and emit terminal events on every exit path.
 
 ### 4. P2 — Standalone interactive jobs do not detect a finished task
+
+**Update, 21 October 2026:** fixed. Standalone interactive jobs now use the same bounded completion-report protocol as team panes. Reports are descriptor-validated, limited to 4 KiB, reject symlinks and malformed states, and separate task completion from terminal inspectability. A task is not released until its live process has been retired successfully.
 
 Source: [standalone completion polling](../orchestration/desktop_execution.py#L302).
 
@@ -91,6 +95,8 @@ Night-light `on`, `off`, and `toggle` all call `set-nightlight-toggle`. Repeatin
 
 ### 7. P2 — Budget mode conflicts with the native OpenCode workflow
 
+**Update, 21 October 2026:** fixed. Budget-mode OpenCode stages now use the existing model-capable batch route, and every normalized team assignment is preflighted before a team record, worker, terminal session, or earlier stage can launch.
+
 Sources: [budget model assignment](../orchestration/model_policy.py#L14), [native OpenCode launcher](../orchestration/desktop_execution.py#L66), [default assignments](../orchestration/personas.py#L19).
 
 Budget mode requires and assigns an OpenCode model override, while the native OpenCode launcher rejects every model override. Default goals use native mode. Even with both budget environment variables supplied, the QA stage fails; earlier stages may already have incurred model usage.
@@ -101,6 +107,8 @@ Budget mode requires and assigns an OpenCode model override, while the native Op
 
 ### 8. P2 — GUI active-window verification can fail open
 
+**Update, 21 October 2026:** fixed and security-hardened. Active-window actions require canonical Hyprland addresses, valid observed bounds, and an atomic driver operation bound to the exact target window. Missing, ambiguous, changed, or mismatched focus evidence fails closed. Bounds and focus evidence are reported separately.
+
 Sources: [focus verification](../skills/gui_control.py#L225), [click result](../skills/gui_control.py#L157).
 
 When `verify_active=True`, an unavailable active-window query does not stop the click. Checks also compare only process IDs, which cannot distinguish multiple windows belonging to the same process. The response reports `target_verified: true` based on the requested options rather than verified focus.
@@ -110,6 +118,8 @@ When `verify_active=True`, an unavailable active-window query does not stop the 
 **Fix:** require positive window-level focus evidence when requested; return an unverifiable-state error otherwise. Separate bounds verification from focus verification in results.
 
 ### 9. P2 — Some tool paths can still block the voice event loop
+
+**Update, 21 October 2026:** fixed for the reported paths. Phone contact/history reads and bounded file verification now run in worker threads. Content matching scans at most 1 MiB and records truncation. Camera start/stop subprocess work runs off the event loop with serialized, cancellation-safe lifecycle handling.
 
 **Partial update, 20 October 2026:** the new system-information readers and notification-history reads run outside the voice event loop; new commands have bounded timeouts/output and cleanup. This does not repair every older synchronous camera or phone-contact path described below.
 
@@ -128,7 +138,7 @@ Phone adapters call synchronous JSON file readers directly. File verification re
 - Team state is in memory and is lost on restart. Completion reports are agent assertions, not independent acceptance gates.
 - Harness² is not integrated; the local orchestration documentation lists it as future work. Artemis-related local files do not establish Harness² integration.
 - The configured-model profile preserves existing agent setups, but does not guarantee cheap models or enforce a monetary cap.
-- Five manifest files differ or are missing between `skill_manifests/` and `skills/manifests/`: input-bar, GUI control, agent orchestration, phone, and capabilities. The default loader uses the first directory, so this is maintenance drift rather than a default-startup failure.
+- **Update, 21 October 2026:** manifest mirror drift is fixed. All 21 canonical manifests in `skill_manifests/` have byte-identical mirrors in `skills/manifests/`, with a regression test covering both filename sets and every parsed manifest.
 - `tests/README.md` still advertises 239 tests; the current default suite collected 605 test items.
 
 ## Suggested repair order

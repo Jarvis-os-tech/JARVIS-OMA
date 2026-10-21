@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "gui_list_windows",
+      "description": "List Cua Driver GUI windows with their exact process and window IDs before inspecting or clicking one.",
+      "adapter": "gui.windows",
+      "parameters_json_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "gui_inspect_window",
+      "description": "Read accessible controls in one GUI window. Use IDs from gui_list_windows. A degraded result cannot be used for element clicks; an incomplete tree may still contain valid exact tokens.",
+      "adapter": "gui.inspect_window",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "pid": {"type": "integer", "minimum": 1, "description": "Process ID from gui_list_windows."},
+          "window_id": {"type": "integer", "minimum": 1, "description": "Window ID from gui_list_windows."}
+        },
+        "required": ["pid", "window_id"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_click_element",
+      "description": "Click an accessible control using an exact element token from a recent non-degraded gui_inspect_window result. Inspect the changed window again afterward.",
+      "adapter": "gui.click_element",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "pid": {"type": "integer", "minimum": 1},
+          "window_id": {"type": "integer", "minimum": 1},
+          "element_token": {"type": "string", "description": "Exact element_token returned by gui_inspect_window."}
+        },
+        "required": ["pid", "window_id", "element_token"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_observe_desktop",
+      "description": "Capture a current desktop image with Cua Driver for visual GUI interaction. Only use coordinates if the result says frame_submitted and you perceive the target.",
+      "adapter": "gui.observe_desktop",
+      "parameters_json_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "gui_click_desktop",
+      "description": "Click a visible desktop coordinate from the most recent gui_observe_desktop frame. Observe again after each click. Some Hyprland surfaces cannot receive driver input.",
+      "adapter": "gui.click_desktop",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "x": {"type": "integer", "minimum": 0},
+          "y": {"type": "integer", "minimum": 0},
+          "target_window_id": {"type": "integer", "minimum": 1, "description": "Optional window_id from gui_list_windows to verify coordinates fall inside target window geometry."},
+          "verify_active": {"type": "boolean", "description": "Verify the target window is the currently active/focused window before clicking."}
+        },
+        "required": ["x", "y"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_scroll_desktop",
+      "description": "Scroll the current GUI after a fresh gui_observe_desktop frame. Observe again afterward; Hyprland may report an unverifiable effect.",
+      "adapter": "gui.scroll_desktop",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+          "x": {"type": "integer", "minimum": 0},
+          "y": {"type": "integer", "minimum": 0},
+          "amount": {"type": "integer", "minimum": 1, "maximum": 10},
+          "target_window_id": {"type": "integer", "minimum": 1, "description": "Optional window_id to verify scroll point falls inside target window."}
+        },
+        "required": ["direction", "x", "y"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_type_at",
+      "description": "Focus a visible text field at desktop coordinates and type text with Cua Driver. Requires a fresh submitted desktop frame; observe again afterward.",
+      "adapter": "gui.type_at",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "x": {"type": "integer", "minimum": 0},
+          "y": {"type": "integer", "minimum": 0},
+          "text": {"type": "string"},
+          "target_window_id": {"type": "integer", "minimum": 1, "description": "Optional window_id to verify typing coordinates fall inside target window."}
+        },
+        "required": ["x", "y", "text"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_key_at",
+      "description": "Focus an observed desktop location and send one key or shortcut through Cua Driver. Requires a fresh submitted frame; observe afterward.",
+      "adapter": "gui.key_at",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "x": {"type": "integer", "minimum": 0},
+          "y": {"type": "integer", "minimum": 0},
+          "key": {"type": "string"},
+          "modifiers": {"type": "array", "items": {"type": "string"}},
+          "target_window_id": {"type": "integer", "minimum": 1, "description": "Optional window_id to verify key point falls inside target window."}
+        },
+        "required": ["x", "y", "key"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_bind",
+      "description": "Bind an exact browser window from gui_list_windows to Cua's tab controls. If the browser lacks a DevTools endpoint, report that limitation and use visual desktop controls.",
+      "adapter": "gui.browser_bind",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "pid": {"type": "integer", "minimum": 1},
+          "window_id": {"type": "integer", "minimum": 1}
+        },
+        "required": ["pid", "window_id"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_open_isolated",
+      "description": "Open a separate Cua-owned isolated Chrome window for exact browser tab control without changing the user's existing browser profile. Then list and bind its window.",
+      "adapter": "gui.browser_open_isolated",
+      "parameters_json_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}
+    },
+    {
+      "name": "gui_browser_snapshot",
+      "description": "Read the semantic page and fresh element refs for an exactly bound browser tab.",
+      "adapter": "gui.browser_snapshot",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_id": {"type": "string"},
+          "tab_id": {"type": "string"}
+        },
+        "required": ["target_id", "tab_id"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_click",
+      "description": "Click a fresh exact page ref in a bound browser tab using the available Cua route; then inspect the tab again to verify activation.",
+      "adapter": "gui.browser_click",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_id": {"type": "string"},
+          "tab_id": {"type": "string"},
+          "ref": {"type": "string"}
+        },
+        "required": ["target_id", "tab_id", "ref"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_type",
+      "description": "Type or replace text in an editable fresh page ref in a bound browser tab; then inspect the tab again.",
+      "adapter": "gui.browser_type",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_id": {"type": "string"},
+          "tab_id": {"type": "string"},
+          "ref": {"type": "string"},
+          "text": {"type": "string"},
+          "replace": {"type": "boolean"}
+        },
+        "required": ["target_id", "tab_id", "ref", "text"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_navigate",
+      "description": "Open an http, https, or about URL in an exactly bound Cua browser tab, then inspect the new page.",
+      "adapter": "gui.browser_navigate",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_id": {"type": "string"},
+          "tab_id": {"type": "string"},
+          "url": {"type": "string"}
+        },
+        "required": ["target_id", "tab_id", "url"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_browser_double_click",
+      "description": "Double-click a fresh page ref in an exactly bound browser tab, then inspect the page to verify the result.",
+      "adapter": "gui.browser_double_click",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_id": {"type": "string"},
+          "tab_id": {"type": "string"},
+          "ref": {"type": "string"}
+        },
+        "required": ["target_id", "tab_id", "ref"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "gui_verify_window",
+      "description": "Verify that an exact window exists, or that it contains a labeled accessible control. Unknown or unsatisfied is not success.",
+      "adapter": "gui.verify_window",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "pid": {"type": "integer", "minimum": 1},
+          "window_id": {"type": "integer", "minimum": 1},
+          "role": {"type": "string"},
+          "label_contains": {"type": "string"}
+        },
+        "required": ["pid", "window_id"], "additionalProperties": false
+      }
+    }
+  ]
+}

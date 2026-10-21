@@ -69,7 +69,11 @@ class SystemInformationWiringTests(unittest.IsolatedAsyncioTestCase):
             parameters = set(inspect.signature(handler).parameters)
             self.assertFalse(set(spec['parameters_json_schema']['properties']) - parameters, name)
         root = Path(__file__).resolve().parents[2]
-        for name in ('system-information.json', 'system-extensions.json',
-                     'desktop-awareness.json', 'system-controls.json'):
-            self.assertEqual(json.loads((root / 'skill_manifests' / name).read_text()),
-                             json.loads((root / 'skills/manifests' / name).read_text()), name)
+        canonical = root / 'skill_manifests'
+        mirrors = root / 'skills' / 'manifests'
+        canonical_names = {path.name for path in canonical.glob('*.json')}
+        mirror_names = {path.name for path in mirrors.glob('*.json')}
+        self.assertEqual(canonical_names, mirror_names)
+        for name in sorted(canonical_names):
+            self.assertEqual(json.loads((canonical / name).read_text()),
+                             json.loads((mirrors / name).read_text()), name)

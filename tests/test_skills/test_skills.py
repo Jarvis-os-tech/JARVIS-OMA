@@ -29,6 +29,32 @@ def spec(name='apps', adapter='applications.list', properties=None, required=Non
 
 
 class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_memory_schema_cannot_block_voice_startup(self):
+        skills = DesktopSkills()
+
+        class BrokenMemory:
+            def context(self):
+                raise KeyError('evidence_refs')
+
+        skills._memory = BrokenMemory()
+        self.assertEqual(skills.memory_context(), '')
+
+    async def test_enter_standby_requests_voice_transition(self):
+        skills = DesktopSkills()
+        requested = []
+        skills.on_standby_request = lambda: requested.append(True) or {
+            'status': 'standby_requested', 'wake_phrase': 'Hey Jarvis'}
+        result = await skills.execute('enter_standby', {})
+        self.assertEqual(result['status'], 'standby_requested')
+        self.assertEqual(requested, [True])
+
+    async def test_microphone_mute_permission_is_blocked(self):
+        skills = DesktopSkills()
+        with self.assertRaisesRegex(SkillError, 'invalid arguments'):
+            await skills.execute('control_microphone', {'action': 'mute'})
+        with self.assertRaisesRegex(SkillError, 'not permitted'):
+            await skills._adapter_control_microphone('toggle')
+
     async def test_brave_search_returns_bounded_public_sources(self):
         payload = {'web': {'results': [
             {'title': 'Example <b>result</b>', 'url': 'https://example.org/fact',

@@ -1,4 +1,7 @@
 import asyncio
+import json
+from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -9,6 +12,129 @@ from orchestration.agent_orchestrator import AGENTS, OrchestrationError
 
 
 class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_standalone_interactive_job_finishes_from_bounded_handoff_report(self):
+        for reported_state in ('completed', 'failed'):
+            with self.subTest(reported_state=reported_state):
+                runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
+                submitted_prompts = []
+
+                async def tmux(*args):
+                    if args[0] == 'capture-pane':
+                        return '› Ask a question'
+                    if args[0] == 'display-message':
+                        if args[-1] == '#{session_attached}':
+                            return '1'
+                        return '0 '
+                    if args[0] == 'send-keys' and args[-1] == 'Enter':
+                        completion = Path(runner.jobs[key]['completion_file'])
+                        completion.write_text(json.dumps({
+                            'state': reported_state,
+                            'summary': 'work finished',
+                        }))
+                    if args[0] == 'send-keys' and args[3:4] == ('-l',):
+                        submitted_prompts.append(args[-1])
+                    return ''
+
+                runner._tmux = AsyncMock(side_effect=tmux)
+                launcher = AsyncMock()
+                launcher.returncode = None
+                with tempfile.TemporaryDirectory() as workspace, patch(
+                        'shutil.which', return_value='/bin/tool'), patch(
+                        'asyncio.create_subprocess_exec', return_value=launcher):
+                    key = runner.delegate('codex', 'Inspect the project', workspace)['job']['id']
+                    await runner.workers[key]
+
+                job = runner.jobs[key]
+                self.assertEqual(job['state'], reported_state)
+                self.assertEqual(job['completion_report']['summary'], 'work finished')
+                self.assertEqual(job['completion_source'],
+                                 'agent report; terminal process retired for safe workspace release')
+                self.assertEqual(job['terminal_state'], 'closed')
+                self.assertFalse(Path(job['completion_file']).parent.exists())
+                self.assertTrue(any('JARVIS handoff protocol' in prompt
+                                    for prompt in submitted_prompts))
+                self.assertFalse(any(c.args[0] == 'kill-session'
+                                     for c in runner._tmux.call_args_list))
+                self.assertEqual(sum(c.args[0] == 'respawn-pane' and c.args[1] == '-k'
+                                     for c in runner._tmux.call_args_list), 2)
+
+    async def test_completion_report_does_not_release_workspace_if_process_retirement_fails(self):
+        runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
+
+        async def tmux(*args):
+            if args[0] == 'capture-pane':
+                return '› Ask a question'
+            if args[0] == 'display-message':
+                return '1' if args[-1] == '#{session_attached}' else '0 '
+            if args[0] == 'send-keys' and args[-1] == 'Enter':
+                Path(runner.jobs[key]['completion_file']).write_text(json.dumps({
+                    'state': 'completed', 'summary': 'work finished',
+                }))
+            if (args[0] == 'respawn-pane' and args[1] == '-k'
+                    and args[-1].startswith('printf')):
+                raise OrchestrationError('agent process still alive')
+            return ''
+
+        runner._tmux = AsyncMock(side_effect=tmux)
+        launcher = AsyncMock()
+        launcher.returncode = None
+        with tempfile.TemporaryDirectory() as workspace, patch(
+                'shutil.which', return_value='/bin/tool'), patch(
+                'asyncio.create_subprocess_exec', return_value=launcher):
+            key = runner.delegate('codex', 'Inspect the project', workspace)['job']['id']
+            await runner.workers[key]
+            self.assertEqual(runner.jobs[key]['state'], 'cleanup_failed')
+            self.assertEqual(runner.jobs[key]['reported_state'], 'completed')
+            with self.assertRaisesRegex(OrchestrationError, 'workspace is reserved'):
+                runner.delegate('codex', 'Overlap', workspace)
+
+    def test_completion_report_rejects_oversized_or_invalid_payloads(self):
+        runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
+        with tempfile.TemporaryDirectory() as root:
+            report = Path(root) / 'result.json'
+            report.write_text('x' * 4097)
+            self.assertIsNone(runner._read_completion_report(report))
+
+            report.write_text(json.dumps({'state': 'completed'}))
+            self.assertIsNone(runner._read_completion_report(report))
+
+            report.write_text(json.dumps({'state': 'unknown', 'summary': 'done'}))
+            self.assertIsNone(runner._read_completion_report(report))
+
+            report.write_text(json.dumps({'state': 'completed', 'summary': 'done'}))
+            self.assertEqual(runner._read_completion_report(report), {
+                'state': 'completed', 'summary': 'done',
+            })
+
+    def test_completion_report_rejects_symlink_and_cleanup_does_not_follow_replaced_parent(self):
+        runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            payload = root / 'payload.json'
+            payload.write_text(json.dumps({'state': 'completed', 'summary': 'unsafe'}))
+            link = root / 'result.json'
+            link.symlink_to(payload)
+            self.assertIsNone(runner._read_completion_report(link))
+
+            job = {}
+            completion = runner._completion_path(job)
+            completion.write_text(json.dumps({'state': 'completed', 'summary': 'done'}))
+            original_parent = completion.parent
+            moved_parent = original_parent.with_name(original_parent.name + '-moved')
+            original_parent.rename(moved_parent)
+            decoy = root / 'decoy'
+            decoy.mkdir()
+            decoy_report = decoy / 'result.json'
+            decoy_report.write_text('do not remove')
+            original_parent.symlink_to(decoy, target_is_directory=True)
+            try:
+                runner._cleanup_completion_path(completion, job)
+                self.assertEqual(decoy_report.read_text(), 'do not remove')
+                self.assertFalse(job.get('completion_directory_fd'))
+            finally:
+                original_parent.unlink(missing_ok=True)
+                shutil.rmtree(moved_parent, ignore_errors=True)
+
     async def test_prompt_targets_owned_pane_only_after_composer(self):
         runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
         screens = iter(['Starting up', '› Ask a question'])
@@ -33,9 +159,16 @@ class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
             await runner.workers[key]
         calls = [call.args for call in runner._tmux.call_args_list]
         capture_index = [i for i, call in enumerate(calls) if call[0] == 'capture-pane']
-        prompt_index = next(i for i, call in enumerate(calls) if call[-1] == 'Review $(echo hello)\nSecond line')
+        prompt_index = next(i for i, call in enumerate(calls)
+                            if call[-1].startswith(
+                                'Task\nReview $(echo hello)\nSecond line'))
         self.assertGreater(prompt_index, capture_index[1])
         self.assertEqual(calls[prompt_index][2], 'jarvis-' + key)
+        self.assertIn('Task\nReview $(echo hello)\nSecond line', calls[prompt_index][-1])
+        self.assertIn('Work only in the supplied workspace: ' + workspace,
+                      calls[prompt_index][-1])
+        self.assertNotIn('SHARED JARVIS MEMORY', calls[prompt_index][-1])
+        self.assertNotIn('Evidence-supported lessons', calls[prompt_index][-1])
         self.assertEqual(runner.jobs[key]['submission_state'], 'submitted')
         self.assertEqual(runner.jobs[key]['state'], 'completed')
         self.assertIn(('set-option', '-t', 'jarvis-' + key, 'status', 'off'), calls)

@@ -87,7 +87,7 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
         for name in AGENTS:
             args = command_for(name, '/installed/' + name, '--evil $(touch /tmp/nope)')
             self.assertEqual(args[0], '/installed/' + name)
-            self.assertTrue(any(item.startswith('Task delegated by JARVIS.') for item in args))
+            self.assertIn('--evil $(touch /tmp/nope)', args)
             self.assertFalse(set(args) & {'--yolo', '--auto-approve', '--dangerously-skip-permissions',
                                         '--dangerously-bypass-approvals-and-sandbox'})
 

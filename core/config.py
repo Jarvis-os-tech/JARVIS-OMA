@@ -156,6 +156,22 @@ class SkillsConfig:
 
 
 @dataclass
+class StandbyConfig:
+    """Local-only wake-word standby settings."""
+    enabled: bool = True
+    threshold: float = 0.05
+    vad_threshold: float = 0.0
+
+    def validate(self):
+        if type(self.enabled) is not bool:
+            raise ValueError('standby.enabled must be a boolean')
+        for name in ('threshold', 'vad_threshold'):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f'standby.{name} must be between 0 and 1')
+
+
+@dataclass
 class FilesystemConfig:
     """Filesystem autonomy and capability parameters."""
     enabled: bool = True
@@ -228,6 +244,7 @@ class Config:
     audio: AudioConfig = field(default_factory=AudioConfig)
     vad: VADConfig = field(default_factory=VADConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    standby: StandbyConfig = field(default_factory=StandbyConfig)
     filesystem: FilesystemConfig = field(default_factory=FilesystemConfig)
     commands: dict[str, str] = field(default_factory=dict)  # command overrides
     memory: MemoryConfig = field(default_factory=MemoryConfig)
@@ -241,6 +258,7 @@ class Config:
             raise ValueError('skills.enabled must be a boolean')
         self.audio.validate()
         self.vad.validate()
+        self.standby.validate()
         self.memory.validate()
 
 
@@ -391,7 +409,7 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
             raise ValueError(f'Config file must be a mapping, got {type(data).__name__}')
 
         # Merge sections
-        for section_name in ('agent', 'audio', 'vad', 'skills', 'filesystem', 'memory'):
+        for section_name in ('agent', 'audio', 'vad', 'skills', 'standby', 'filesystem', 'memory'):
             section_data = data.get(section_name)
             if section_name in data and not isinstance(section_data, dict):
                 raise ValueError(f'{section_name} section must be a mapping')

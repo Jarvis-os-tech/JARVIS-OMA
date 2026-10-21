@@ -27,7 +27,7 @@ class StandaloneTests(unittest.TestCase):
 from google.genai import types
 from agent import (
     LiveVoice, live_config, supervise, run,
-    NativeAudioEngine, DownstreamRouter, RenewConnection,
+    NativeAudioEngine, DownstreamRouter, RenewConnection, EnterStandby,
 )
 from skills import DesktopSkills, SkillError
 
@@ -37,6 +37,39 @@ def native_engine():
     return NativeAudioEngine(loop=asyncio.get_running_loop())
 
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_standby_transition_waits_for_spoken_turn_to_finish(self):
+        requested = asyncio.Event()
+        voice = LiveVoice(native_engine())
+        voice.standby = NS(wait_until_requested=requested.wait)
+        voice._response_active = True
+        voice._response_idle.clear()
+        transition = asyncio.create_task(voice.monitor_standby())
+        requested.set()
+        await asyncio.sleep(0)
+        self.assertFalse(transition.done())
+        voice._response_active = False
+        voice._response_idle.set()
+        with self.assertRaises(EnterStandby):
+            await transition
+
+    async def test_wake_confirmation_is_sent_before_microphone_resumes(self):
+        voice = LiveVoice(native_engine())
+        session = NS(send_client_content=AsyncMock())
+        voice.resume_handle = 'stale-pre-standby-session'
+
+        voice.confirm_wake()
+        self.assertTrue(voice._wake_confirmation_pending)
+        self.assertIsNone(voice.resume_handle)
+        await voice.send_wake_confirmation(session)
+
+        session.send_client_content.assert_awaited_once()
+        sent = session.send_client_content.await_args.kwargs['turns'].parts[0].text
+        self.assertIn('awake and listening', sent)
+        self.assertFalse(voice._wake_confirmation_pending)
+        self.assertTrue(voice._wake_confirmation_in_flight)
+        self.assertTrue(voice._response_active)
+        self.assertFalse(voice._response_idle.is_set())
+
     async def test_proactive_loop_initiates_focus_notice(self):
         runtime = NS(call=AsyncMock(return_value=[]), tick=AsyncMock(return_value={
             'status': 'active', 'results': [{'status': 'suggested',
@@ -181,6 +214,23 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             sender.cancel()
             await asyncio.gather(sender, return_exceptions=True)
 
+    async def test_background_task_completion_is_queued_for_safe_delivery(self):
+        task_events = asyncio.Queue()
+        voice = LiveVoice(native_engine(), skills=NS(task_events=task_events))
+        monitor = asyncio.create_task(voice.monitor_tasks())
+        try:
+            await task_events.put({
+                'kind': 'task', 'id': 'task-1', 'description': 'Prepare report',
+                'status': 'completed', 'completed_steps': 3, 'total_steps': 3,
+            })
+            await asyncio.wait_for(voice._notice_event.wait(), timeout=.2)
+            self.assertEqual(len(voice._notices), 1)
+            self.assertIn('task-1', voice._notices[0])
+            self.assertIn('completed', voice._notices[0])
+        finally:
+            monitor.cancel()
+            await asyncio.gather(monitor, return_exceptions=True)
+
     async def test_all_response_audio_parts_are_processed(self):
         from google.genai import types
         engine = native_engine()
@@ -277,6 +327,21 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             await supervise(pending(), fail())
         self.assertTrue(stopped.is_set())
 
+    async def test_standby_wins_over_simultaneous_provider_failure(self):
+        gate = asyncio.Event()
+        gate.set()
+
+        async def standby():
+            await gate.wait()
+            raise EnterStandby()
+
+        async def provider_failure():
+            await gate.wait()
+            raise ConnectionError('provider closed during standby')
+
+        with self.assertRaises(EnterStandby):
+            await supervise(provider_failure(), standby())
+
     async def test_resume_handle_is_saved_only_when_server_marks_resumable(self):
         from google.genai import types
         voice = LiveVoice(native_engine())
@@ -336,6 +401,15 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('use list_files or search_files to locate', instruction)
         self.assertIn('do not claim you cannot browse', instruction)
 
+    async def test_live_instruction_maps_silence_requests_to_standby(self):
+        instruction = live_config('Aoede', skills=DesktopSkills())['system_instruction']
+        self.assertIn('keep silent', instruction)
+        self.assertIn('don’t speak until I call you', instruction)
+        self.assertIn('enter_standby', instruction)
+        self.assertIn('lowering volume', instruction)
+        self.assertIn('bare “mute”', instruction)
+        self.assertIn('system microphone', instruction)
+
     async def test_live_config_custom_vad_settings(self):
         from config import Config, VADConfig
         vad = VADConfig(start_sensitivity='START_SENSITIVITY_LOW', prefix_padding_ms=300)
@@ -374,6 +448,40 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.responses[0].name, 'test_skill')
         self.assertEqual(session.responses[0].response['output']['args'], {'value': 3})
         await voice.cancel_tools()
+
+    async def test_ambiguous_system_mute_is_redirected_to_standby(self):
+        calls = []
+
+        class Skills:
+            async def execute(self, name, args):
+                calls.append((name, args))
+                return {'status': 'standby_requested'}
+
+        session = NS(send_tool_response=AsyncMock())
+        voice = LiveVoice(native_engine(), skills=Skills())
+        call = types.FunctionCall(
+            id='mute-1', name='control_microphone', args={'action': 'mute'})
+        await voice._execute_tool(session, call)
+        self.assertEqual(calls, [('enter_standby', {})])
+        response = session.send_tool_response.await_args.kwargs['function_responses']
+        self.assertFalse(response.response['output']['system_audio_changed'])
+
+    async def test_explicit_system_microphone_mute_is_blocked(self):
+        calls = []
+
+        class Skills:
+            async def execute(self, name, args):
+                calls.append((name, args))
+                return {'status': 'success'}
+
+        session = NS(send_tool_response=AsyncMock())
+        voice = LiveVoice(native_engine(), skills=Skills())
+        args = {'action': 'mute', 'explicit_system_target': True}
+        call = types.FunctionCall(id='mute-2', name='control_microphone', args=args)
+        await voice._execute_tool(session, call)
+        self.assertEqual(calls, [])
+        response = session.send_tool_response.await_args.kwargs['function_responses']
+        self.assertIn('not permitted', response.response['error'])
 
     async def test_greet_sends_client_content_prompt(self):
         class Session:

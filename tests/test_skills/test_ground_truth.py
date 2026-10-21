@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -13,6 +14,47 @@ from skills.skills import DesktopSkills
 
 
 class GroundTruthUnitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_verify_file_state_keeps_event_loop_responsive(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "slow.txt"
+            file_path.write_text("needle", encoding="utf-8")
+            original = ground_truth._inspect_file_state
+
+            def slow_inspect(*args, **kwargs):
+                time.sleep(0.05)
+                return original(*args, **kwargs)
+
+            ticks = 0
+
+            async def heartbeat():
+                nonlocal ticks
+                deadline = asyncio.get_running_loop().time() + 0.08
+                while asyncio.get_running_loop().time() < deadline:
+                    ticks += 1
+                    await asyncio.sleep(0.005)
+
+            with patch.object(ground_truth, "_inspect_file_state", side_effect=slow_inspect):
+                result, _ = await asyncio.gather(
+                    ground_truth.verify_file_state(str(file_path), expected_content="needle"),
+                    heartbeat(),
+                )
+
+            self.assertTrue(result["verified"])
+            self.assertGreaterEqual(ticks, 5)
+
+    async def test_verify_file_state_bounds_content_scan(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "large.txt"
+            file_path.write_bytes(b"x" * (ground_truth.MAX_FILE_CONTENT_SCAN_BYTES + 64) + b"needle")
+            result = await ground_truth.verify_file_state(
+                str(file_path), expected_content="needle", timeout=0.1)
+            self.assertFalse(result["verified"])
+            self.assertEqual(
+                result["details"]["content_scan_bytes"],
+                ground_truth.MAX_FILE_CONTENT_SCAN_BYTES,
+            )
+            self.assertTrue(result["details"]["content_scan_truncated"])
+
     async def test_verify_file_state(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             file_path = Path(tmpdir) / "test.txt"

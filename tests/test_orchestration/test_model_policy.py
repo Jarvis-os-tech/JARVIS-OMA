@@ -14,6 +14,15 @@ class ModelPolicyTests(unittest.TestCase):
         self.assertEqual(result[1]['model'], 'provider/small')
         self.assertNotIn('model', assignments[0])
 
+    def test_budget_opencode_uses_model_capable_batch_route(self):
+        assignments = [{'agent': 'opencode', 'visible': True, 'batch': False}]
+        result = apply_model_policy(
+            assignments, environ={'JARVIS_BUDGET_MODEL_OPENCODE': 'provider/small'})
+
+        self.assertEqual(result[0]['model'], 'provider/small')
+        self.assertTrue(result[0]['batch'])
+        self.assertFalse(assignments[0]['batch'])
+
     def test_configured_mode_preserves_native_defaults(self):
         self.assertEqual(apply_model_policy([{'agent': 'hermes'}], 'configured', {}), [{'agent': 'hermes'}])
 

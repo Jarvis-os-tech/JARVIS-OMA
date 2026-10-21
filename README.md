@@ -41,6 +41,14 @@ speak while Gemini is speaking. Press **Ctrl+C** to stop microphone capture, clo
 the connection, stop playback and release the private audio routes. This version
 uses stop/restart rather than a separate mute interface.
 
+Say **“enter standby,” “go to sleep,” “keep silent,” “be quiet for now,”** or
+**“don’t speak until I call you”** to close the cloud voice session while
+keeping a local-only wake-word listener active. Similar requests for silence
+until recalled are treated the same way. Say **“Hey Jarvis”** to
+resume the live conversation. Background jobs continue while voice is in
+standby. The detector runs on-device with the bundled openWakeWord model; room
+audio is not sent to Gemini until the wake phrase is detected.
+
 ## Run as a system service (Boot & Shutdown Automation)
 
 Install JARVIS as a systemd user service so it automatically activates on boot/login and gracefully deactivates on logout or system shutdown:
