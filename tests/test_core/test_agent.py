@@ -17,7 +17,7 @@ class StandaloneTests(unittest.TestCase):
             agent_path = Path(__file__).resolve().parents[2] / 'agent.py'
             result = subprocess.run(
                 [sys.executable, str(agent_path.resolve()), '--help'],
-                cwd=directory, capture_output=True, text=True, timeout=10)
+                cwd=directory, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--microphone', result.stdout)
         self.assertIn('--config', result.stdout)

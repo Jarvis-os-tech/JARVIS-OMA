@@ -2,7 +2,7 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-24 19:57:59 IST`
+> **Last Verified & Synchronized**: `2026-10-24 22:30:31 IST`
 > **Active Working Branch**: `dev` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
@@ -38,10 +38,11 @@
 ### Branch & Remote Status
 *   **Active Working Branch**: `dev`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `f5d7042b5356ddc994bebc318c7daf9f80626ce5` (`f5d7042`)
-*   **Latest Commit Subject**: `feat(dev): synchronize desktop skills, systemd configs, audio plugins, and test suites`
+*   **Latest Commit SHA**: `97c1b5eb5a35f5e4d0674b7e9da8e8e00d5bfe60` (`97c1b5e`)
+*   **Latest Commit Subject**: `docs: synchronize codebase reference manual on dev branch`
 
 ### Commit History (Recent Log)
+*   `97c1b5e` (2026-10-24): **docs: synchronize codebase reference manual on dev branch**
 *   `f5d7042` (2026-10-24): **feat(dev): synchronize desktop skills, systemd configs, audio plugins, and test suites**
 *   `b799bb7` (2026-10-24): **feat(desktop): add Wayland socket recovery, Groq tool router, and Aura Orbit UI**
 *   `5d15f3b` (2026-10-24): **feat(calendar): add IST normalization and full calendar management tools**
@@ -56,10 +57,15 @@
 *   `b2c82f6` (2026-10-16): **feat: integrate camera/screen vision, unified memory architecture, and enhanced execution capabilities**
 *   `e585317` (2026-10-15): **feat(service): configure systemd user service with safe RT limits and toggle boolean**
 *   `7789b95` (2026-10-15): **docs: complete all tasks in full-duplex voice OS implementation plan**
-*   `801db04` (2026-10-15): **fix(audio): support mock/null audio engines in DownstreamRouter and preserve playback_cushion_s in AudioConfig**
 
 ### Working Tree Telemetry
-*Working tree is clean; all changes committed.*
+```text
+M  .github/workflows/ci.yml
+M  .gitignore
+M  orchestration/harness2_adapter.py
+ M tests/test_core/test_agent.py
+M  tests/test_skills/test_phone.py
+```
 
 ---
 
@@ -250,7 +256,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [orchestration/evolution.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/evolution.py) | 510 | 24704 | Autonomous Evolution Engine | Self-improvement pipeline analyzing tool failures, system diagnostics, and synthesizing code optimizations with rollback gates. |
 | [orchestration/execution_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/execution_backend.py) | 94 | 2713 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/groq_tool_router.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/groq_tool_router.py) | 137 | 6184 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [orchestration/harness2_adapter.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/harness2_adapter.py) | 97 | 4024 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [orchestration/harness2_adapter.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/harness2_adapter.py) | 99 | 4053 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/model_policy.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/model_policy.py) | 30 | 1496 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/model_routes.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/model_routes.py) | 87 | 3671 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/personas.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/personas.py) | 40 | 2661 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -603,7 +609,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_skills/test_gui_control.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_gui_control.py) | 283 | 14625 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_input_bar.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_input_bar.py) | 47 | 1984 | Input Bar Integration Tests | Tests compact HUD input bar skill activation, loopback HTTP server, token authentication, and voice-session queue integration. |
 | [tests/test_skills/test_modal_healing.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_modal_healing.py) | 221 | 9490 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_skills/test_phone.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_phone.py) | 412 | 17890 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_skills/test_phone.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_phone.py) | 416 | 18370 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_plugin_control_reliability.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_plugin_control_reliability.py) | 282 | 11766 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_search_result_urls.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_search_result_urls.py) | 32 | 1678 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_skills.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_skills.py) | 723 | 38075 | Dynamic Skills Engine Tests | Tests manifest discovery, adapter routing, command verification, argument schema enforcement, and graceful degradation. |
@@ -620,7 +626,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | :--- | :---: | :---: | :--- | :--- |
 | [AGENTS.md](file:///home/g0pi/Projects/JARVIS-OMA/AGENTS.md) | 45 | 2643 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [CLAUDE.md](file:///home/g0pi/Projects/JARVIS-OMA/CLAUDE.md) | 17 | 1110 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1352 | 192093 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
+| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1251 | 185507 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
 | [CONTRIBUTING.md](file:///home/g0pi/Projects/JARVIS-OMA/CONTRIBUTING.md) | 43 | 1304 | Contribution Guidelines | Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries. |
 | [LICENSE](file:///home/g0pi/Projects/JARVIS-OMA/LICENSE) | 21 | 1069 | MIT License | Open-source software license for JARVIS-OMA. |
 | [README.md](file:///home/g0pi/Projects/JARVIS-OMA/README.md) | 446 | 30921 | Project Documentation | Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, connectors, and memory matrix. |
@@ -643,7 +649,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [.env.example](file:///home/g0pi/Projects/JARVIS-OMA/.env.example) | 32 | 1332 | Environment Secrets Template | Example template for setting GEMINI_API_KEY and connector keys. |
-| [.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/.gitignore) | 25 | 281 | Git Ignore Specification | Ignores .venv, __pycache__, .env, private tokens, and local SQLite state databases. |
+| [.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/.gitignore) | 27 | 307 | Git Ignore Specification | Ignores .venv, __pycache__, .env, private tokens, and local SQLite state databases. |
 
 ### 5.19 Architectural Documentation & Research Reports (`docs/`) (40 files)
 
@@ -696,7 +702,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | :--- | :---: | :---: | :--- | :--- |
 | [.github/ISSUE_TEMPLATE/bug_report.md](file:///home/g0pi/Projects/JARVIS-OMA/.github/ISSUE_TEMPLATE/bug_report.md) | 28 | 635 | Bug Report Template | Structured issue template for filing desktop control and voice pipeline bugs. |
 | [.github/ISSUE_TEMPLATE/feature_request.md](file:///home/g0pi/Projects/JARVIS-OMA/.github/ISSUE_TEMPLATE/feature_request.md) | 16 | 493 | Feature Request Template | Structured issue template for requesting new desktop skills and capabilities. |
-| [.github/workflows/ci.yml](file:///home/g0pi/Projects/JARVIS-OMA/.github/workflows/ci.yml) | 32 | 709 | GitHub Actions CI Pipeline | Automated continuous integration workflow running unit and regression tests on Python 3.12 and 3.13. |
+| [.github/workflows/ci.yml](file:///home/g0pi/Projects/JARVIS-OMA/.github/workflows/ci.yml) | 36 | 860 | GitHub Actions CI Pipeline | Automated continuous integration workflow running unit and regression tests on Python 3.12 and 3.13. |
 
 ---
 
@@ -1248,4 +1254,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-24 19:57:59 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-24 22:30:31 IST`.*
