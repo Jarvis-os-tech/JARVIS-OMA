@@ -72,6 +72,79 @@ class PhoneMonitorTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(asyncio.CancelledError):
                         await monitor
 
+    async def test_phone_connector_stays_dormant_until_requested(self):
+        requested = asyncio.Event()
+        listener = AsyncMock()
+        skills = SimpleNamespace(
+            phone_service_requested=requested,
+            phone=SimpleNamespace(listen_for_calls=listener),
+        )
+        voice = LiveVoice(None, skills=skills)
+        monitor = asyncio.create_task(voice.monitor_phone_calls())
+        try:
+            await asyncio.sleep(0)
+            listener.assert_not_awaited()
+            requested.set()
+            await asyncio.sleep(0)
+            listener.assert_awaited_once()
+        finally:
+            monitor.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor
+
+    async def test_connected_phone_automatically_starts_listener(self):
+        requested = asyncio.Event()
+        listening = asyncio.Event()
+
+        async def listen(callback, stop_event):
+            listening.set()
+            await stop_event.wait()
+
+        phone = SimpleNamespace(
+            get_gateways=AsyncMock(return_value=['/org/pipewire/Telephony/ag0']),
+            listen_for_calls=listen,
+        )
+        skills = SimpleNamespace(
+            phone_service_requested=requested,
+            get_phone_connector=MagicMock(return_value=phone),
+        )
+        voice = LiveVoice(None, skills=skills)
+        monitor = asyncio.create_task(voice.monitor_phone_calls())
+        try:
+            await asyncio.wait_for(listening.wait(), 1)
+            phone.get_gateways.assert_awaited_once()
+            skills.get_phone_connector.assert_called_with(activate=False)
+            self.assertFalse(requested.is_set())
+        finally:
+            monitor.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor
+
+    async def test_disconnected_phone_sleeps_without_starting_listener(self):
+        requested = asyncio.Event()
+        requested.set()
+        phone = SimpleNamespace(
+            get_gateways=AsyncMock(return_value=[]),
+            listen_for_calls=AsyncMock(),
+        )
+        skills = SimpleNamespace(
+            phone_service_requested=requested,
+            get_phone_connector=MagicMock(return_value=phone),
+        )
+        voice = LiveVoice(None, skills=skills)
+        monitor = asyncio.create_task(voice.monitor_phone_calls())
+        try:
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            phone.get_gateways.assert_awaited_once()
+            phone.listen_for_calls.assert_not_awaited()
+            self.assertFalse(requested.is_set())
+            self.assertFalse(monitor.done())
+        finally:
+            monitor.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor
+
     async def test_shutdown_during_retry_does_not_restart_listener(self):
         retry_started = asyncio.Event()
         listener = AsyncMock(side_effect=OSError('offline'))

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-ai.orbit",
+  "name": "JARVIS Aura Orbit",
+  "version": "2.0.0",
+  "description": "Compact Aura Field voice-state orbit for JARVIS.",
+  "kinds": ["panel"],
+  "keepLoaded": true,
+  "entryPoints": {"panel": "OrbitOverlay.qml"}
+}

@@ -39,11 +39,16 @@ class AgentConfig:
     greeting_cooldown_seconds: int = 14400  # Suppress repeat startup greetings on the same day
     greeting_resume_work: bool = True  # Offer one continuation from saved conversation evidence
     single_sentence: bool = False  # Allow complete answers when the user asks for detail
+    tool_router: str = 'gemini'
+    groq_tool_model: str = 'openai/gpt-oss-20b'
+    tool_router_timeout_seconds: int = 8
 
 
 @dataclass
 class AudioConfig:
     """Audio capture and playback parameters."""
+    backend: str = 'legacy'
+    native_cushion_s: float = 0.08
     input_sample_rate: int = 16000
     output_sample_rate: int = 24000
     input_frame_ms: int = 20
@@ -55,7 +60,7 @@ class AudioConfig:
     noise_suppression: bool = True
     local_barge_in: bool = True
     diagnostic_transcripts: bool = False
-    mic_volume_percent: int | None = 80
+    mic_volume_percent: int | None = 55
     playback_cushion_s: float = 0.32
     voice_rms_threshold: float = 450.0
     voice_band_ratio: float = 0.55
@@ -66,6 +71,11 @@ class AudioConfig:
     fade_ms: int = 10
 
     def validate(self):
+        if self.backend not in ('legacy', 'native'):
+            raise ValueError('audio.backend must be legacy or native')
+        if (type(self.native_cushion_s) not in (int, float) or
+                not math.isfinite(self.native_cushion_s) or not 0 <= self.native_cushion_s <= 1):
+            raise ValueError('audio.native_cushion_s must be between 0 and 1')
         for name in ('input_sample_rate', 'output_sample_rate', 'input_frame_ms',
                      'output_frame_ms', 'queue_max_seconds', 'playback_latency_ms',
                      'capture_latency_ms', 'command_timeout', 'duck_after_ms',
@@ -82,6 +92,10 @@ class AudioConfig:
             duration = getattr(self, f'{direction}_frame_ms')
             if rate * duration % 1000:
                 raise ValueError(f'audio.{direction}_frame_ms must produce an integral number of samples')
+        if self.backend == 'native' and (
+                (self.input_sample_rate, self.output_sample_rate, self.input_frame_ms, self.output_frame_ms)
+                != (16000, 24000, 20, 20) or self.queue_max_seconds > 10):
+            raise ValueError('native audio requires 16/24 kHz, 20 ms frames and at most 10 s backlog')
         if self.barge_in_after_ms <= self.duck_after_ms:
             raise ValueError('audio.barge_in_after_ms must be greater than audio.duck_after_ms')
         if type(self.fade_ms) is not int or self.fade_ms < 0:
@@ -254,6 +268,13 @@ class Config:
             value = getattr(self.agent, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f'agent.{name} must be a nonempty string')
+        if self.agent.tool_router not in ('gemini', 'groq'):
+            raise ValueError('agent.tool_router must be gemini or groq')
+        if not isinstance(self.agent.groq_tool_model, str) or not self.agent.groq_tool_model.strip():
+            raise ValueError('agent.groq_tool_model must be a nonempty string')
+        if (type(self.agent.tool_router_timeout_seconds) is not int or
+                not 1 <= self.agent.tool_router_timeout_seconds <= 30):
+            raise ValueError('agent.tool_router_timeout_seconds must be between 1 and 30')
         if type(self.skills.enabled) is not bool:
             raise ValueError('skills.enabled must be a boolean')
         self.audio.validate()
@@ -340,7 +361,11 @@ def _apply_env_overrides(config: Config):
         'JARVIS_GREET_ON_ACTIVATION': ('agent', 'greet_on_activation'),
         'JARVIS_GREETING_PROMPT': ('agent', 'greeting_prompt'),
         'JARVIS_SINGLE_SENTENCE': ('agent', 'single_sentence'),
+        'JARVIS_TOOL_ROUTER': ('agent', 'tool_router'),
+        'JARVIS_GROQ_TOOL_MODEL': ('agent', 'groq_tool_model'),
         'JARVIS_NOISE_SUPPRESSION': ('audio', 'noise_suppression'),
+        'JARVIS_AUDIO_BACKEND': ('audio', 'backend'),
+        'JARVIS_NATIVE_CUSHION_S': ('audio', 'native_cushion_s'),
         'JARVIS_LOCAL_BARGE_IN': ('audio', 'local_barge_in'),
         'JARVIS_MIC_VOLUME_PERCENT': ('audio', 'mic_volume_percent'),
         'JARVIS_PLAYBACK_CUSHION_S': ('audio', 'playback_cushion_s'),

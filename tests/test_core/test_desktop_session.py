@@ -7,7 +7,7 @@ import socket
 import tempfile
 import unittest
 
-from core.desktop_session import recover_desktop_environment
+from core.desktop_session import recover_desktop_environment, wait_for_desktop_environment
 
 
 class DesktopSessionRecoveryTests(unittest.TestCase):
@@ -66,6 +66,21 @@ class DesktopSessionRecoveryTests(unittest.TestCase):
     def test_no_runtime_directory_means_no_inference(self):
         self.make_socket(self.runtime / "wayland-1")
         self.assertEqual(recover_desktop_environment({}), {})
+
+    def test_wait_reports_missing_desktop_identifiers_at_timeout(self):
+        recovered, missing = wait_for_desktop_environment(self.env(), timeout=0)
+        self.assertEqual(recovered, {})
+        self.assertEqual(missing, ("WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE"))
+
+    def test_wait_returns_immediately_when_desktop_is_ready(self):
+        self.make_socket(self.runtime / "wayland-1")
+        self.make_socket(self.runtime / "hypr" / "instance-abc" / ".socket.sock")
+        recovered, missing = wait_for_desktop_environment(self.env(), timeout=1)
+        self.assertEqual(recovered, {
+            "WAYLAND_DISPLAY": "wayland-1",
+            "HYPRLAND_INSTANCE_SIGNATURE": "instance-abc",
+        })
+        self.assertEqual(missing, ())
 
 
 if __name__ == "__main__":
