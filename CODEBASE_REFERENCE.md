@@ -2,7 +2,7 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-24 22:25:44 IST`
+> **Last Verified & Synchronized**: `2026-10-24 22:32:16 IST`
 > **Active Working Branch**: `Harness²` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
@@ -38,10 +38,11 @@
 ### Branch & Remote Status
 *   **Active Working Branch**: `Harness²`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `bb75151fe8a6e869b136784ad06549c1fc50a566` (`bb75151`)
-*   **Latest Commit Subject**: `docs: synchronize codebase reference manual with current branches and telemetry`
+*   **Latest Commit SHA**: `769ffec70f01921c3beee8e91f02bc6e290b2f02` (`769ffec`)
+*   **Latest Commit Subject**: `feat(harness2): add experience capture, local job manager, voice OS redesign report, and CI workflow`
 
 ### Commit History (Recent Log)
+*   `769ffec` (2026-10-24): **feat(harness2): add experience capture, local job manager, voice OS redesign report, and CI workflow**
 *   `bb75151` (2026-10-24): **docs: synchronize codebase reference manual with current branches and telemetry**
 *   `d3d709b` (2026-10-24): **feat(harness2): integrate Harness² learning foundation, research bundles, and refinement substrate**
 *   `f5d7042` (2026-10-24): **feat(dev): synchronize desktop skills, systemd configs, audio plugins, and test suites**
@@ -56,33 +57,10 @@
 *   `07ad4da` (2026-10-16): **fix(audio): soften final turn edge fades and distinguish idle drains from network stalls**
 *   `51cad2b` (2026-10-16): **feat(connectors): add github repository analysis and audio recovery softening**
 *   `b2c82f6` (2026-10-16): **feat: integrate camera/screen vision, unified memory architecture, and enhanced execution capabilities**
-*   `e585317` (2026-10-15): **feat(service): configure systemd user service with safe RT limits and toggle boolean**
 
 ### Working Tree Telemetry
 ```text
-M .github/workflows/ci.yml
- M .gitignore
- M CODEBASE_REFERENCE.md
- M core/agent.py
- M docs/harness-learning.md
- M learning/__main__.py
- M learning/refinement.py
- M learning/trials.py
- M orchestration/harness2_adapter.py
- M scripts/update_codebase_reference.py
- M skills/skills.py
- M tests/test_skills/test_phone.py
-?? learning/experience.py
-?? learning/jobs.py
-?? learning/service.py
-?? report/25_VOICE_OS_REDESIGN_REPORT_2026-10-24.md
-?? scripts/start-learning.sh
-?? skill_manifests/harness-local.json
-?? skill_manifests/research-learning.json
-?? skills/manifests/harness-local.json
-?? skills/manifests/research-learning.json
-?? tests/test_learning/test_experience.py
-?? tests/test_learning/test_local_jobs.py
+M  tests/test_core/test_agent.py
 ```
 
 ---
@@ -656,7 +634,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | :--- | :---: | :---: | :--- | :--- |
 | [AGENTS.md](file:///home/g0pi/Projects/JARVIS-OMA/AGENTS.md) | 45 | 2643 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [CLAUDE.md](file:///home/g0pi/Projects/JARVIS-OMA/CLAUDE.md) | 17 | 1110 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1318 | 194522 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
+| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1324 | 195088 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
 | [CONTRIBUTING.md](file:///home/g0pi/Projects/JARVIS-OMA/CONTRIBUTING.md) | 43 | 1304 | Contribution Guidelines | Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries. |
 | [LICENSE](file:///home/g0pi/Projects/JARVIS-OMA/LICENSE) | 21 | 1069 | MIT License | Open-source software license for JARVIS-OMA. |
 | [README.md](file:///home/g0pi/Projects/JARVIS-OMA/README.md) | 446 | 30921 | Project Documentation | Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, connectors, and memory matrix. |
@@ -1321,4 +1299,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-24 22:25:44 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-24 22:32:16 IST`.*
