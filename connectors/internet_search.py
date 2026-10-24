@@ -67,10 +67,15 @@ def _clean(value: str, limit: int) -> str:
 def _public_url(value: object) -> bool:
     if not isinstance(value, str) or len(value) > 2048:
         return False
-    parsed = urlsplit(value)
-    if parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username:
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+    except ValueError:
+        # A malformed provider link must not discard other usable results.
         return False
-    host = parsed.hostname.rstrip('.').casefold()
+    if parsed.scheme not in ('https', 'http') or not hostname or parsed.username:
+        return False
+    host = hostname.rstrip('.').casefold()
     if host == 'localhost' or host.endswith('.localhost'):
         return False
     try:

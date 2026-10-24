@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
+import math
 from typing import Deque, Dict, Optional
 
 
@@ -59,10 +60,18 @@ class PolicyLimits:
     rate_limit_window: float = 60.0
 
     def __post_init__(self) -> None:
+        for name in ('dedupe_window', 'cooldown', 'rate_limit_window'):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f'{name} must be a number')
+            if not math.isfinite(value):
+                raise ValueError(f'{name} must be finite')
         if self.dedupe_window < 0 or self.cooldown < 0:
             raise ValueError("dedupe_window and cooldown must be non-negative")
         if self.rate_limit_window <= 0:
             raise ValueError("rate_limit_window must be positive")
+        if isinstance(self.rate_limit_count, bool) or not isinstance(self.rate_limit_count, int):
+            raise TypeError('rate_limit_count must be an integer')
         if self.rate_limit_count < 1:
             raise ValueError("rate_limit_count must be at least 1")
 
@@ -115,6 +124,8 @@ class ProactivePolicy:
         if isinstance(now, bool) or not isinstance(now, (int, float)):
             raise TypeError("now must be a monotonic number")
         timestamp = float(now)
+        if not math.isfinite(timestamp):
+            raise ValueError('now must be finite')
 
         if self._paused:
             return self._decision(DecisionStatus.PAUSED, trigger_id, "global pause is active")

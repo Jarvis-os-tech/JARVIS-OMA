@@ -50,7 +50,7 @@ async def _run_command(*args: str, timeout: float = _TIMEOUT, env: dict[str, str
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=env or _desktop_env(),
+        env=_desktop_env() if env is None else env,
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=timeout)

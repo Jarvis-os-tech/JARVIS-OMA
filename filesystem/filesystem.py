@@ -98,8 +98,14 @@ def read_text(value: str, offset: int = 0, max_chars: int = 20000) -> dict:
     try:
         file_size = path.stat().st_size
         with path.open('r', encoding='utf-8') as stream:
-            if offset > 0:
-                stream.seek(offset)
+            # Text offsets count characters, not UTF-8 bytes. Skip in bounded
+            # chunks so large offsets do not allocate the entire prefix.
+            remaining = offset
+            while remaining > 0:
+                skipped = stream.read(min(remaining, 8192))
+                if not skipped:
+                    break
+                remaining -= len(skipped)
             content = stream.read(max_chars + 1)
     except (OSError, UnicodeError) as error:
         raise FileOperationError(f'cannot read text file: {error}') from None

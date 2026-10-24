@@ -22,3 +22,4 @@ skills/native/bin/
 external/
 *.db
 *.lock
+.genkit/

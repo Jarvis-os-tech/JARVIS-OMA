@@ -53,6 +53,36 @@ class FilesystemSkillTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result3['content'], 'uvwxyz')
             self.assertFalse(result3['has_more'])
 
+    async def test_unicode_character_offsets_and_pagination(self):
+        skills = DesktopSkills()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'unicode.txt'
+            # Offsets count Unicode code points, as Python string slicing does.
+            text = 'éनमस्ते🙂 café\nREADY'
+            path.write_text(text, encoding='utf-8')
+            for offset in (1, 2, 6, 8, len(text), len(text) + 10):
+                with self.subTest(offset=offset):
+                    result = await skills.execute('read_file', {
+                        'path': str(path), 'offset': offset, 'max_chars': 3})
+                    self.assertEqual(result['content'], text[offset:offset + 3])
+                    self.assertEqual(result['chars_read'], len(text[offset:offset + 3]))
+                    self.assertEqual(result['has_more'], offset + 3 < len(text))
+            parts = []
+            offset = 0
+            while True:
+                page = await skills.execute('read_file', {
+                    'path': str(path), 'offset': offset, 'max_chars': 3})
+                parts.append(page['content'])
+                offset += page['chars_read']
+                if not page['has_more']:
+                    break
+            self.assertEqual(''.join(parts), text)
+            path.write_text('é' * 9000 + 'READY', encoding='utf-8')
+            page = await skills.execute('read_file', {
+                'path': str(path), 'offset': 9000, 'max_chars': 5})
+            self.assertEqual(page['content'], 'READY')
+            self.assertFalse(page['has_more'])
+
     async def test_append_file_creates_and_extends_content(self):
         skills = DesktopSkills()
         with tempfile.TemporaryDirectory() as directory:

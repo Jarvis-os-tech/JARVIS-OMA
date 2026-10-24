@@ -118,37 +118,61 @@ class TaskRunner:
                 'total_steps': job['total_steps'],
                 'updated_at': job['updated_at'],
             }
+            if job['status'] == 'failed':
+                failed_step = next((s for s in job['steps'] if s.get('status') == 'failed'), None)
+                if failed_step and failed_step.get('error'):
+                    event['error'] = failed_step['error']
             if self.events.full():
                 self.events.get_nowait()
             self.events.put_nowait(event)
 
     async def _verify_step_ground_truth(self, tool: str, args: dict) -> None:
         """Deterministically verify physical ground truth on disk after step execution."""
-        from pathlib import Path
-        if tool in ('write_file', 'append_file', 'edit_file'):
-            raw_path = args.get('path', '')
-            if raw_path:
-                path = Path(raw_path).expanduser().resolve()
-                if not path.is_file() or path.stat().st_size == 0:
-                    raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} not found or empty')
-        elif tool == 'make_directory':
-            raw_path = args.get('path', '')
-            if raw_path:
-                path = Path(raw_path).expanduser().resolve()
-                if not path.is_dir():
-                    raise TaskPlanError(f'Ground-truth verification failed: directory {raw_path} does not exist')
-        elif tool == 'copy_path':
-            raw_dst = args.get('destination', '')
-            if raw_dst:
-                dst = Path(raw_dst).expanduser().resolve()
-                if not dst.exists():
-                    raise TaskPlanError(f'Ground-truth verification failed: copy destination {raw_dst} does not exist')
-        elif tool == 'move_path':
-            raw_dst = args.get('destination', '')
-            if raw_dst:
-                dst = Path(raw_dst).expanduser().resolve()
-                if not dst.exists():
-                    raise TaskPlanError(f'Ground-truth verification failed: move destination {raw_dst} does not exist')
+        def _verify_disk():
+            from pathlib import Path
+            if tool in ('write_file', 'append_file', 'edit_file'):
+                raw_path = args.get('path', '')
+                if raw_path:
+                    path = Path(raw_path).expanduser().resolve()
+                    # Empty content is valid for writes, appends, and edits.
+                    if not path.is_file():
+                        raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} not found')
+            elif tool == 'make_directory':
+                raw_path = args.get('path', '')
+                if raw_path:
+                    path = Path(raw_path).expanduser().resolve()
+                    if not path.is_dir():
+                        raise TaskPlanError(f'Ground-truth verification failed: directory {raw_path} does not exist')
+            elif tool == 'copy_path':
+                raw_dst = args.get('destination', '')
+                if raw_dst:
+                    dst = Path(raw_dst).expanduser().resolve()
+                    if not dst.exists():
+                        raise TaskPlanError(f'Ground-truth verification failed: copy destination {raw_dst} does not exist')
+            elif tool == 'move_path':
+                raw_dst = args.get('destination', '')
+                if raw_dst:
+                    dst = Path(raw_dst).expanduser().resolve()
+                    if not dst.exists():
+                        raise TaskPlanError(f'Ground-truth verification failed: move destination {raw_dst} does not exist')
+            elif tool == 'trash_path':
+                raw_path = args.get('path', '')
+                if raw_path:
+                    path = Path(raw_path).expanduser().resolve()
+                    if path.exists():
+                        raise TaskPlanError(f'Ground-truth verification failed: path {raw_path} still exists after trash')
+
+        await asyncio.to_thread(_verify_disk)
+
+    async def close(self) -> None:
+        """Cancel all active task workers and wait for them to finish."""
+        workers = list(self._workers.values())
+        for worker in workers:
+            if not worker.done():
+                worker.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
+        self._workers.clear()
 
     def status(self, task_id: str) -> dict:
         job = self._jobs.get(task_id)

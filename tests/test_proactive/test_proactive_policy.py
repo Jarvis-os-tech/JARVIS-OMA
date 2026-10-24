@@ -2,6 +2,31 @@ import unittest
 from proactive.policy import Action, ActionEffect, DecisionStatus, PolicyLimits, ProactivePolicy
 
 class ProactivePolicyTests(unittest.TestCase):
+    def test_invalid_timestamps_do_not_poison_rate_expiry(self):
+        action = Action('read', ActionEffect.READ_ONLY)
+        for invalid in (float('nan'), float('inf'), float('-inf')):
+            with self.subTest(invalid=invalid):
+                policy = ProactivePolicy(PolicyLimits(rate_limit_count=1, rate_limit_window=1))
+                with self.assertRaises(ValueError):
+                    policy.evaluate('first', action, invalid)
+                self.assertTrue(policy.evaluate('first', action, 0).allowed)
+                with self.assertRaises(ValueError):
+                    policy.evaluate('invalid', action, invalid)
+                self.assertIs(policy.evaluate('blocked', action, .5).status,
+                              DecisionStatus.RATE_LIMITED)
+                self.assertTrue(policy.evaluate('later', action, 2).allowed)
+
+    def test_limits_reject_nonfinite_durations_and_invalid_counts(self):
+        for field in ('dedupe_window', 'cooldown', 'rate_limit_window'):
+            for invalid in (float('nan'), float('inf'), float('-inf'), True, '1'):
+                with self.subTest(field=field, invalid=invalid):
+                    with self.assertRaises((ValueError, TypeError)):
+                        PolicyLimits(**{field: invalid})
+        for invalid in (True, 1.5, float('nan'), float('inf'), '2'):
+            with self.subTest(count=invalid):
+                with self.assertRaises((ValueError, TypeError)):
+                    PolicyLimits(rate_limit_count=invalid)
+
     def test_effects(self):
         cases = [(ActionEffect.READ_ONLY, DecisionStatus.ALLOWED),
                  (ActionEffect.LOCAL_REVERSIBLE, DecisionStatus.ALLOWED),

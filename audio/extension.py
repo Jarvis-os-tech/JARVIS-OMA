@@ -214,10 +214,11 @@ class ExtendedAudioEngine:
                 return processed
 
     def put_processed_output(self, frame: bytes) -> None:
-        """Put playback frame into c_output_queue with processor pipeline applied."""
+        """Process PCM and submit it through the engine's generation-safe API."""
+        generation = self._engine.active_generation
         processed = self.registry.apply_output_frame(frame)
         if processed is not None:
-            self._engine.c_output_queue.put_nowait(processed)
+            self._engine.enqueue_playback(processed, generation=generation)
 
     def mark_turn_started(self) -> None:
         self._engine.mark_turn_started()

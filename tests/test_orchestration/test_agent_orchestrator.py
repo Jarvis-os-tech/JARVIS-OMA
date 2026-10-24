@@ -24,7 +24,8 @@ class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
             skills = DesktopSkills()
             skills._agent_orchestrator = runner
             started = await skills.execute('delegate_agent', {
-                'agent': 'hermes', 'prompt': 'Inspect this workspace', 'workspace': directory})
+                'agent': 'hermes', 'prompt': 'Inspect this workspace', 'workspace': directory,
+                'cost_profile': 'configured'})
             key = started['job']['id']
             await runner.workers[key]
             result = await skills.execute('check_agent_job', {'job_id': key})

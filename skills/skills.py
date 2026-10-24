@@ -64,6 +64,8 @@ class DesktopSkills:
 
     # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
+        'models.start': '_adapter_model_job',
+        'models.status': '_adapter_model_job_status',
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
         'web.open': '_adapter_open_website',
@@ -130,6 +132,13 @@ class DesktopSkills:
         'google.calendar_get_event': '_adapter_google_calendar_get_event',
         'google.calendar_create_event': '_adapter_google_calendar_create_event',
         'google.calendar_list_calendars': '_adapter_google_calendar_list_calendars',
+        'google.calendar_current_time': '_adapter_google_calendar_current_time',
+        'google.calendar_update_event': '_adapter_google_calendar_update_event',
+        'google.calendar_delete_event': '_adapter_google_calendar_delete_event',
+        'google.calendar_check_availability': '_adapter_google_calendar_check_availability',
+        'google.calendar_create_calendar': '_adapter_google_calendar_create_calendar',
+        'google.calendar_delete_calendar': '_adapter_google_calendar_delete_calendar',
+        'google.calendar_add_attachment': '_adapter_google_calendar_add_attachment',
         'google.tasks_list_lists': '_adapter_google_tasks_list_lists',
         'google.tasks_list_tasks': '_adapter_google_tasks_list_tasks',
         'google.tasks_create_task': '_adapter_google_tasks_create_task',
@@ -303,6 +312,10 @@ class DesktopSkills:
         'google.gmail_list_labels': (),
         'google.calendar_list_events': (), 'google.calendar_get_event': (),
         'google.calendar_create_event': (), 'google.calendar_list_calendars': (),
+        'google.calendar_current_time': (), 'google.calendar_update_event': (),
+        'google.calendar_delete_event': (), 'google.calendar_check_availability': (),
+        'google.calendar_create_calendar': (), 'google.calendar_delete_calendar': (),
+        'google.calendar_add_attachment': (),
         'google.tasks_list_lists': (), 'google.tasks_list_tasks': (),
         'google.tasks_create_task': (), 'google.tasks_complete_task': (),
         'google.google_authorize': (), 'google.google_connection_status': (),
@@ -452,6 +465,13 @@ class DesktopSkills:
         self._proactive = None
         self._gui = None
         self._phone = None
+        # Optional background services are demand-driven. Creating DesktopSkills
+        # during boot must not start telephony or proactive polling before the
+        # realtime voice path is available.
+        self.proactive_service_requested = asyncio.Event()
+        self.proactive_service_requested.set()  # one quiet startup review
+        self.proactive_continuous_requested = False
+        self.phone_service_requested = asyncio.Event()
         self.vision_mode = 'off'
         self.on_vision_mode_change = None
         self.on_standby_request = None
@@ -713,27 +733,52 @@ class DesktopSkills:
             raise SkillError(f'{name} is not installed on this desktop')
         return path
 
-    async def _run(self, *argv, timeout=None, max_output=500):
+    async def _run(self, *argv, timeout=None, max_output=500, ok_codes=(0,)):
+        """Run a command and return its trimmed stdout.
+
+        ok_codes lists the exit codes treated as success. An accepted non-zero
+        code still returns stdout, so callers can read the structured payload
+        that accompanies a documented "partial" status instead of losing it.
+        """
         if timeout is None:
             timeout = self._command_timeout
-        process = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            limit=64 * 1024)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                limit=64 * 1024)
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
         except TimeoutError:
             process.kill()
             await process.wait()
             raise SkillError('desktop command timed out') from None
-        output = (stderr if process.returncode else stdout).decode(errors='replace').strip()
-        if process.returncode:
-            raise SkillError((output or 'desktop command failed')[:500])
-        return output[:max_output]
+        out = stdout.decode(errors='replace').strip()
+        err = stderr.decode(errors='replace').strip()
+        if process.returncode and process.returncode not in ok_codes:
+            raise SkillError((err or out or 'desktop command failed')[:500])
+        return out[:max_output]
 
     async def _launch(self, *argv):
-        process = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-            start_new_session=True)
+        # Resolve the target before wrapping it in systemd-run: otherwise a
+        # missing binary only fails inside the transient unit and surfaces as
+        # the generic 'application launcher failed' instead of a clear reason.
+        if not shutil.which(argv[0]):
+            raise SkillError(f'{argv[0]} is not installed on this desktop')
+        command = tuple(argv)
+        # A setsid child still remains inside jarvis-oma.service's cgroup and is
+        # killed when voice is restarted. UWSM launches it in the compositor's
+        # graphical app slice with the correct Wayland/Hyprland environment.
+        uwsm = shutil.which('uwsm')
+        if os.getenv('INVOCATION_ID') and uwsm:
+            command = (uwsm, 'app', '-s', 'a', '-t', 'scope', '-S', 'both', '--', *argv)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                start_new_session=True)
+        except (FileNotFoundError, NotADirectoryError, PermissionError):
+            raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
             code = await asyncio.wait_for(process.wait(), 2)
         except TimeoutError:
@@ -861,18 +906,42 @@ class DesktopSkills:
     async def _adapter_list_system_agents(self):
         return self._agent_orchestrator.discover()
 
-    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900, task_type=None, model=None, visible=None):
+    async def _adapter_model_job(self, prompt, route='background'):
+        from orchestration.model_routes import ModelJobs
+        if not hasattr(self, '_model_jobs'):
+            self._model_jobs = ModelJobs(self._memory_api_key, self.task_events)
+        try:
+            return self._model_jobs.start(prompt, route)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_model_job_status(self, job_id):
+        jobs = getattr(self, '_model_jobs', None)
+        if jobs is None or job_id not in jobs.jobs:
+            raise SkillError('Unknown model job')
+        return dict(jobs.jobs[job_id])
+
+    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900,
+                                      task_type=None, model=None, visible=None,
+                                      cost_profile='budget'):
         try:
             prompt = prompt.strip()
             options = {}
             if task_type is not None:
                 options['task_type'] = task_type
-            if model is not None:
+            if model is None:
+                from orchestration.model_policy import apply_model_policy
+                routed = apply_model_policy([{'agent': agent}], cost_profile)[0]
+                if routed.get('model'):
+                    options['model'] = routed['model']
+                if routed.get('batch'):
+                    options['batch'] = True
+            else:
                 options['model'] = model
             if visible is not None:
                 options['visible'] = visible
             return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds, **options)
-        except OrchestrationError as error:
+        except (OrchestrationError, ValueError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_delegate_team(self, goal, assignments, workspace, timeout_seconds=900):
@@ -886,7 +955,7 @@ class DesktopSkills:
         except OrchestrationError as error:
             raise SkillError(str(error)) from None
 
-    async def _adapter_start_agent_goal(self, goal, workspace, timeout_seconds=900, cost_profile='configured'):
+    async def _adapter_start_agent_goal(self, goal, workspace, timeout_seconds=900, cost_profile='budget'):
         from orchestration.personas import software_assignments
         from orchestration.model_policy import apply_model_policy
         try:
@@ -1024,16 +1093,39 @@ class DesktopSkills:
 
     async def _adapter_google_calendar_create_event(self, summary, start_datetime, end_datetime,
                                                     description='', location='', attendees=None,
-                                                    calendar_id='primary'):
+                                                    calendar_id='primary', time_zone='Asia/Kolkata', recurrence_rule=None, reminder_minutes=None, attachments=None):
         return await self._google('calendar_create_event', {
             'summary': summary, 'start_datetime': start_datetime, 'end_datetime': end_datetime,
             'description': description, 'location': location,
             'attendees': ([item.strip() for item in attendees.split(',') if item.strip()]
                           if isinstance(attendees, str) else attendees),
-            'calendar_id': calendar_id})
+            'calendar_id': calendar_id, 'time_zone': time_zone,
+            'recurrence_rule': recurrence_rule, 'reminder_minutes': reminder_minutes, 'attachments': attachments})
+
+    async def _adapter_google_calendar_current_time(self, **arguments):
+        return await self._google('calendar_current_time', arguments)
+
+    async def _adapter_google_calendar_update_event(self, **arguments):
+        return await self._google('calendar_update_event', arguments)
+
+    async def _adapter_google_calendar_delete_event(self, **arguments):
+        return await self._google('calendar_delete_event', arguments)
+
+    async def _adapter_google_calendar_check_availability(self, **arguments):
+        return await self._google('calendar_check_availability', arguments)
 
     async def _adapter_google_calendar_list_calendars(self):
         return await self._google('calendar_list_calendars', {})
+
+    async def _adapter_google_calendar_create_calendar(self, summary, description='', location='', time_zone='Asia/Kolkata'):
+        return await self._google('calendar_create_calendar', {'summary': summary, 'description': description,
+                                                               'location': location, 'time_zone': time_zone})
+
+    async def _adapter_google_calendar_delete_calendar(self, calendar_id):
+        return await self._google('calendar_delete_calendar', {'calendar_id': calendar_id})
+
+    async def _adapter_google_calendar_add_attachment(self, **arguments):
+        return await self._google('calendar_add_attachment', arguments)
 
     async def _adapter_google_tasks_list_lists(self):
         return await self._google('tasks_list_lists', {})
@@ -1217,6 +1309,8 @@ class DesktopSkills:
 
     async def close_agent_jobs(self):
         try:
+            if hasattr(self, '_model_jobs'):
+                await self._model_jobs.close()
             if self._proactive is not None:
                 await self._proactive.close()
             if self._evolution is not None:
@@ -1230,6 +1324,8 @@ class DesktopSkills:
                 await self._memory_worker.close(
                     finalizer=self._memory.close if self._memory is not None else None)
             finally:
+                if hasattr(self, '_task_runner') and hasattr(self._task_runner, 'close'):
+                    await self._task_runner.close()
                 await self._file_worker.close()
 
     async def _adapter_open_input_bar(self):
@@ -1280,6 +1376,8 @@ class DesktopSkills:
     async def _adapter_proactive_pause(self):
         runtime = await self.get_proactive()
         result = await runtime.call('pause')
+        self.proactive_continuous_requested = False
+        self.proactive_service_requested.clear()
         await self._cancel_active_development()
         return result
 
@@ -1290,6 +1388,8 @@ class DesktopSkills:
     async def _adapter_proactive_stop(self):
         runtime = await self.get_proactive()
         result = await runtime.stop_all()
+        self.proactive_continuous_requested = False
+        self.proactive_service_requested.clear()
         await self._cancel_active_development()
         return result
 
@@ -1346,7 +1446,11 @@ class DesktopSkills:
                 log.warning('Memory capture failed: %s', type(error).__name__)
         task.add_done_callback(finished)
 
-    async def get_proactive(self):
+    async def get_proactive(self, *, activate=True):
+        requested = getattr(self, 'proactive_service_requested', None)
+        if requested is not None and activate:
+            self.proactive_continuous_requested = True
+            requested.set()
         return await self._file_worker.run(lambda: self.proactive)
 
     async def _memory_operation(self, method, **arguments):
@@ -1493,18 +1597,51 @@ class DesktopSkills:
             detail = f'; possible matches: {", ".join(suggestions)}' if suggestions else ''
             raise SkillError(f'application name is not an exact unique match{detail}')
         app_id, label = exact[0]
-        await self._launch(self._command('gtk-launch'), app_id)
         from skills import ground_truth
+        from core.desktop_session import recover_desktop_environment
         app_stem = Path(app_id).stem
-        win_v = await ground_truth.verify_window_state(app_stem, expected_open=True, timeout=1.5)
-        proc_v = await ground_truth.verify_process_state(app_stem, expected_running=True, timeout=0.8) if not win_v.get('verified') else {'verified': True}
-        is_verified = bool(win_v.get('verified') or proc_v.get('verified'))
-        return {
-            'status': 'opened',
-            'application': label,
-            'ground_truth_verified': is_verified,
-            'window': win_v.get('details', {}).get('matched_window'),
-        }
+        attempts = []
+        for attempt in range(2):
+            try:
+                await self._launch(self._command('gtk-launch'), app_id)
+                launch_error = None
+            except SkillError as error:
+                launch_error = str(error)
+            win_v = await ground_truth.verify_window_state(
+                app_stem, expected_open=True, timeout=2.0)
+            proc_v = ({'verified': True} if win_v.get('verified') else
+                      await ground_truth.verify_process_state(
+                          app_stem, expected_running=True, timeout=0.8))
+            verified = bool(win_v.get('verified') or proc_v.get('verified'))
+            attempts.append({
+                'attempt': attempt + 1,
+                'launch_error': launch_error,
+                'window_verified': bool(win_v.get('verified')),
+                'process_verified': bool(proc_v.get('verified')),
+            })
+            if verified:
+                return {
+                    'status': 'opened',
+                    'application': label,
+                    'ground_truth_verified': True,
+                    'self_healed': attempt > 0,
+                    'attempts': attempts,
+                    'window': win_v.get('details', {}).get('matched_window'),
+                }
+            if attempt == 0:
+                # Repair only missing desktop identifiers from live compositor
+                # sockets. Existing explicit values remain authoritative.
+                recovered = recover_desktop_environment(os.environ)
+                os.environ.update(recovered)
+                log.warning('Application launch verification failed for %s; '
+                            'recovered desktop session keys %s and retrying once',
+                            label, sorted(recovered))
+
+        window_reason = win_v.get('reason') or 'no matching window appeared'
+        process_reason = proc_v.get('reason') or 'no matching process appeared'
+        raise SkillError(
+            f'{label} launch failed after one self-healing retry: '
+            f'{window_reason}; {process_reason}')
 
     async def _adapter_internet_search(self, query):
         """Return bounded sources using Brave, Gemini grounding, or Wikipedia."""
@@ -1528,12 +1665,10 @@ class DesktopSkills:
                     failure = 'internet search timed out; please try again'
                     break
                 if self._search_key_cooldown.get(key, 0) > time.monotonic():
+                    failure = 'internet search is cooling down after a provider error'
                     continue
                 skip_key = False
-                newer_model_quota = False
                 for model in web_search.GROUNDING_MODELS:
-                    if newer_model_quota and model.startswith('gemini-3.'):
-                        continue
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         failure = 'internet search timed out; please try again'
@@ -1553,9 +1688,6 @@ class DesktopSkills:
                         code = getattr(error, 'code', getattr(error, 'status_code', None))
                         if code == 429:
                             failure = 'internet search quota is currently exhausted'
-                            if model.startswith('gemini-3.'):
-                                newer_model_quota = True
-                                continue
                             self._search_key_cooldown[key] = time.monotonic() + 300
                             skip_key = True
                             break
@@ -1587,8 +1719,6 @@ class DesktopSkills:
                         return {'answer': answer[:6000], 'sources': sources,
                                 'provider': 'Gemini grounded Search', 'model': model}
                     failure = 'internet search returned no source-backed answer'
-                if newer_model_quota:
-                    self._search_key_cooldown[key] = time.monotonic() + 300
                 if time.monotonic() >= deadline:
                     break
                 if skip_key:
@@ -1620,28 +1750,12 @@ class DesktopSkills:
         return {'status': 'opened', 'url': url}
 
     async def _adapter_adjust_volume(self, action, amount=5):
-        if hasattr(getattr(self, '_run', None), 'call_count'):
-            if action not in ('raise', 'lower', 'mute_toggle'):
-                raise SkillError('volume action must be raise, lower, or mute_toggle')
-            if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= 25:
-                raise SkillError('volume amount must be from 1 to 25')
-            command = 'mute-toggle' if action == 'mute_toggle' else ('+' if action == 'raise' else '-') + str(amount)
-            await self._run(self._command('omarchy-audio-output-volume'), command)
-            return {'status': 'done', 'action': action, 'amount': None if action == 'mute_toggle' else amount}
         clean_action = 'toggle' if action == 'mute_toggle' else action
         res = await self._adapter_set_volume(action=clean_action, amount=amount)
         res['amount'] = amount
         return res
 
     async def _adapter_adjust_brightness(self, direction, amount=5):
-        if hasattr(getattr(self, '_run', None), 'call_count'):
-            if direction not in ('raise', 'lower'):
-                raise SkillError('brightness direction must be raise or lower')
-            if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= 25:
-                raise SkillError('brightness amount must be from 1 to 25')
-            step = f'+{amount}%' if direction == 'raise' else f'{amount}%-'
-            await self._run(self._command('omarchy-brightness-display'), step)
-            return {'status': 'done', 'direction': direction, 'amount': amount}
         res = await self._adapter_set_brightness(direction=direction, amount=amount)
         res['amount'] = amount
         return res
@@ -1741,7 +1855,7 @@ class DesktopSkills:
                 'priority': priority, 'status': 'ongoing', 'completed': False,
                 'createdAt': now, 'completedAt': 0}
         data['version'] = 1
-        data.setdefault('activeTab', 'ongoing')
+        data['activeTab'] = 'ongoing'
         data.setdefault('tasks', [])
         data['tasks'].insert(0, task)
         self._write_todos(data)
@@ -1757,9 +1871,32 @@ class DesktopSkills:
                   query.casefold() in str(item.get('description', '')).casefold())]
         return {'tasks': tasks, 'count': len(tasks), 'system': 'omarchy'}
 
-    @staticmethod
-    def _notify_quickshell_todos():
-        pass
+    async def _notify_quickshell_todos(self):
+        """Ask the live Omarchy Todo widget to reload its durable store.
+
+        FileView normally notices the atomic replacement itself, but that
+        notification can be missed when several writes arrive close together
+        or while the panel is finishing one of its own writes.  The explicit
+        IPC refresh makes the persisted file authoritative without coupling a
+        successful todo mutation to the availability of the desktop shell.
+        """
+        qs = shutil.which('qs')
+        if not qs:
+            return False
+        commands = (
+            (qs, 'ipc', '-p', '/usr/share/omarchy/shell', '-n', 'call',
+             'dejan94.todos', 'refresh'),
+            (qs, 'ipc', '--any-display', '-n', 'call',
+             'dejan94.todos', 'refresh'),
+        )
+        for command in commands:
+            try:
+                await self._run(*command, timeout=0.75)
+                return True
+            except SkillError:
+                continue
+        log.debug('Todo List IPC refresh was unavailable; its file watcher will retry')
+        return False
 
     def _write_todos(self, data):
         path = self._todo_path()
@@ -1800,6 +1937,7 @@ class DesktopSkills:
         data = self._read_todos(); item = self._find_todo(data, task)
         item['completed'] = bool(completed); item['status'] = 'complete' if item['completed'] else 'ongoing'
         item['completedAt'] = int(time.time() * 1000) if item['completed'] else 0
+        data['activeTab'] = item['status']
         self._write_todos(data)
         return {'status': 'completed' if item['completed'] else 'reopened', 'todo': item, 'system': 'omarchy'}
 
@@ -1823,14 +1961,18 @@ class DesktopSkills:
         item['status'] = status
         item['completed'] = status == 'complete'
         item['completedAt'] = int(time.time() * 1000) if status == 'complete' else 0
+        data['activeTab'] = status
         self._write_todos(data)
         return {'status': 'moved', 'todo': item, 'system': 'omarchy'}
 
     async def _todo_operation(self, method, *args, **kwargs):
         try:
-            return await self._file_worker.run(method, *args, **kwargs)
+            result = await self._file_worker.run(method, *args, **kwargs)
         except WorkerBusyError as error:
             raise SkillError(str(error)) from None
+        if getattr(method, '__func__', None) is not DesktopSkills._list_todos:
+            await self._notify_quickshell_todos()
+        return result
 
     async def _adapter_create_todo(self, title, description='', priority='medium'):
         return await self._todo_operation(self._create_todo, title, description, priority)
@@ -2402,6 +2544,13 @@ class DesktopSkills:
 
     @property
     def phone(self):
+        return self.get_phone_connector(activate=True)
+
+    def get_phone_connector(self, *, activate=True):
+        """Return telephony without accidentally waking its background monitor."""
+        requested = getattr(self, 'phone_service_requested', None)
+        if activate and requested is not None:
+            requested.set()
         if self._phone is None:
             from connectors.phone import PhoneConnector
             self._phone = PhoneConnector()
@@ -2483,95 +2632,148 @@ class DesktopSkills:
 
     # ── CLI-Anything adapters ──────────────────────────────────────
 
+    # Registry payloads are large: `list --json` is ~84 KB and `matrix list
+    # --json` ~159 KB, so the JSON adapters need generous headroom or the
+    # truncated payload stops being valid JSON.
+    _CLI_HUB_MAX_OUTPUT = 262144
+    _CLI_HUB_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._+-]{0,99}$')
+
+    def _cli_hub_json(self, output, command):
+        """Decode a cli-hub JSON payload with an actionable error message."""
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError as error:
+            raise SkillError(f'cli-hub {command} returned invalid JSON: {error}') from None
+
+    def _validate_cli_name(self, name):
+        """Accept only registry-shaped CLI names."""
+        if not isinstance(name, str) or not name.strip():
+            raise SkillError('CLI name must be 1 to 100 characters')
+        value = name.strip()
+        if len(value) > 100:
+            raise SkillError('CLI name must be 1 to 100 characters')
+        if not self._CLI_HUB_NAME.match(value):
+            raise SkillError('CLI name contains unsupported characters')
+        return value
+
+    def _validate_matrix_name(self, matrix):
+        """Accept only registry-shaped matrix names."""
+        if not isinstance(matrix, str) or not matrix.strip() or len(matrix.strip()) > 100:
+            raise SkillError('matrix name must be 1 to 100 characters')
+        return matrix.strip()
+
+    async def _cli_hub_record(self, name):
+        """Return the registry record for one CLI.
+
+        `cli-hub info` prints human-readable text only, so the structured
+        record comes from the JSON search interface instead.
+        """
+        output = await self._run(self._command('cli-hub'), 'search', name, '--json',
+                                 max_output=self._CLI_HUB_MAX_OUTPUT)
+        records = self._cli_hub_json(output, f'search {name}')
+        for record in records if isinstance(records, list) else []:
+            if isinstance(record, dict) and record.get('name') == name:
+                return record
+        raise SkillError(f'CLI harness not found in registry: {name}')
+
     async def _adapter_cli_hub_list(self, category=None):
         """Browse CLI-Anything registry."""
         cmd = [self._command('cli-hub'), 'list']
         if category:
             cmd.extend(['-c', category])
         cmd.append('--json')
-        output = await self._run(*cmd, max_output=10000)
-        return json.loads(output)
+        output = await self._run(*cmd, max_output=self._CLI_HUB_MAX_OUTPUT)
+        return self._cli_hub_json(output, 'list')
 
     async def _adapter_cli_hub_search(self, query):
         """Search CLI-Anything registry."""
         if not isinstance(query, str) or not query.strip() or len(query) > 200:
             raise SkillError('search query must be 1 to 200 characters')
-        output = await self._run(self._command('cli-hub'), 'search', query.strip(), '--json', max_output=10000)
-        return json.loads(output)
+        output = await self._run(self._command('cli-hub'), 'search', query.strip(), '--json',
+                                 max_output=self._CLI_HUB_MAX_OUTPUT)
+        return self._cli_hub_json(output, f'search {query.strip()}')
 
     async def _adapter_cli_hub_info(self, name):
         """Show CLI harness details."""
-        if not isinstance(name, str) or not name.strip() or len(name) > 100:
-            raise SkillError('CLI name must be 1 to 100 characters')
-        output = await self._run(self._command('cli-hub'), 'info', name.strip(), '--json', max_output=10000)
-        return json.loads(output)
+        name = self._validate_cli_name(name)
+        return await self._cli_hub_record(name)
 
     async def _adapter_cli_hub_install(self, name, dry_run=False):
         """Install CLI harness."""
-        if not isinstance(name, str) or not name.strip() or len(name) > 100:
-            raise SkillError('CLI name must be 1 to 100 characters')
-        cmd = [self._command('cli-hub'), 'install', name.strip()]
+        name = self._validate_cli_name(name)
+        record = await self._cli_hub_record(name)
         if dry_run:
-            cmd.append('--dry-run')
-        cmd.append('--json')
-        output = await self._run(*cmd, timeout=120, max_output=10000)
-        return json.loads(output)
+            # `cli-hub install` has no --dry-run, so report the plan from the
+            # registry record without touching the machine.
+            return {'status': 'dry_run', 'name': name,
+                    'install_cmd': record.get('install_cmd'),
+                    'entry_point': record.get('entry_point'),
+                    'requires': record.get('requires'),
+                    'version': record.get('version')}
+        output = await self._run(self._command('cli-hub'), 'install', name,
+                                 timeout=120, max_output=10000)
+        return {'status': 'installed', 'name': name, 'output': output}
 
     async def _adapter_cli_hub_uninstall(self, name):
         """Uninstall CLI harness."""
-        if not isinstance(name, str) or not name.strip() or len(name) > 100:
-            raise SkillError('CLI name must be 1 to 100 characters')
-        cmd = [self._command('cli-hub'), 'uninstall', name.strip(), '--json']
-        output = await self._run(*cmd, timeout=60, max_output=10000)
-        return json.loads(output)
+        name = self._validate_cli_name(name)
+        output = await self._run(self._command('cli-hub'), 'uninstall', name,
+                                 timeout=60, max_output=10000)
+        return {'status': 'uninstalled', 'name': name, 'output': output}
 
     async def _adapter_cli_hub_launch(self, name, args=None, json_output=False):
-        """Launch installed CLI harness."""
-        if not isinstance(name, str) or not name.strip() or len(name) > 100:
-            raise SkillError('CLI name must be 1 to 100 characters')
-        cli_name = f'cli-anything-{name.strip()}'
+        """Launch an installed CLI harness."""
+        name = self._validate_cli_name(name)
+        record = await self._cli_hub_record(name)
+        # The entry point is not always `cli-anything-<name>` (26 of the 103
+        # registry CLIs differ), so take it from the registry record.
+        cli_name = record.get('entry_point') or f'cli-anything-{name}'
         cmd = [cli_name]
         if args:
-            cmd.extend(args)
-        if json_output:
+            cmd.extend(str(argument) for argument in args)
+        if json_output and '--json' not in cmd:
             cmd.append('--json')
-        # Use _launch for interactive REPL, _run for one-shot
-        if not args or (args and '--json' in args):
-            output = await self._run(*cmd, timeout=60, max_output=10000)
-            return json.loads(output) if json_output else {'output': output}
-        else:
+        if json_output or '--json' in cmd:
+            output = await self._run(*cmd, timeout=60, max_output=self._CLI_HUB_MAX_OUTPUT)
+            if json_output:
+                return self._cli_hub_json(output, f'launch {name}')
+            return {'output': output}
+        if args:
             await self._launch(*cmd)
             return {'status': 'launched', 'cli': cli_name}
+        output = await self._run(*cmd, timeout=60, max_output=self._CLI_HUB_MAX_OUTPUT)
+        return {'output': output}
 
     async def _adapter_cli_hub_matrix_list(self):
         """List workflow matrices."""
-        output = await self._run(self._command('cli-hub'), 'matrix', 'list', '--json', max_output=10000)
-        return json.loads(output)
+        output = await self._run(self._command('cli-hub'), 'matrix', 'list', '--json',
+                                 max_output=self._CLI_HUB_MAX_OUTPUT)
+        return self._cli_hub_json(output, 'matrix list')
 
     async def _adapter_cli_hub_matrix_preflight(self, matrix, capability=None, fix_hints=False):
         """Preflight check for matrix capability."""
-        if not isinstance(matrix, str) or not matrix.strip():
-            raise SkillError('matrix name required')
-        cmd = [self._command('cli-hub'), 'matrix', 'preflight', matrix.strip()]
+        matrix = self._validate_matrix_name(matrix)
+        cmd = [self._command('cli-hub'), 'matrix', 'preflight', matrix]
         if capability:
             cmd.extend(['-c', capability])
         if fix_hints:
             cmd.append('--fix-hints')
         cmd.append('--json')
-        try:
-            output = await self._run(*cmd, timeout=60, max_output=10000)
-            return json.loads(output)
-        except SkillError as e:
-            # Exit code 3 = partial/gaps, return structured info
-            if 'exit code 3' in str(e).lower() or 'partial' in str(e).lower():
-                return {'status': 'partial', 'gaps': str(e)}
-            raise
+        # Exit code 3 means the matrix has capability gaps. The JSON report on
+        # stdout still describes them, so accept it instead of failing.
+        output = await self._run(*cmd, timeout=60, max_output=self._CLI_HUB_MAX_OUTPUT,
+                                 ok_codes=(0, 3))
+        payload = self._cli_hub_json(output, f'matrix preflight {matrix}')
+        summary = payload.get('summary') if isinstance(payload, dict) else None
+        gaps = summary.get('gaps') if isinstance(summary, dict) else None
+        if isinstance(payload, dict):
+            payload['status'] = 'partial' if gaps else 'complete'
+        return payload
 
     async def _adapter_cli_hub_matrix_install(self, matrix, capability=None, recipe=None, only=None, dry_run=False):
         """Install matrix workflow."""
-        if not isinstance(matrix, str) or not matrix.strip():
-            raise SkillError('matrix name required')
-        cmd = [self._command('cli-hub'), 'matrix', 'install', matrix.strip()]
+        matrix = self._validate_matrix_name(matrix)
+        cmd = [self._command('cli-hub'), 'matrix', 'install', matrix]
         if capability:
             cmd.extend(['--capability', capability])
         if recipe:
@@ -2581,5 +2783,15 @@ class DesktopSkills:
         if dry_run:
             cmd.append('--dry-run')
         cmd.append('--json')
-        output = await self._run(*cmd, timeout=300, max_output=20000)
-        return json.loads(output)
+        # Exit code 3 means some member CLIs failed; the JSON result says which.
+        output = await self._run(*cmd, timeout=300, max_output=self._CLI_HUB_MAX_OUTPUT,
+                                 ok_codes=(0, 3))
+        payload = self._cli_hub_json(output, f'matrix install {matrix}')
+        summary = payload.get('summary') if isinstance(payload, dict) else None
+        failed = summary.get('failed') if isinstance(summary, dict) else None
+        if isinstance(payload, dict):
+            if dry_run:
+                payload['status'] = 'dry_run'
+            else:
+                payload['status'] = 'partial' if failed else 'installed'
+        return payload

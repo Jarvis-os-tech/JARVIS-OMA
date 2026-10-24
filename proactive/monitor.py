@@ -20,6 +20,13 @@ class MonitorError(ValueError):
     """Raised when a job transition or monitoring policy is invalid."""
 
 
+def _job_id(value: Any) -> str:
+    """Use the same canonical identity for admission and subsequent lookups."""
+    if not isinstance(value, str) or not value.strip():
+        raise MonitorError("job_id must be a non-empty string")
+    return value.strip()
+
+
 def _number(value: Any, name: str, *, minimum: float = 0.0) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise MonitorError(f"{name} must be a number")
@@ -52,8 +59,7 @@ class ProactiveMonitor:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Register a running job and its first deadline."""
-        if not isinstance(job_id, str) or not job_id.strip():
-            raise MonitorError("job_id must be a non-empty string")
+        job_id = _job_id(job_id)
         if job_id in self._jobs:
             raise MonitorError(f"job {job_id!r} is already tracked")
         timeout = _number(timeout_seconds, "timeout_seconds", minimum=0.001)
@@ -67,7 +73,7 @@ class ProactiveMonitor:
         if metadata is not None and not isinstance(metadata, dict):
             raise MonitorError("metadata must be a dictionary")
         job = {
-            "id": job_id.strip(),
+            "id": job_id,
             "status": "running",
             "attempt": 1,
             "retry_count": 0,
@@ -177,6 +183,7 @@ class ProactiveMonitor:
         }
 
     def _get(self, job_id: str) -> dict[str, Any]:
+        job_id = _job_id(job_id)
         try:
             return self._jobs[job_id]
         except (KeyError, TypeError):

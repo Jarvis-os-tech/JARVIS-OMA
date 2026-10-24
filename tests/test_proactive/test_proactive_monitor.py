@@ -4,6 +4,29 @@ from proactive.monitor import JobMonitor, MonitorError, ProactiveMonitor
 
 
 class ProactiveMonitorTests(unittest.TestCase):
+    def test_whitespace_alias_cannot_replace_running_job(self):
+        monitor = ProactiveMonitor()
+        original = monitor.track('job', timeout_seconds=10, max_retries=2,
+                                 metadata={'original': True})
+        with self.assertRaisesRegex(MonitorError, 'already tracked'):
+            monitor.track(' job ', timeout_seconds=20)
+        self.assertEqual(monitor.get('job'), original)
+        self.assertEqual(len(monitor.list_jobs()), 1)
+
+    def test_job_identity_is_consistent_across_operations(self):
+        monitor = ProactiveMonitor()
+        tracked = monitor.track(' job ', timeout_seconds=10, max_retries=1)
+        self.assertEqual(tracked['id'], 'job')
+        self.assertEqual(monitor.get('\tjob\n'), tracked)
+        failed = monitor.update(' job ', 'failed', now=1)
+        started = monitor.start_retry(' job ', now=failed['retry_at'])
+        self.assertEqual(started['id'], 'job')
+        self.assertEqual(started['attempt'], 2)
+        for invalid in (' ', '', None, []):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(MonitorError):
+                    monitor.get(invalid)
+
     def test_tracks_and_returns_defensive_snapshots(self):
         monitor = ProactiveMonitor()
         snapshot = monitor.track("job-1", timeout_seconds=10, now=5,
