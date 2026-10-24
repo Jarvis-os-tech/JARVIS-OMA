@@ -3,6 +3,7 @@ import asyncio
 import contextlib
 import io
 import os
+import socket
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace as NS
@@ -71,6 +72,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                        no_ipc=True, retries=2)
         self.echo = NS(start=AsyncMock(), close=AsyncMock(), source='source', sink='sink')
         self.engine = MagicMock()
+        self.engine.async_input_queue = asyncio.Queue()
         self.engine.monitor_health = AsyncMock()
         self.connect_calls = []
 
@@ -89,6 +91,41 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         for worker in workers:
             worker.close()
         raise asyncio.CancelledError()
+
+    async def test_native_backend_waits_for_verified_graph_before_cloud_session(self):
+        self.config.audio.backend = 'native'
+        from audio.plugins.native_backend import NativeCompanionEngine
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(NativeCompanionEngine, 'start'), \
+             patch.object(NativeCompanionEngine, 'wait_ready', new_callable=AsyncMock) as ready, \
+             patch.object(NativeCompanionEngine, 'terminate'), \
+             patch.object(NativeCompanionEngine, 'aclose', new_callable=AsyncMock) as close, \
+             patch('google.genai.Client', return_value=self.client), \
+             patch.object(agent, 'supervise', side_effect=self.supervise_once):
+            with self.assertRaises(asyncio.CancelledError):
+                await agent.run(self.args, 'fake', config=self.config)
+        ready.assert_awaited_once_with('source', 'sink')
+        close.assert_awaited_once()
+        self.assertEqual(len(self.connect_calls), 1)
+
+    async def test_programming_errors_keep_finite_retry_budget(self):
+        @contextlib.asynccontextmanager
+        async def broken_connect(**kwargs):
+            raise KeyError('internal bug')
+            yield
+
+        @contextlib.asynccontextmanager
+        async def client_context():
+            yield NS(live=NS(connect=broken_connect))
+
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(agent, 'NativeAudioEngine', return_value=self.engine), \
+             patch('google.genai.Client', return_value=NS(aio=client_context())), \
+             patch.object(agent.asyncio, 'sleep', new_callable=AsyncMock) as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'unexpected failure'):
+                await agent.run(self.args, 'fake', config=self.config)
+        self.assertEqual(sleep.await_count, 2)
+        self.engine.terminate.assert_called_once()
 
     async def test_invalid_programmatic_config_fails_before_echo_acquisition(self):
         self.config.audio.output_sample_rate = 48000
@@ -187,6 +224,16 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RecoveryTests(unittest.IsolatedAsyncioTestCase):
+    def test_only_transient_errors_qualify_for_unlimited_retry(self):
+        import httpx
+        self.assertTrue(agent.transient_connection_error(httpx.ConnectError('offline')))
+        self.assertTrue(agent.transient_connection_error(socket.gaierror()))
+        self.assertTrue(agent.transient_connection_error(ConnectionError()))
+        self.assertFalse(agent.transient_connection_error(KeyError('bug')))
+        error = RuntimeError('wrapped')
+        error.__cause__ = TimeoutError()
+        self.assertTrue(agent.transient_connection_error(error))
+
     async def test_invalid_retry_budget_fails_before_touching_streams(self):
         engine = MagicMock()
         with self.assertRaisesRegex(ValueError, 'nonnegative integer'):

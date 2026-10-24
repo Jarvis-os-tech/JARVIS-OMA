@@ -9,7 +9,7 @@
         "type": "object",
         "properties": {
           "goal": {"type": "string"},
-          "cost_profile": {"type": "string", "enum": ["budget", "configured"], "description": "Defaults to configured to preserve existing CLI providers and Claude's configured proxy. Budget requires explicit Hermes and OpenCode routes; no automatic model escalation."},
+          "cost_profile": {"type": "string", "enum": ["budget", "configured"], "description": "Defaults to budget. Budget requires explicit Hermes and OpenCode model routes and fails before launch if either is missing. Use configured to preserve each CLI's existing provider and model. No automatic model escalation."},
           "workspace": {"type": "string", "description": "Absolute existing project directory."},
           "timeout_seconds": {"type": "integer", "minimum": 10, "maximum": 7200}
         },
@@ -30,7 +30,7 @@
     },
     {
       "name": "delegate_agent",
-      "description": "Delegate a task to a local coding agent running in an isolated tmux terminal session or background supervisor. Check the job ID for results. Task type selects preset routing; model overrides it.",
+      "description": "Delegate a task to a local coding agent running in an isolated tmux terminal session or background supervisor. Check the job ID for results. Budget routing is the default; an explicit model overrides it.",
       "adapter": "agents.delegate",
       "parameters_json_schema": {
         "type": "object",
@@ -71,6 +71,11 @@
           "model": {
             "type": "string",
             "description": "Optional model ID supported by this agent CLI."
+          },
+          "cost_profile": {
+            "type": "string",
+            "enum": ["budget", "configured"],
+            "description": "Defaults to budget with no automatic escalation. Use configured only when the user explicitly wants the agent CLI's configured model. An explicit model overrides this profile."
           },
           "visible": {
             "type": "boolean",

@@ -26,7 +26,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg.audio.local_barge_in)
         self.assertFalse(cfg.audio.diagnostic_transcripts)
         self.assertEqual(cfg.audio.playback_cushion_s, 0.32)
-        self.assertEqual(cfg.audio.mic_volume_percent, 80)
+        self.assertEqual(cfg.audio.mic_volume_percent, 55)
         self.assertEqual(cfg.vad.activity_handling, 'START_OF_ACTIVITY_INTERRUPTS')
         self.assertTrue(cfg.standby.enabled)
         self.assertEqual(cfg.standby.threshold, 0.05)

@@ -7,12 +7,17 @@ voice = "Aoede"                          # Prebuilt voice: Aoede, Charon, Fenrir
 model = "gemini-3.8-live"                # Gemini Live model
 greet_on_activation = true               # Proactively greet the user upon activation
 single_sentence = false                  # Allow detailed answers when requested
+tool_router = "groq"                    # Groq selects tools; Gemini Live handles voice
+groq_tool_model = "openai/gpt-oss-20b"  # Fast Groq function-calling model
+tool_router_timeout_seconds = 8          # Bounded routing request
 # greeting_prompt = "..."                # Optional custom greeting prompt
 greeting_cooldown_seconds = 14400         # Avoid repeated greetings within 4 hours on the same day
 greeting_resume_work = true              # Offer one relevant continuation from previous conversations
 # system_instruction = "Custom persona prompt..." # Optional custom system prompt
 
 [audio]
+backend = "legacy"                     # Opt-in "native" requires building audio/plugins/native
+native_cushion_s = 0.08                 # Native backend initial PCM prebuffer, seconds
 input_sample_rate = 16000                # Capture sample rate in Hz
 output_sample_rate = 24000               # Required: provider PCM is 24 kHz; no resampling yet
 input_frame_ms = 20                      # Input frame size in ms

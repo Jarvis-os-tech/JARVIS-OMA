@@ -17,13 +17,16 @@ class GreetingTests(unittest.TestCase):
             store = GreetingMemory(Path(directory))
             now = datetime(2026, 10, 14, 23, 30, tzinfo=ZoneInfo('Asia/Kolkata'))
             history = [{'role': 'user', 'content': 'Continue Claude authentication tomorrow', 'timestamp': 123}]
-            prepared = store.prepare(history, now, 14400)
+            prepared = store.prepare(history, now, 14400, 'boot-a')
             self.assertEqual(prepared['history'], history)
-            identifier = store.sent(prepared['key'], now)
+            identifier = store.sent(prepared['key'], now, 'boot-a')
             store.record_text(identifier, 'Shall we pick up the Claude authentication issue?')
             restarted = GreetingMemory(Path(directory))
-            self.assertTrue(restarted.prepare(history, now + timedelta(minutes=5), 14400)['suppressed'])
-            next_day = restarted.prepare(history, now + timedelta(hours=1), 14400)
+            self.assertTrue(restarted.prepare(
+                history, now + timedelta(minutes=5), 14400, 'boot-a')['suppressed'])
+            self.assertFalse(restarted.prepare(
+                history, now + timedelta(minutes=5), 14400, 'boot-b')['suppressed'])
+            next_day = restarted.prepare(history, now + timedelta(hours=1), 14400, 'boot-a')
             self.assertFalse(next_day['suppressed'])
             self.assertEqual(next_day['history'], [])
             self.assertIn('Shall we pick up', next_day['previous_greetings'][0])

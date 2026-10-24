@@ -170,7 +170,6 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             output = await skills.execute('internet_search', {'query': 'price today'})
             self.assertEqual(output['answer'], 'Verified answer')
             self.assertEqual(attempts, [('first-key', 'gemini-3.8-flash'),
-                                        ('first-key', 'gemini-2.5-flash'),
                                         ('second-key', 'gemini-3.8-flash')])
             attempts.clear()
             await skills.execute('internet_search', {'query': 'price now'})
@@ -205,7 +204,7 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output['model'], 'gemini-3.7-flash')
         self.assertEqual(attempts, ['gemini-3.8-flash', 'gemini-3.7-flash'])
 
-    async def test_grounded_search_uses_older_quota_after_newer_quota(self):
+    async def test_grounded_search_does_not_multiply_requests_after_quota(self):
         class QuotaError(Exception):
             code = 429
 
@@ -229,10 +228,11 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(web_search, 'brave_available', return_value=False), \
                 patch('google.genai.Client', return_value=SimpleNamespace(aio=FakeAio())):
-            output = await DesktopSkills(api_key=['test-key']).execute(
-                'internet_search', {'query': 'price today'})
-        self.assertEqual(output['model'], 'gemini-2.5-flash')
-        self.assertEqual(attempts, ['gemini-3.8-flash', 'gemini-2.5-flash'])
+            skills = DesktopSkills(api_key=['test-key'])
+            with self.assertRaisesRegex(SkillError, 'quota'):
+                await skills.execute('internet_search', {'query': 'price today'})
+        self.assertEqual(attempts, ['gemini-3.8-flash'])
+        self.assertGreater(skills._search_key_cooldown['test-key'], 0)
 
     def make_desktop_skills(self, manifest_dirs=None, **kwargs):
         skills = DesktopSkills(manifest_dirs=manifest_dirs, **kwargs)
@@ -292,14 +292,18 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
                   'amount': {'type': 'integer', 'minimum': 1, 'maximum': 25}},
                  ['direction'])]))
         skills._run = AsyncMock(return_value='')
-        result = await skills.execute('make_it_brighter', {'direction': 'raise', 'amount': 7})
+        with patch('skills.skills.system_control.set_brightness', new_callable=AsyncMock,
+                   return_value={'status': 'success'}) as control:
+            result = await skills.execute('make_it_brighter', {'direction': 'raise', 'amount': 7})
         self.assertEqual(result['amount'], 7)
-        skills._run.assert_awaited_once_with(
-            skills._commands['omarchy-brightness-display'], '+7%')
+        control.assert_awaited_once_with(percent=None, direction='raise', amount=7)
+        skills._run.assert_not_awaited()
 
     async def test_native_todo_lifecycle_and_duplicate_title(self):
         skills = self.make_desktop_skills()
-        with tempfile.TemporaryDirectory() as directory, patch.object(skills, '_todo_path', return_value=Path(directory) / 'omarchy/todos.json'):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(skills, '_todo_path', return_value=Path(directory) / 'omarchy/todos.json'), \
+             patch.object(skills, '_notify_quickshell_todos', new_callable=AsyncMock) as notify:
             first = await skills.execute('create_todo', {'title': 'Plan trip', 'priority': 'high'})
             second = await skills.execute('create_todo', {'title': 'Plan trip'})
             self.assertNotEqual(first['todo']['id'], second['todo']['id'])
@@ -315,6 +319,20 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(cleared['count'], 1)
             remaining = await skills.execute('list_todos', {})
             self.assertEqual(remaining['count'], 1)
+            self.assertEqual(notify.await_count, 6)
+
+    async def test_todo_refresh_uses_quickshell_ipc_and_falls_back(self):
+        skills = self.make_desktop_skills()
+        skills._run = AsyncMock(side_effect=[SkillError('first instance unavailable'), ''])
+        with patch('skills.skills.shutil.which', return_value='/usr/bin/qs'):
+            refreshed = await skills._notify_quickshell_todos()
+        self.assertTrue(refreshed)
+        self.assertEqual(skills._run.await_count, 2)
+        first = skills._run.await_args_list[0]
+        second = skills._run.await_args_list[1]
+        self.assertIn('dejan94.todos', first.args)
+        self.assertIn('refresh', first.args)
+        self.assertIn('--any-display', second.args)
 
     async def test_reminder_list_is_not_truncated_and_cancel_uses_native_id(self):
         skills = self.make_desktop_skills()
@@ -340,12 +358,60 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
     async def test_application_adapter_launches_only_catalogued_exact_match(self):
         skills = self.make_desktop_skills()
         with patch.object(skills, '_applications', return_value={'firefox.desktop': 'Firefox'}), \
-             patch.object(skills, '_launch', new=AsyncMock()) as launch:
+             patch.object(skills, '_launch', new=AsyncMock()) as launch, \
+             patch('skills.ground_truth.verify_window_state', new=AsyncMock(
+                 return_value={'verified': True, 'details': {'matched_window': {'class': 'firefox'}}})):
             result = await skills.execute('open_application', {'name': 'Firefox'})
             self.assertEqual(result['application'], 'Firefox')
+            self.assertTrue(result['ground_truth_verified'])
+            self.assertFalse(result['self_healed'])
+            self.assertEqual(len(result['attempts']), 1)
             launch.assert_awaited_once_with(skills._commands['gtk-launch'], 'firefox.desktop')
             with self.assertRaises(SkillError):
                 await skills.execute('open_application', {'name': 'firefox; shutdown'})
+
+    async def test_application_adapter_rejects_unverified_launch(self):
+        skills = self.make_desktop_skills()
+        failed = {'verified': False, 'reason': 'not found', 'details': {}}
+        with patch.object(skills, '_applications', return_value={'foot.desktop': 'Foot'}), \
+             patch.object(skills, '_launch', new=AsyncMock()), \
+             patch('skills.ground_truth.verify_window_state', new=AsyncMock(return_value=failed)), \
+             patch('skills.ground_truth.verify_process_state', new=AsyncMock(return_value=failed)):
+            with self.assertRaisesRegex(SkillError, 'failed after one self-healing retry'):
+                await skills.execute('open_application', {'name': 'Foot'})
+
+    async def test_application_launch_self_heals_desktop_session_and_retries_once(self):
+        skills = self.make_desktop_skills()
+        failed = {'verified': False, 'reason': 'not found', 'details': {}}
+        verified = {'verified': True, 'reason': None,
+                    'details': {'matched_window': {'class': 'firefox'}}}
+        with patch.object(skills, '_applications', return_value={'firefox.desktop': 'Firefox'}), \
+             patch.object(skills, '_launch', new=AsyncMock()) as launch, \
+             patch('skills.ground_truth.verify_window_state', new=AsyncMock(
+                 side_effect=[failed, verified])), \
+             patch('skills.ground_truth.verify_process_state', new=AsyncMock(
+                 return_value=failed)), \
+             patch('core.desktop_session.recover_desktop_environment',
+                   return_value={'WAYLAND_DISPLAY': 'wayland-1'}), \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('WAYLAND_DISPLAY', None)
+            result = await skills.execute('open_application', {'name': 'Firefox'})
+        self.assertTrue(result['self_healed'])
+        self.assertEqual(len(result['attempts']), 2)
+        self.assertEqual(launch.await_count, 2)
+        self.assertEqual(os.environ.get('WAYLAND_DISPLAY'), 'wayland-1')
+
+    async def test_service_launches_desktop_apps_through_uwsm(self):
+        skills = self.make_desktop_skills()
+        process = SimpleNamespace(wait=AsyncMock(return_value=0))
+        with patch.dict(os.environ, {'INVOCATION_ID': 'service-run'}), \
+             patch('shutil.which', side_effect=lambda name: f'/usr/bin/{name}'), \
+             patch('asyncio.create_subprocess_exec', new=AsyncMock(return_value=process)) as launch:
+            await skills._launch('/usr/bin/example-app', '--flag')
+        command = launch.await_args.args
+        self.assertEqual(command, (
+            '/usr/bin/uwsm', 'app', '-s', 'a', '-t', 'scope', '-S', 'both', '--',
+            '/usr/bin/example-app', '--flag'))
 
     async def test_notification_uses_custom_app_name(self):
         skills = self.make_desktop_skills(app_name='Friday')
@@ -555,6 +621,7 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(task['status'], 'ongoing')
             self.assertFalse(task['completed'])
             task_id = task['id']
+            self.assertEqual(skills._read_todos()['activeTab'], 'ongoing')
 
             # Test list_todos with task
             listed = await skills.execute('list_todos', {})
@@ -581,6 +648,7 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(completed['status'], 'completed')
             self.assertTrue(completed['todo']['completed'])
             self.assertEqual(completed['todo']['status'], 'complete')
+            self.assertEqual(skills._read_todos()['activeTab'], 'complete')
 
             # Filter by status
             ongoing = await skills.execute('list_todos', {'status': 'ongoing'})
@@ -592,6 +660,7 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             moved = await skills.execute('move_todo', {'task': task_id, 'status': 'backlog'})
             self.assertEqual(moved['todo']['status'], 'backlog')
             self.assertFalse(moved['todo']['completed'])
+            self.assertEqual(skills._read_todos()['activeTab'], 'backlog')
 
             # Move back to complete to test clear_completed_todos
             await skills.execute('move_todo', {'task': task_id, 'status': 'complete'})

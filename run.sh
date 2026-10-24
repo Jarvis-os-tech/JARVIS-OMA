@@ -9,10 +9,10 @@ if [[ -f "${AGENT_DIR}/.env" ]]; then
     set +a
 fi
 
-# Match PipeWire's client period to the 20 ms audio frames. A 128-sample
-# (2.7 ms) period makes the Python callback race the device at speech onset.
+# Suggest a conservative client latency; negotiate the graph period separately.
 export PIPEWIRE_LATENCY="${PIPEWIRE_LATENCY:-1024/48000}"
-export PIPEWIRE_QUANTUM="${PIPEWIRE_QUANTUM:-1024/48000}"
+# Let AEC and device streams negotiate a compatible graph period. Forcing a
+# process-wide period can conflict with the AEC's 10 ms processing blocks.
 export PYTHONUNBUFFERED=1
 
 # User services have a smaller PATH than interactive terminals. Agent CLIs are
@@ -26,7 +26,7 @@ PYTHON="${AGENT_DIR}/.venv/bin/python"
 
 # systemd may retain XDG_RUNTIME_DIR while omitting the active compositor's
 # display identifiers. Recover only unambiguous values; .env values take priority.
-eval "$(cd -- "$AGENT_DIR" && "$PYTHON" -m core.desktop_session)"
+eval "$(cd -- "$AGENT_DIR" && "$PYTHON" -m core.desktop_session --wait-seconds 20)"
 
 # The application also runs network, database and desktop work. Keep the
 # process on normal scheduling; PipeWire manages its audio worker priority.

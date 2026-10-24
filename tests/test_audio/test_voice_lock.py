@@ -158,6 +158,7 @@ class AudioExtensionArchitectureTests(unittest.IsolatedAsyncioTestCase):
         fake_base = MagicMock()
         fake_base.async_input_queue = asyncio.Queue()
         fake_base.c_output_queue = MagicMock()
+        fake_base.active_generation = 7
 
         extended = ExtendedAudioEngine(base_engine=fake_base)
 
@@ -175,7 +176,8 @@ class AudioExtensionArchitectureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, b"EXT_raw_frame")
 
         extended.put_processed_output(b"play_frame")
-        fake_base.c_output_queue.put_nowait.assert_called_once_with(b"OUT_play_frame")
+        fake_base.enqueue_playback.assert_called_once_with(b"OUT_play_frame", generation=7)
+        fake_base.c_output_queue.put_nowait.assert_not_called()
 
 
 if __name__ == "__main__":

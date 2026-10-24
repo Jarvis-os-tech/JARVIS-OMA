@@ -71,14 +71,20 @@ class DevelopmentSkillsTests(unittest.IsolatedAsyncioTestCase):
         manager = Mock(workers={'dev-1': object()})
         manager.cancel = AsyncMock()
         self.skills._evolution = manager
+        self.assertTrue(self.skills.proactive_service_requested.is_set())
+        self.assertFalse(self.skills.proactive_continuous_requested)
         self.assertEqual((await self.skills.execute('pause_jarvis', {}))['status'], 'paused')
         manager.cancel.assert_awaited_with('dev-1')
         self.assertFalse(self.skills.proactive.control.get_state().can_run)
+        self.assertFalse(self.skills.proactive_service_requested.is_set())
         await self.skills._adapter_proactive_resume()
         self.assertTrue(self.skills.proactive.control.get_state().can_run)
+        self.assertTrue(self.skills.proactive_service_requested.is_set())
+        self.assertTrue(self.skills.proactive_continuous_requested)
         result = await self.skills._adapter_proactive_stop()
         self.assertEqual(result['status'], 'stopped')
         self.assertFalse(self.skills.proactive.control.get_state().can_run)
+        self.assertFalse(self.skills.proactive_service_requested.is_set())
 
     async def test_shutdown_closes_development_before_agent_pool(self):
         order = []

@@ -37,6 +37,197 @@ def native_engine():
     return NativeAudioEngine(loop=asyncio.get_running_loop())
 
 class VoiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lifecycle_states_follow_live_conversation(self):
+        voice = LiveVoice(native_engine())
+        states = []
+        voice.on_state_broadcast = states.append
+
+        voice.publish_lifecycle_state('connecting', standby=False)
+        voice.publish_lifecycle_state('idle', standby=False)
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            input_transcription=types.Transcription(text='Hello Jarvis'))))
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            model_turn=types.Content(parts=[types.Part(text='One moment')]))))
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            model_turn=types.Content(parts=[types.Part(inline_data=types.Blob(
+                mime_type='audio/pcm;rate=24000', data=b'\x00\x00'))]))))
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            turn_complete=True)))
+        voice.publish_audio_state('listening')
+
+        self.assertEqual(
+            [event['state'] for event in states],
+            ['connecting', 'idle', 'listening', 'thinking', 'speaking', 'idle'])
+        self.assertFalse(states[0]['standby'])
+
+    async def test_duplicate_lifecycle_state_is_not_rebroadcast(self):
+        voice = LiveVoice(native_engine())
+        states = []
+        voice.on_state_broadcast = states.append
+        voice.publish_lifecycle_state('idle')
+        voice.publish_lifecycle_state('idle')
+        self.assertEqual(states, [])
+
+    async def test_tool_activity_is_specific_and_audio_idle_cannot_override_it(self):
+        voice = LiveVoice(native_engine())
+        states = []
+        voice.on_state_broadcast = states.append
+        voice.tool_tasks['search'] = object()
+        voice.publish_lifecycle_state(
+            'processing', activity=voice._activity_for_tool('internet_search'))
+
+        voice.publish_audio_state('listening')
+
+        self.assertEqual(voice.lifecycle_state, 'processing')
+        self.assertEqual(voice.activity_label, 'Searching the web')
+        self.assertEqual(states[-1]['activity'], 'Searching the web')
+
+    async def test_microphone_activity_shows_thinking_while_waiting_for_provider(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        states = []
+        voice.on_state_broadcast = states.append
+
+        engine.input_rms = 0.05
+        for _ in range(3):
+            voice.observe_mic_activity()
+        engine.input_rms = 0.0
+        for _ in range(20):
+            voice.observe_mic_activity()
+
+        self.assertEqual([event['state'] for event in states],
+                         ['listening', 'thinking'])
+
+    async def test_pending_request_drops_later_speech_instead_of_queueing_it(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        session = NS(send_realtime_input=AsyncMock())
+        voice._request_pending = True
+        engine._safe_enqueue_input(b'old' * (640 // 3) + b'o')
+        sender = asyncio.create_task(voice.send_audio(session))
+        try:
+            for _ in range(5):
+                await asyncio.sleep(0)
+            session.send_realtime_input.assert_not_awaited()
+            self.assertGreaterEqual(voice.stale_microphone_frames_discarded, 1)
+
+            voice._request_pending = False
+            engine._safe_enqueue_input(b'new' * (640 // 3) + b'n')
+            for _ in range(5):
+                await asyncio.sleep(0)
+                if session.send_realtime_input.await_count:
+                    break
+            session.send_realtime_input.assert_awaited_once()
+        finally:
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
+    async def test_interim_transcription_does_not_set_request_pending(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        self.assertFalse(voice._request_pending)
+
+        # When speech transcription arrives, request_pending must NOT strangle the microphone
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            input_transcription=types.Transcription(text='Jarvis is'))))
+        self.assertFalse(voice._request_pending)
+        self.assertEqual(voice.lifecycle_state, 'listening')
+
+        # When user turn completes with input and waiting for model, request_pending becomes True
+        await voice.handle(types.LiveServerMessage(server_content=types.LiveServerContent(
+            input_transcription=types.Transcription(text='Jarvis is'),
+            turn_complete=True)))
+        self.assertTrue(voice._request_pending)
+        self.assertEqual(voice.lifecycle_state, 'thinking')
+
+    async def test_send_notifications_yields_send_lock_when_response_active(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        voice._response_active = True
+        voice._notices.append('Background task finished')
+        voice._notice_event.set()
+        session = NS(send_client_content=AsyncMock())
+
+        task = asyncio.create_task(voice.send_notifications(session))
+        try:
+            # Give send_notifications a chance to run
+            await asyncio.sleep(0.01)
+
+            # Another coroutine must be able to acquire send_lock without being starved
+            acquired = False
+            async with voice.send_lock:
+                acquired = True
+            self.assertTrue(acquired)
+            session.send_client_content.assert_not_awaited()
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    async def test_session_boundary_discards_captured_backlog(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        engine._safe_enqueue_input(b'a' * 640)
+        engine._safe_enqueue_input(b'b' * 640)
+        self.assertEqual(voice.discard_pending_microphone_audio(), 2)
+        self.assertTrue(engine.async_input_queue.empty())
+        self.assertEqual(voice.stale_microphone_frames_discarded, 2)
+
+    async def test_standby_request_immediately_gates_cloud_microphone(self):
+        engine = native_engine()
+        voice = LiveVoice(engine)
+        voice.standby = NS(engaged=True)
+        session = NS(send_realtime_input=AsyncMock())
+        sender = asyncio.create_task(voice.send_audio(session))
+        try:
+            engine._safe_enqueue_input(b'silenced' * 80)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            session.send_realtime_input.assert_not_awaited()
+            self.assertEqual(voice.stale_microphone_frames_discarded, 1)
+        finally:
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
+    async def test_unconfirmed_noise_thinking_expires_without_reconnecting(self):
+        voice = LiveVoice(native_engine())
+        voice.publish_lifecycle_state('thinking')
+        voice._thinking_since = 0
+        voice._speculative_thinking = True
+        with patch('agent.asyncio.sleep', side_effect=[None, asyncio.CancelledError()]):
+            with self.assertRaises(asyncio.CancelledError):
+                await voice.monitor_response_progress(timeout=0)
+        self.assertEqual(voice.lifecycle_state, 'idle')
+
+    async def test_stalled_thinking_recovers_but_tool_work_is_not_cancelled(self):
+        voice = LiveVoice(native_engine())
+        voice.publish_lifecycle_state('thinking')
+        voice._thinking_since = voice._last_response_progress = 0
+        with patch('agent.asyncio.sleep', new_callable=AsyncMock):
+            with self.assertRaisesRegex(ConnectionError, 'No response progress'):
+                await voice.monitor_response_progress(timeout=0)
+        self.assertTrue(voice._stalled_response_recovery_pending)
+        voice.tool_tasks['active'] = object()
+        with patch('agent.asyncio.sleep', side_effect=[None, asyncio.CancelledError()]):
+            with self.assertRaises(asyncio.CancelledError):
+                await voice.monitor_response_progress(timeout=0)
+
+    async def test_stalled_response_reconnect_speaks_recovery_before_microphone(self):
+        voice = LiveVoice(native_engine())
+        voice._stalled_response_recovery_pending = True
+        session = NS(send_client_content=AsyncMock())
+
+        sent = await voice.send_stall_recovery(session)
+
+        self.assertTrue(sent)
+        session.send_client_content.assert_awaited_once()
+        prompt = session.send_client_content.await_args.kwargs['turns'].parts[0].text
+        self.assertIn('ask the user to repeat', prompt)
+        self.assertFalse(voice._stalled_response_recovery_pending)
+        self.assertFalse(voice._response_idle.is_set())
+
     async def test_standby_transition_waits_for_spoken_turn_to_finish(self):
         requested = asyncio.Event()
         voice = LiveVoice(native_engine())
@@ -87,6 +278,34 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(voice._notices), 1)
         self.assertIn('Prepare report', voice._notices[0])
         self.assertIn('Do not execute suggested tasks', voice._notices[0])
+
+    async def test_proactive_observer_stays_dormant_until_requested(self):
+        requested = asyncio.Event()
+        runtime = NS(call=AsyncMock(return_value=[]),
+                     tick=AsyncMock(return_value={'results': []}))
+        skills = NS(
+            proactive_service_requested=requested,
+            get_proactive=AsyncMock(return_value=runtime),
+            _adapter_google_calendar_list_events=AsyncMock(return_value={
+                'success': True, 'events': []}),
+            _adapter_list_todos=AsyncMock(return_value={'tasks': []}),
+            _adapter_list_reminders=AsyncMock(return_value={'reminders': []}),
+        )
+        voice = LiveVoice(native_engine(), skills=skills)
+        observer = asyncio.create_task(voice.run_proactive(NS()))
+        try:
+            await asyncio.sleep(0)
+            skills.get_proactive.assert_not_awaited()
+            requested.set()
+            for _ in range(5):
+                await asyncio.sleep(0)
+                if runtime.tick.await_count:
+                    break
+            runtime.tick.assert_awaited_once()
+        finally:
+            observer.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await observer
 
     async def test_calendar_poll_is_bounded_and_failure_does_not_block_tasks(self):
         runtime = NS(call=AsyncMock(return_value=[]),
@@ -230,6 +449,34 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         finally:
             monitor.cancel()
             await asyncio.gather(monitor, return_exceptions=True)
+
+    async def test_background_worker_failure_restarts_without_ending_voice(self):
+        voice = LiveVoice(native_engine())
+        attempts = 0
+        restarted = asyncio.Event()
+        real_sleep = asyncio.sleep
+
+        async def worker():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OSError('temporary background failure')
+            restarted.set()
+            await asyncio.Event().wait()
+
+        async def immediate_retry(delay):
+            await real_sleep(0)
+
+        with patch('agent.asyncio.sleep', side_effect=immediate_retry):
+            guard = asyncio.create_task(
+                voice._guard_background_service(worker, 'test-worker'))
+            try:
+                await asyncio.wait_for(restarted.wait(), 1)
+                self.assertFalse(guard.done())
+                self.assertEqual(attempts, 2)
+            finally:
+                guard.cancel()
+                await asyncio.gather(guard, return_exceptions=True)
 
     async def test_all_response_audio_parts_are_processed(self):
         from google.genai import types
@@ -395,11 +642,22 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('cannot run arbitrary shell commands', res_non_auto['system_instruction'])
         self.assertNotIn('full autonomous access', res_non_auto['system_instruction'])
 
+    async def test_live_config_prioritizes_immediate_tool_execution(self):
+        from config import Config
+        result = live_config('Kore', skills=DesktopSkills(), config=Config())
+        instruction = result['system_instruction']
+        self.assertIn('MANDATORY VOICE LATENCY RULE', instruction)
+        self.assertIn('Issue the appropriate tool call immediately', instruction)
+        self.assertIn('without delaying execution', instruction)
+        self.assertNotIn('audible before silent tool processing', instruction)
+
     async def test_live_instruction_routes_current_questions_to_search_and_files_to_tools(self):
         instruction = live_config('Aoede', skills=DesktopSkills())['system_instruction']
         self.assertIn('Use internet_search for questions requiring current internet information', instruction)
         self.assertIn('use list_files or search_files to locate', instruction)
         self.assertIn('do not claim you cannot browse', instruction)
+        self.assertIn('MUST call the matching todo tool', instruction)
+        self.assertIn('call list_todos to read the durable store back', instruction)
 
     async def test_live_instruction_maps_silence_requests_to_standby(self):
         instruction = live_config('Aoede', skills=DesktopSkills())['system_instruction']
@@ -448,6 +706,27 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.responses[0].name, 'test_skill')
         self.assertEqual(session.responses[0].response['output']['args'], {'value': 3})
         await voice.cancel_tools()
+
+    async def test_hung_foreground_tool_returns_bounded_error(self):
+        cancelled = asyncio.Event()
+
+        class Skills:
+            async def execute(self, name, args):
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+
+        session = NS(send_tool_response=AsyncMock())
+        voice = LiveVoice(native_engine(), skills=Skills())
+        voice.TOOL_RESPONSE_DEADLINE_SECONDS = 0.01
+        call = types.FunctionCall(id='hung-1', name='hung_skill', args={})
+
+        await voice._execute_tool(session, call)
+
+        response = session.send_tool_response.await_args.kwargs['function_responses']
+        self.assertIn('did not respond in time', response.response['error'])
+        await asyncio.wait_for(cancelled.wait(), 0.2)
 
     async def test_ambiguous_system_mute_is_redirected_to_standby(self):
         calls = []
@@ -554,7 +833,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         voice = LiveVoice(native_engine())
         # Should not raise exception
         await voice.greet(FailingSession())
-        self.assertTrue(voice.has_greeted)
+        self.assertFalse(voice.has_greeted)
 
     async def test_transcript_streaming_does_not_cut_words(self):
         import io
@@ -606,7 +885,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('complete explanation', res['system_instruction'])
         self.assertNotIn('CRITICAL RULE', res['system_instruction'])
 
-    async def test_failed_connections_have_a_retry_budget_and_release_echo_routes(self):
+    async def test_failed_connections_enter_slow_retry_without_restarting(self):
         attempts = []
         cleaned = []
 
@@ -643,7 +922,8 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 cleaned.append('echo')
 
         async def no_wait(delay):
-            pass
+            if delay >= 30:
+                raise asyncio.CancelledError()
 
         class MockAudioEngine:
             def __init__(self, *args, **kwargs):
@@ -682,7 +962,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             from config import Config
             configuration = Config()
             configuration.memory.path = directory
-            with self.assertRaisesRegex(RuntimeError, 'retry limit'):
+            with self.assertRaises(asyncio.CancelledError):
                 await run(args, 'fake-key', config=configuration)
         self.assertEqual(len(attempts), 3)
         self.assertEqual(cleaned, ['client', 'audio_engine', 'echo'])

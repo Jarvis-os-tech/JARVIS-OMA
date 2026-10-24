@@ -1,0 +1,5 @@
+# Optional jarvis-oma.service.d/native-audio.conf after building and validation.
+# The main service remains legacy unless this setting or audio.backend selects native.
+[Service]
+Environment=JARVIS_AUDIO_BACKEND=native
+Environment=JARVIS_NATIVE_CUSHION_S=0.08

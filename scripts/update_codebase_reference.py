@@ -54,6 +54,15 @@ def collect_file_inventory():
     return inventory
 
 KNOWN_ROLES = {
+    "learning/bundles.py": ("Versioned Research Harness Bundles", "Content-addressed instruction bundles, explicit activation, integrity checks, and previous-version restoration."),
+    "learning/evidence.py": ("Opt-in Task Evidence", "Bounded background capture of observed requests, tool results, outputs, corrections, and capture health; no automatic diagnosis or optimization."),
+    "learning/research.py": ("Offline Research Fixture", "Corpus-only search/read dispatcher, narrow deterministic citation checks, and scripted native-runtime fixture."),
+    "learning/voice_tests.py": ("Manual Voice Acceptance", "Six spoken acceptance requests and latest-episode capture matching; quality verdicts remain manual."),
+    "learning/research_runtime.py": ("Bounded Native Research Runtime", "Explicit Gemini text transport, call/time budgets, fixed-corpus tools through JARVIS dispatch, and offline scripted transport."),
+    "learning/refinement.py": ("Real Harness² Research Integration", "Pinned upstream recursion, isolated Git worktrees, instruction-only proposals, baseline and held-out checks, audit artifacts, and review-only candidates."),
+    "learning/trials.py": ("Controlled Research Trial Gate", "Artifact integrity and provenance checks, independent reassessment, strict improvement eligibility, explicit trial selection, rollback, and bundle-aware voice checklist."),
+    "learning/__main__.py": ("Learning Administration CLI", "Explicit bundle initialization, activation, restoration, evidence inspection, feedback, and cloud-free demo."),
+    "docs/harness-learning.md": ("Harness Learning Foundation Guide", "Opt-in usage, bundle administration, evidence privacy/limits, offline validation, and future Harness² boundary."),
     # Modular Core Runtime
     "core/__init__.py": ("Modular Core Package Marker", "Package initialization marker for core voice agent runtime and dynamic configuration."),
     "core/agent.py": ("Core Voice Agent Runtime", "Full-duplex Gemini Live voice agent over PipeWire with concurrent capture, playback, interruption generation fences, proactive greetings, tool execution, and SIGUSR1/SIGUSR2 mute/interrupt signal handling."),
@@ -538,6 +547,7 @@ def generate_markdown():
         ("5.18 Hidden Configurations & Environment Secrets", lambda p: "/" not in p and p.startswith(".")),
         ("5.19 Architectural Documentation & Research Reports (`docs/`)", lambda p: p.startswith("docs/")),
         ("5.20 Continuous Integration & Issue Templates (`.github/`)", lambda p: p.startswith(".github/")),
+        ("5.21 Opt-in Harness Learning Foundation (`learning/`)", lambda p: p.startswith("learning/")),
     ]
 
     for title, predicate in subsections:

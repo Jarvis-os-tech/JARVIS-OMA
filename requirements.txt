@@ -4,4 +4,6 @@ sounddevice>=0.5.1
 numpy>=1.26.0
 openwakeword>=0.4.0,<0.5
 httpx>=0.27.0
-cli-anything-hub>=0.1.0
+# 0.4.0 is the first release with the `matrix` command group used by the
+# cli_hub_matrix_* skills; 0.1.0-0.3.0 ship only list/search/info/install.
+cli-anything-hub>=0.4.0

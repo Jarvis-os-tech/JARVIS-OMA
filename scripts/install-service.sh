@@ -5,7 +5,7 @@ UNIT_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
 mkdir -p "${UNIT_DIR}"
 install -m 0644 "${ROOT}/systemd/jarvis-oma.service" "${UNIT_DIR}/jarvis-oma.service"
 systemctl --user daemon-reload
-systemctl --user enable --now jarvis-oma.service
+systemctl --user reenable --now jarvis-oma.service
 echo "JARVIS installed and started as a user service."
 echo "Status: systemctl --user status jarvis-oma.service"
 echo "Logs:   journalctl --user -u jarvis-oma.service -f"

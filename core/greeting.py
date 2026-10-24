@@ -12,7 +12,11 @@ class GreetingMemory:
         self.path = root / 'greetings.db'
         with self._connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS greetings '
-                       '(id INTEGER PRIMARY KEY, timestamp REAL, day TEXT, context_key TEXT, text TEXT)')
+                       '(id INTEGER PRIMARY KEY, timestamp REAL, day TEXT, context_key TEXT, text TEXT, '
+                       'boot_id TEXT NOT NULL DEFAULT "")')
+            columns = {row[1] for row in db.execute('PRAGMA table_info(greetings)')}
+            if 'boot_id' not in columns:
+                db.execute('ALTER TABLE greetings ADD COLUMN boot_id TEXT NOT NULL DEFAULT ""')
         self.path.chmod(0o600)
 
     @contextmanager
@@ -21,24 +25,26 @@ class GreetingMemory:
             with db:
                 yield db
 
-    def prepare(self, history, current, cooldown):
+    def prepare(self, history, current, cooldown, boot_id=''):
         users = [item for item in history if item.get('role') == 'user']
         key = hashlib.sha256(json.dumps(users[-1], sort_keys=True, ensure_ascii=False).encode()).hexdigest() if users else ''
         with self._connect() as db:
-            recent = db.execute('SELECT timestamp,day,context_key,text FROM greetings '
+            recent = db.execute('SELECT timestamp,day,context_key,text,boot_id FROM greetings '
                                 'ORDER BY id DESC LIMIT 8').fetchall()
             already_mentioned = bool(key and db.execute(
                 'SELECT 1 FROM greetings WHERE context_key=? LIMIT 1', (key,)).fetchone())
-        suppressed = bool(recent and recent[0][1] == current.date().isoformat() and
+        suppressed = bool(recent and recent[0][4] == boot_id and
+                          recent[0][1] == current.date().isoformat() and
                           current.timestamp() - recent[0][0] < cooldown)
         return {'key': key, 'suppressed': suppressed,
                 'history': [] if already_mentioned else history,
                 'previous_greetings': [row[3] for row in recent if row[3]]}
 
-    def sent(self, key, current):
+    def sent(self, key, current, boot_id=''):
         with self._connect() as db:
-            cursor = db.execute('INSERT INTO greetings(timestamp,day,context_key,text) VALUES(?,?,?,?)',
-                                (current.timestamp(), current.date().isoformat(), key, ''))
+            cursor = db.execute(
+                'INSERT INTO greetings(timestamp,day,context_key,text,boot_id) VALUES(?,?,?,?,?)',
+                (current.timestamp(), current.date().isoformat(), key, '', boot_id))
             return cursor.lastrowid
 
     def record_text(self, identifier, text):

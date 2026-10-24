@@ -1,18 +1,20 @@
 # Autonomous software goals
 
 Call `start_agent_goal(goal, workspace)` once for an authorized software task.
-The default `cost_profile="configured"` preserves existing CLI providers, models,
-and Claude Code proxy settings. Codex is temporarily excluded: Claude performs
-development and review. The optional `cost_profile="budget"` assigns models through
-`orchestration/model_policy.py`. Codex defaults to the locally configured
-`gpt-5.6-luna`; Claude uses `haiku` (resolved by the installed provider).
+The default `cost_profile="budget"` assigns models through
+`orchestration/model_policy.py`. Codex defaults to `gpt-5.6-luna`; Claude uses
+`haiku` (resolved by the installed provider). Codex is temporarily excluded:
+Claude performs development and review.
 Set `JARVIS_BUDGET_MODEL_HERMES` and `JARVIS_BUDGET_MODEL_OPENCODE` to supported
 model IDs for their providers before launching. All four routes can be overridden
 using `JARVIS_BUDGET_MODEL_<AGENT>`. Missing budget routes fail before any agent
-launches; there is no automatic fallback to a more expensive model. Explicit
-`cost_profile="configured"` preserves each CLI's own defaults. Provider pricing
+launches; there is no automatic fallback to a more expensive model. Pass
+`cost_profile="configured"` to preserve each CLI's own defaults. Provider pricing
 and subscription coverage must be checked separately; this policy selects models
 but cannot enforce a dollar spending cap or guarantee provider-side billing.
+Direct `delegate_agent` work follows the same budget-by-default rule. Passing an
+explicit `model` is an intentional override; using the CLI's configured model
+requires an explicit `cost_profile="configured"` request.
 It returns a team ID without waiting for agent execution. The fixed workflow is
 Hermes research/planning → Claude development → OpenCode QA → Claude
 review/final testing. Optional agents remain available through explicit team
@@ -41,8 +43,9 @@ Missing completion reports time out. Completed interactive panes remain availabl
 for inspection and further conversation. Legacy batch mode still uses process exit.
 The user-requested
 default uses Hermes `--yolo`, Claude `--dangerously-skip-permissions`, and OpenCode
-`--auto` (which retains explicit deny rules). Existing provider/model settings are
-preserved. This removes per-action permission prompts according to each CLI's
+`--auto` (which retains explicit deny rules). Budget model routes are applied by
+default; configured provider/model settings are preserved only with an explicit
+`cost_profile="configured"`. This removes per-action permission prompts according to each CLI's
 native semantics. It does not remove timeouts or make a zero exit code proof of
 correctness. Long-running model turns can still time out.
 

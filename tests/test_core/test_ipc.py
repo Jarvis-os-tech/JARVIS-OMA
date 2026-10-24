@@ -72,6 +72,13 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(resp.get("muted"))
         self.assertEqual(resp.get("model"), "gemini-2.0-flash-exp")
 
+    async def test_fixed_voice_diagnostic_requires_callback(self):
+        self.assertEqual((await self._send_command({'command': 'test_voice'}))['status'], 'unavailable')
+        calls = []
+        self.server.test_voice_cb = lambda: calls.append(True) or {'status': 'queued'}
+        self.assertEqual((await self._send_command({'command': 'test_voice'}))['status'], 'queued')
+        self.assertEqual(calls, [True])
+
     async def test_command_toggle_mute(self):
         resp1 = await self._send_command({"command": "toggle_mute"})
         self.assertEqual(resp1.get("status"), "ok")
