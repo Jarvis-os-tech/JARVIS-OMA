@@ -64,6 +64,13 @@ class DesktopSkills:
 
     # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
+        'harness.status': '_adapter_harness_status',
+        'harness.start_check': '_adapter_start_harness_check',
+        'harness.check_status': '_adapter_harness_check_status',
+        'harness.cancel_check': '_adapter_cancel_harness_check',
+        'learning.status': '_adapter_learning_status',
+        'learning.lessons': '_adapter_learning_lessons',
+        'learning.feedback': '_adapter_learning_feedback',
         'models.start': '_adapter_model_job',
         'models.status': '_adapter_model_job_status',
         'applications.list': '_adapter_list_applications',
@@ -452,6 +459,7 @@ class DesktopSkills:
         self._memory_api_key = api_key
         self._search_key_cooldown = {}
         self._memory = None
+        self.learning_service = None
         self._memory_worker = BoundedWorker('jarvis-memory', capacity=16)
         self._file_worker = BoundedWorker('jarvis-files', capacity=16)
         self._memory_writes = set()
@@ -1309,6 +1317,8 @@ class DesktopSkills:
 
     async def close_agent_jobs(self):
         try:
+            if self.learning_service is not None:
+                await self.learning_service.close()
             if hasattr(self, '_model_jobs'):
                 await self._model_jobs.close()
             if self._proactive is not None:
@@ -1423,6 +1433,57 @@ class DesktopSkills:
         def invoke():
             return getattr(self.memory, method)(*args, **kwargs)
         return await self._memory_worker.run(invoke)
+
+    async def _learning_call(self, method, *args, **kwargs):
+        if self.learning_service is None:
+            if method == 'status':
+                return {'enabled': False, 'automatic_refinement': False,
+                        'message': 'Learning capture is disabled. Start JARVIS with --learning-dir to enable it.'}
+            raise SkillError('Research learning is disabled; start with --learning-dir')
+        try:
+            return await self._file_worker.run(getattr(self.learning_service, method), *args, **kwargs)
+        except (OSError, ValueError, KeyError, sqlite3.Error, WorkerBusyError) as error:
+            raise SkillError('Research learning operation unavailable: ' + type(error).__name__) from None
+
+    async def _adapter_learning_status(self):
+        return await self._learning_call('status')
+
+    async def _adapter_harness_status(self):
+        if self.learning_service is None:
+            from learning.jobs import local_status
+            return {**(await self._file_worker.run(local_status)), 'learning_enabled': False,
+                    'next_actions': ['Start one JARVIS instance using scripts/start-learning.sh.']}
+        return await self._learning_call('harness_status')
+
+    def _harness_jobs(self):
+        if self.learning_service is None:
+            raise SkillError('Local Harness checks require scripts/start-learning.sh or --learning-dir')
+        return self.learning_service.jobs
+
+    async def _adapter_start_harness_check(self):
+        try:
+            return self._harness_jobs().start()
+        except (ValueError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_harness_check_status(self, job_id=None):
+        try:
+            return self._harness_jobs().status(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_cancel_harness_check(self, job_id=None):
+        try:
+            return await self._harness_jobs().cancel(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_learning_lessons(self):
+        return await self._learning_call('lessons')
+
+    async def _adapter_learning_feedback(self, text, category='other'):
+        episode = self.learning_service.capture.previous if self.learning_service is not None else None
+        return await self._learning_call('feedback', text, category, episode)
 
     def queue_memory_exchange(self, user, assistant):
         if not user and not assistant:

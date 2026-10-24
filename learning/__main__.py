@@ -1,4 +1,4 @@
-"""Explicit local bundle administration and a cloud-free research fixture."""
+"""Local learning administration, bounded research refinement and scoped experience."""
 import argparse
 import asyncio
 import json
@@ -46,6 +46,17 @@ def main():
     rollback = commands.add_parser('trial-rollback', help='Restore the baseline only if this trial is still selected')
     rollback.add_argument('run_id')
     commands.add_parser('trial-voice-tests', help='Show selected bundle and spoken acceptance requests')
+    proposal = commands.add_parser('lesson-propose', help='Archive a candidate as a pending procedure, not an active lesson')
+    proposal.add_argument('run_id')
+    proposal.add_argument('--cue', required=True)
+    proposal.add_argument('--voice-model', required=True)
+    publish = commands.add_parser('lesson-publish', help='Publish only after trial eligibility and six manually reviewed voice checks')
+    publish.add_argument('proposal_id')
+    publish.add_argument('--episodes', nargs=6, required=True)
+    revoke = commands.add_parser('lesson-revoke', help='Suppress a published procedure while retaining its audit history')
+    revoke.add_argument('lesson_id')
+    revoke.add_argument('--reason', required=True)
+    commands.add_parser('lesson-list', help='List local lesson/feedback metadata; never exposes feedback as reusable guidance')
     args = parser.parse_args()
     try:
         registry = BundleRegistry(args.state_dir)
@@ -97,6 +108,18 @@ def main():
                 result = rollback_trial(args.state_dir, args.run_id)
             else:
                 result = trial_voice_tests(args.state_dir)
+        elif args.command in {'lesson-propose', 'lesson-publish', 'lesson-revoke', 'lesson-list'}:
+            from .experience import ExperienceLibrary
+            library = ExperienceLibrary(args.state_dir)
+            if args.command == 'lesson-propose':
+                result = library.propose(args.run_id, args.cue, args.voice_model)
+            elif args.command == 'lesson-publish':
+                result = library.publish(args.proposal_id, args.episodes)
+            elif args.command == 'lesson-revoke':
+                result = library.revoke(args.lesson_id, args.reason)
+            else:
+                result = [{'id': row['id'], 'kind': row['kind'], 'status': row['status'],
+                           'source': row['source'], 'scope': row['scope']} for row in library.entries()]
         else:
             result = asyncio.run(fixture_trial(args.state_dir))
     except (OSError, ValueError) as error:

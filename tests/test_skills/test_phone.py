@@ -241,7 +241,8 @@ class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "name": "Dad"
             })
 
-        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+        with patch.object(skills.phone, "get_gateways", new=AsyncMock(return_value=["/org/pipewire/Telephony/ag0"])), \
+             patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
             monitor = asyncio.create_task(voice.monitor_phone_calls())
             try:
                 await asyncio.wait_for(voice._notice_event.wait(), 1)
@@ -271,7 +272,8 @@ class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "reason": "unanswered_or_rejected",
             })
 
-        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+        with patch.object(skills.phone, "get_gateways", new=AsyncMock(return_value=["/org/pipewire/Telephony/ag0"])), \
+             patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
             monitor = asyncio.create_task(voice.monitor_phone_calls())
             try:
                 await asyncio.wait_for(voice._notice_event.wait(), 1)
@@ -300,7 +302,8 @@ class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "name": "Dad",
             })
 
-        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+        with patch.object(skills.phone, "get_gateways", new=AsyncMock(return_value=["/org/pipewire/Telephony/ag0"])), \
+             patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
             monitor = asyncio.create_task(voice.monitor_phone_calls())
             try:
                 await asyncio.wait_for(voice._notice_event.wait(), 1)
@@ -330,7 +333,8 @@ class PhoneSkillIntegrationTests(unittest.IsolatedAsyncioTestCase):
             for ev in events_to_send:
                 await callback(ev)
 
-        with patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
+        with patch.object(skills.phone, "get_gateways", new=AsyncMock(return_value=["/org/pipewire/Telephony/ag0"])), \
+             patch.object(skills.phone, "listen_for_calls", side_effect=fake_listen):
             monitor = asyncio.create_task(voice.monitor_phone_calls())
             try:
                 await asyncio.sleep(0.1)

@@ -1,5 +1,63 @@
 # Harness learning foundation
 
+## Local setup and voice-controlled integration checks
+
+The existing reviewed Harness² package can now be controlled through JARVIS's
+voice tools. This setup does not clone or install Agency Agents or any other
+repository. The Agency specialist layer remains deferred.
+
+A persistent, private state directory is initialized at `.jarvis-learning/` in
+the JARVIS checkout; the directory is Git-ignored. Start one JARVIS instance:
+
+```bash
+scripts/start-learning.sh
+```
+
+Stop an existing microphone session first. The launcher initializes the curated
+research bundle only if none is selected, then calls the normal voice launcher
+with the learning directory. It does not restart an already running service.
+`JARVIS_LEARNING_DIR` can select another state directory. For setup without
+microphone access or cloud connections, use `scripts/start-learning.sh --setup-only`.
+This opt-in session captures text and tool results as described below.
+
+Test these voice commands:
+
+1. **“Jarvis, check your Harness integration status.”** Expect the local core
+   availability and learning-enabled state. No installation or job starts.
+2. **“Jarvis, run an offline Harness integration check.”** Expect a queued job,
+   followed by a completion or failure notification. Keep talking while it runs.
+3. **“Jarvis, show the latest Harness check result.”** Expect four upstream
+   rollouts, three improvement stages and the fixture comparison. An offline
+   pass verifies integration plumbing, not smarter behavior or an adopted lesson.
+4. **“Jarvis, run another offline Harness check.”** Then **“Jarvis, cancel the
+   Harness check.”** Expect cancellation if it is still running, or an honest
+   report that it already finished. A fast check may finish before your cancel
+   request arrives.
+
+The tool names are `get_harness_status`, `start_harness_check`,
+`harness_check_status` and `cancel_harness_check`. Only one check per running
+JARVIS service is allowed; the existing state-directory lease also serializes
+refinement across processes. Recent job statuses are bounded to ten in memory
+and are lost on a voice-process restart; the underlying refinement reports and
+worktrees remain in `.jarvis-learning/refinements/`. No automatic retry occurs.
+
+Each check uses a child Python process, a private working directory, the existing
+JARVIS source and the reviewed installed Harness² core. The child is explicitly
+offline with at most 32 scripted model calls, a 120-second refinement budget and
+a 150-second parent deadline. Output is capped at 256 KiB stdout and 8 KiB
+stderr. Recognized secret environment variables are filtered from its initial
+environment. It does not inherit the repository as its working directory.
+This is trusted-local process supervision, not an OS sandbox against another
+process with the same user permissions.
+
+Cancellation and shutdown terminate only the process group created for that
+check; after three seconds a still-running group is killed. Partial artifacts
+remain for inspection. The bounded completion notification summarizes the check
+and identifies its local report. If the notification queue is full, the check
+status records a dropped notification and preserves the result for explicit
+lookup. Neither the voice tools nor launcher activate optimizer candidates or
+start paid cloud refinement. All locked voice files remain untouched.
+
 This opt-in foundation adds versioned research instructions to JARVIS's existing
 prompt and captures observed task evidence. The optional refinement command now
 invokes real Harness² over bounded research fixtures and saves proposed guidance
@@ -275,6 +333,98 @@ serialized with refinement commands in the same state directory; legacy raw
 The manifest detects accidental edits against a trusted local report. It is not
 a signature or protection against someone authorized to rewrite both the report
 and its artifacts. No candidate is selected by the build or offline tests.
+
+### Scoped experience memory and voice feedback
+
+Research experiences now reuse the existing `jarvis_memory.knowledge.KnowledgeStore`
+revision ledger in a private, separate `research-experience.sqlite3` under the
+learning state directory. They do not enter ordinary user-fact retrieval,
+embeddings or Obsidian automatically. This avoids treating an observation or
+voice correction as a standing instruction.
+
+Restart one JARVIS instance with learning enabled to test the new voice tools:
+
+```bash
+.venv/bin/python -m learning --state-dir /tmp/jarvis-voice-test init
+./run.sh --learning-dir /tmp/jarvis-voice-test
+```
+
+Say these in order:
+
+1. **“Jarvis, check your research learning status.”** It should report enabled,
+   the applicable lesson count and pending feedback. Zero validated lessons is
+   expected until a real trial has been reviewed and published.
+2. **“Jarvis, record research feedback: there was a pause before your last
+   answer.”** It should save an **unverified feedback note**, with an unknown
+   cause. This does not claim the delay was fixed.
+3. **“Jarvis, check your research learning status again.”** Pending feedback
+   should increase by one; the validated lesson count should stay unchanged.
+4. **“Jarvis, list your validated research lessons.”** It should list only
+   applicable reviewed lessons, or honestly report none.
+5. **“Jarvis, has recording that feedback already fixed the delay?”** It should
+   explain that recording feedback alone does not implement or verify a fix.
+
+The tool names are `get_learning_status`, `list_research_lessons` and
+`record_research_feedback`. The status tool also works when learning is disabled
+and reports that fact. Recording/listing requires `--learning-dir`; `--no-skills`
+disables these voice tools with the other skills. The tools cannot publish a
+lesson, select a bundle or start an optimizer. They perform local database work
+through the existing bounded file worker, outside the audio callbacks. This does
+not establish a latency improvement. Feedback is a model-mediated note, not
+proof of the user's exact words; it is attributed to the voice tool and remains
+unverified. The preceding episode is linked when available, without claiming
+that link establishes the cause of a mistake. Pending counts are scoped to the
+current project, bundle and voice model.
+
+To archive a trial candidate as a **pending** research procedure, use its run ID,
+a short applicability cue, and the actual running Live model from status:
+
+```bash
+.venv/bin/python -m learning --state-dir /tmp/jarvis-harness2-trial lesson-propose RUN_ID --cue "Research notices and missing sources" --voice-model ACTUAL_LIVE_MODEL_ID
+.venv/bin/python -m learning --state-dir /tmp/jarvis-harness2-trial lesson-list
+```
+
+The archived procedure is exactly the candidate instruction bundle, not an
+arbitrary new lesson written after its tests. Publication requires an eligible
+trial that remains selected, a matching activation intent, and six distinct
+captured checklist episodes. Run the original `voice-tests` checklist with all
+six “voice check …” markers after selecting the candidate. Review every episode
+with the existing `review EPISODE_ID pass` command only after checking its actual
+behavior. Then publish the proposal:
+
+```bash
+.venv/bin/python -m learning --state-dir /tmp/jarvis-harness2-trial lesson-publish PROPOSAL_ID --episodes HELLO_ID RESEARCH_ID UNCERTAINTY_ID CORRECTION_ID RECALL_ID INTERRUPTION_ID
+.venv/bin/python -m learning --state-dir /tmp/jarvis-harness2-trial lesson-revoke LESSON_ID --reason "Regression observed in later use"
+```
+
+Each reviewed episode must match the candidate bundle, research role and named
+voice model, contain captured input/output and an end record, and have an
+explicit user pass review. Missing, duplicate, truncated, redacted or incomplete
+evidence is rejected. Only the interruption case may end interrupted. These are
+manual acceptance observations, not independent proof of broad model quality.
+The existing narrow text checks are also recomputed before publication. No real
+lesson is automatically published by this build or by the offline test fixtures.
+
+Keys include project, model, bundle, trial and cue identities, avoiding the
+memory ledger's globally unique active-key collision across scopes. Retrieval
+checks project, research role, model, current bundle, content hash and expiry.
+The archive retains the full procedure, cue, proposal, trial reference, separate
+text/voice model identities and reviewed episode references. Voice listings are
+bounded to five excerpts of 500 characters; they remain procedural references
+and do not grant permissions or override fixed rules. A changed model or bundle
+requires new matching evidence. Published entries are retained for audit when
+revoked; rollback suppresses recall from the candidate bundle. An already-built
+optimizer context is a snapshot and is not rewritten by later revocation.
+
+Subsequent refinement runs can provide up to three published procedures (24,000
+characters total) to the upstream experience context, matching project, text
+model and baseline bundle. Feedback, proposals, transcripts and retrospective
+check outcomes are not exported with them. Publication explicitly authorizes
+this scoped reuse of the reviewed guidance. The 1,000-entry local ledger cap
+stops new feedback, proposals and publication; revocation remains available at
+the cap. The feature does not automatically delete older data.
+Recognized credential redaction applies to feedback but is not comprehensive
+personal-data detection. Keep sensitive material out of manual test requests.
 
 Validation for this change includes the new foundation tests and existing core
 agent/startup/orbit tests. Neighboring vision checks pass with temporary local

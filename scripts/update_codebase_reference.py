@@ -61,6 +61,12 @@ KNOWN_ROLES = {
     "learning/research_runtime.py": ("Bounded Native Research Runtime", "Explicit Gemini text transport, call/time budgets, fixed-corpus tools through JARVIS dispatch, and offline scripted transport."),
     "learning/refinement.py": ("Real Harness² Research Integration", "Pinned upstream recursion, isolated Git worktrees, instruction-only proposals, baseline and held-out checks, audit artifacts, and review-only candidates."),
     "learning/trials.py": ("Controlled Research Trial Gate", "Artifact integrity and provenance checks, independent reassessment, strict improvement eligibility, explicit trial selection, rollback, and bundle-aware voice checklist."),
+    "learning/experience.py": ("Scoped Research Experience", "Existing KnowledgeStore-backed proposals, manually reviewed publication, revocation, strict project/model/bundle recall, and approved-only optimizer context."),
+    "learning/service.py": ("Voice Learning Queries", "Actual learning status, bounded reviewed-procedure listings, and explicitly unverified feedback recording."),
+    "learning/jobs.py": ("Local Harness Check Supervisor", "One offline-only subprocess with bounded output/time, owned process-group cancellation, status and terminal voice notifications."),
+    "scripts/start-learning.sh": ("Local Learning Launcher", "Initialize private persistent research state and launch JARVIS with learning enabled; no repository installation."),
+    "skill_manifests/harness-local.json": ("Local Harness Voice Controls", "Dependency status, explicit offline check launch, results and cancellation; no paid runs or activation."),
+    "skill_manifests/research-learning.json": ("Voice Learning Tools", "Read-only status and lesson lookup plus unverified feedback; no model-accessible publication, optimization, or activation."),
     "learning/__main__.py": ("Learning Administration CLI", "Explicit bundle initialization, activation, restoration, evidence inspection, feedback, and cloud-free demo."),
     "docs/harness-learning.md": ("Harness Learning Foundation Guide", "Opt-in usage, bundle administration, evidence privacy/limits, offline validation, and future Harness² boundary."),
     # Modular Core Runtime

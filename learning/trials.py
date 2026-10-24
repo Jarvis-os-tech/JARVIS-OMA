@@ -30,7 +30,7 @@ def trial_root(registry, run_id):
     return registry.root / 'refinements' / run_id
 
 
-def candidate_check(state_dir, run_id):
+def candidate_check(state_dir, run_id, *, baseline_digest=None):
     registry = BundleRegistry(state_dir)
     root = trial_root(registry, run_id)
     blockers = []
@@ -46,7 +46,9 @@ def candidate_check(state_dir, run_id):
             blockers.append('Cloud model provenance is missing or inconsistent')
         if report.get('upstream_revision') != UPSTREAM_REVISION or started.get('upstream_revision') != UPSTREAM_REVISION:
             blockers.append('Upstream revision differs from the reviewed integration')
-        baseline = registry.active()
+        # Post-activation archive review may reload the recorded baseline.
+        # activate_trial always uses the current selection (the default).
+        baseline = registry.load(baseline_digest) if baseline_digest else registry.active()
         if baseline is None or baseline.digest != started.get('baseline_bundle'):
             blockers.append('Active baseline differs from the trial baseline; initialize and rerun')
         if report.get('active_bundle_unchanged') is not True or report.get('activated') is not False:

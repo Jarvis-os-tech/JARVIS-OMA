@@ -20,17 +20,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+_UNSET = object()
+
+
 class Harness2Adapter:
     """Small, failure-tolerant adapter around the optional Harness² install."""
 
     COMPONENTS = ("system_prompt", "guardrails", "memory", "tool_guidance",
                    "subagents", "skills", "scripts", "plugins")
 
-    def __init__(self, root: Path | None = None, *, executable: str | None = None):
+    def __init__(self, root: Path | None = None, *, executable: str | None = _UNSET):
         self.root = Path(root or os.environ.get(
             "JARVIS_HARNESS2_DIR", Path.home() / ".local/state/jarvis/harness2"
         )).expanduser()
-        self.executable = executable or shutil.which("harness2")
+        self.executable = shutil.which("harness2") if executable is _UNSET else executable
 
     def status(self) -> dict:
         return {
@@ -64,7 +67,6 @@ class Harness2Adapter:
                 continue
             if isinstance(lesson, str) and lesson.strip():
                 out.append(lesson.strip()[:800])
-        return out
         return out
 
     def prepare_prompt(self, prompt: str, *, agent: str, workspace: str) -> str:

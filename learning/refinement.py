@@ -260,12 +260,17 @@ def run_refinement(state_dir, *, offline=False, model=None, max_calls=32, second
             'max_calls': max_calls, 'seconds': seconds, 'activation': 'never'})
         try:
             adapter = ResearchAdapter(root, backend, bundle)
+            from .experience import ExperienceLibrary, PROJECT
+            library_path = root / 'experience-context'
+            recalled = ExperienceLibrary(state_dir).export_for_optimizer(
+                library_path, project=PROJECT, model=backend.model, bundle=bundle.digest)
             baseline = adapter.execute('release', None, 'base')
             result = run_mode('seq', 'release', 1,
                 [RunView('base', 'base', baseline, True, adapter.delivered(baseline))],
                 adapter=adapter, prop=NativeProposer(backend, adapter, root / 'proposals'),
                 work_dir=root / 'optimizer', run_id_of=lambda label: label,
-                base_tree={'AGENTS.md': bundle.instructions}, propose_workers=1, rollout_workers=1)
+                base_tree={'AGENTS.md': bundle.instructions}, propose_workers=1, rollout_workers=1,
+                library_dir=library_path if recalled else None)
             # No evaluator values reach upstream's proposer or composition stages.
             assessments = {}
             for label, rollout in result.rollouts.items():
@@ -299,6 +304,7 @@ def run_refinement(state_dir, *, offline=False, model=None, max_calls=32, second
                 'provider': backend.model, 'offline': offline, 'ledger': ledger,
                 'stages': result.to_dict()['stages'], 'assessments': assessments,
                 'holdouts': holdouts, 'model_calls': len(budget.calls), 'usage': budget.calls,
+                'experience_ids': recalled,
                 'comparison': {'baseline_checks_passed': baseline_passes,
                     'candidate_checks_passed': candidate_passes, 'checks_per_harness': 4,
                     'observed_difference': candidate_passes - baseline_passes,

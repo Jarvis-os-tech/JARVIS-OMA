@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "skills": [
+    {"name": "get_harness_status", "description": "Check whether the reviewed local Harness² core is available and learning is enabled. Summarize briefly; do not read long hashes unless asked. This does not install anything or start optimization.", "adapter": "harness.status", "parameters_json_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}},
+    {"name": "start_harness_check", "description": "Only on an explicit user request, start one OFFLINE Harness² integration check in the background. Uses scripted model responses and isolated worktrees, with no paid model calls. Returns a queued job, not proof of completion or intelligence gains. No candidate activation or repository installation occurs.", "adapter": "harness.start_check", "parameters_json_schema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}},
+    {"name": "harness_check_status", "description": "Read the latest local Harness integration check or a specified job ID. Report completed, failed or cancelled honestly. An offline pass verifies plumbing only; it does not demonstrate model improvement or activate learned guidance.", "adapter": "harness.check_status", "parameters_json_schema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": [], "additionalProperties": false}},
+    {"name": "cancel_harness_check", "description": "Cancel the user's local Harness check, or the latest check when no ID is provided. Stops only the owned background check, preserving partial artifacts for inspection.", "adapter": "harness.cancel_check", "parameters_json_schema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": [], "additionalProperties": false}}
+  ]
+}
