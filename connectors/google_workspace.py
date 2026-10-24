@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+from connectors.calendar_time import calendar_zone, calendar_interval
 
 from connectors.browser import open_url
 from connectors import credentials
@@ -42,6 +43,9 @@ TOOLS = frozenset({
     "gmail_search", "gmail_read", "gmail_create_draft", "gmail_send_draft",
     "gmail_list_labels", "calendar_list_events", "calendar_get_event",
     "calendar_create_event", "calendar_list_calendars", "tasks_list_lists",
+    "calendar_current_time", "calendar_update_event", "calendar_delete_event", "calendar_check_availability",
+    "calendar_create_calendar", "calendar_delete_calendar",
+    "calendar_add_attachment",
     "tasks_list_tasks", "tasks_create_task", "tasks_complete_task",
     "google_authorize", "google_connection_status",
     "drive_search_files", "drive_get_file", "drive_read_text_file",
@@ -464,31 +468,181 @@ def calendar_list_events(calendar_id="primary", max_results=10, time_min=None, t
     events = []
     for e in res.get("items", [])[:params["maxResults"]]:
         start, end = e.get("start", {}), e.get("end", {})
-        events.append({"id": e.get("id"), "summary": e.get("summary", "(no title)"), "start": start.get("dateTime", start.get("date", "")), "end": end.get("dateTime", end.get("date", "")), "location": e.get("location", ""), "status": e.get("status", ""), "link": e.get("htmlLink", "")})
+        events.append({"id": e.get("id"), "summary": e.get("summary", "(no title)"), "start": start.get("dateTime", start.get("date", "")), "end": end.get("dateTime", end.get("date", "")), "time_zone": start.get("timeZone", ""), "recurring_event_id": e.get("recurringEventId"), "location": e.get("location", ""), "status": e.get("status", ""), "link": e.get("htmlLink", "")})
     return {"success": True, "count": len(events), "events": events}
+
+
+def calendar_current_time(time_zone="Asia/Kolkata"):
+    try:
+        zone = calendar_zone(time_zone)
+    except ValueError as error:
+        return {"success": False, "error": str(error)}
+    now = datetime.now(zone)
+    return {"success": True, "now": now.isoformat(timespec="seconds"),
+            "today": now.date().isoformat(), "weekday": now.strftime("%A"), "time_zone": zone.key}
+
+
+def _calendar_result(event, fallback=None):
+    if "error" in event:
+        return {"success": False, **event}
+    time_verified = bool(event.get('start') and event.get('end'))
+    event = {**(fallback or {}), **event}
+    start, end = event.get("start", {}), event.get("end", {})
+    return {"success": True, "time_verified": time_verified, "id": event.get("id"), "summary": event.get("summary", ""),
+            "description": event.get("description", ""), "location": event.get("location", ""),
+            "start": start.get("dateTime", start.get("date", "")),
+            "end": end.get("dateTime", end.get("date", "")),
+            "time_zone": start.get("timeZone", ""), "recurrence": event.get("recurrence", []),
+            "recurring_event_id": event.get("recurringEventId"),
+            "reminders": event.get("reminders", {}),
+            "attendees": [item.get("email") for item in event.get("attendees", [])],
+            "link": event.get("htmlLink", "")}
+
+
+def _calendar_options(body, recurrence_rule=None, reminder_minutes=None):
+    if recurrence_rule is not None:
+        if not isinstance(recurrence_rule, str) or len(recurrence_rule) > 1000 or any(c in recurrence_rule for c in '\r\n'):
+            raise ValueError('Provide one RRULE recurrence rule, or an empty string to remove recurrence.')
+        if recurrence_rule and not recurrence_rule.startswith('RRULE:'):
+            raise ValueError('Recurrence must start with RRULE:.')
+        body['recurrence'] = [recurrence_rule] if recurrence_rule else []
+    if reminder_minutes is not None:
+        if type(reminder_minutes) is not int or not -1 <= reminder_minutes <= 40320:
+            raise ValueError('Reminder minutes must be -1 (disable) or 0 through 40320.')
+        body['reminders'] = {'useDefault': False, 'overrides': [] if reminder_minutes == -1 else
+                             [{'method': 'popup', 'minutes': reminder_minutes}]}
+
+
+def _calendar_attachments(body, attachments):
+    if attachments is None:
+        return
+    values = [item.strip() for item in attachments.split(',')] if isinstance(attachments, str) else attachments
+    if not isinstance(values, (list, tuple)) or any(not isinstance(item, str) or not item.strip() for item in values):
+        raise ValueError('Attachments must be comma-separated file URLs.')
+    parsed = []
+    for url in values:
+        url = url.strip()
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme not in {'http', 'https'} or not parts.netloc:
+            raise ValueError('Attachments must use valid http or https URLs.')
+        parsed.append({'fileUrl': url, 'title': parts.path.rsplit('/', 1)[-1] or parts.netloc})
+    body['attachments'] = parsed
 
 
 def calendar_get_event(event_id, calendar_id="primary"):
     cid, eid = urllib.parse.quote(str(calendar_id), safe=""), urllib.parse.quote(str(event_id), safe="")
     res = _api("GET", f"{CALENDAR_BASE}/calendars/{cid}/events/{eid}")
     if "error" in res: return {"success": False, "error": res["error"]}
-    start, end = res.get("start", {}), res.get("end", {})
-    return {"success": True, "id": res.get("id"), "summary": res.get("summary", ""), "description": res.get("description", ""), "start": start.get("dateTime", start.get("date", "")), "end": end.get("dateTime", end.get("date", "")), "location": res.get("location", ""), "attendees": [a.get("email") for a in res.get("attendees", [])], "link": res.get("htmlLink", "")}
+    return _calendar_result(res)
 
 
-def calendar_create_event(summary, start_datetime, end_datetime, description="", location="", attendees=None, calendar_id="primary"):
-    body = {"summary": summary, "description": description, "location": location, "start": {"dateTime": start_datetime, "timeZone": "Asia/Kolkata"}, "end": {"dateTime": end_datetime, "timeZone": "Asia/Kolkata"}}
+def calendar_create_event(summary, start_datetime, end_datetime, description="", location="", attendees=None, calendar_id="primary", time_zone="Asia/Kolkata", recurrence_rule=None, reminder_minutes=None, attachments=None):
+    try:
+        start, end = calendar_interval(start_datetime, end_datetime, time_zone)
+        body = {"summary": summary, "description": description, "location": location, "start": start, "end": end}
+        _calendar_options(body, recurrence_rule, reminder_minutes)
+        _calendar_attachments(body, attachments)
+    except ValueError as error:
+        return {"success": False, "error": str(error)}
     if attendees: body["attendees"] = [{"email": x} for x in attendees]
     cid = urllib.parse.quote(str(calendar_id), safe="")
-    res = _api("POST", f"{CALENDAR_BASE}/calendars/{cid}/events", body)
+    res = _api("POST", f"{CALENDAR_BASE}/calendars/{cid}/events", body, params={"supportsAttachments": "true"} if attachments else None)
     if "error" in res: return {"success": False, "error": res["error"]}
-    return {"success": True, "id": res.get("id"), "link": res.get("htmlLink", ""), "message": f"Event '{summary}' created."}
+    return {**_calendar_result(res, body), "message": f"Event '{summary}' created."}
+
+
+def calendar_update_event(event_id, calendar_id="primary", summary=None, start_datetime=None,
+                          end_datetime=None, time_zone="Asia/Kolkata", description=None,
+                          location=None, recurrence_rule=None, reminder_minutes=None, attachments=None):
+    body = {key: value for key, value in {'summary': summary, 'description': description, 'location': location}.items() if value is not None}
+    try:
+        if start_datetime is not None or end_datetime is not None:
+            if start_datetime is None or end_datetime is None:
+                raise ValueError('Rescheduling requires both start_datetime and end_datetime; read the existing event to preserve its duration.')
+            body['start'], body['end'] = calendar_interval(start_datetime, end_datetime, time_zone)
+        _calendar_options(body, recurrence_rule, reminder_minutes)
+        _calendar_attachments(body, attachments)
+        if not body:
+            raise ValueError('Provide at least one event field to update.')
+    except ValueError as error:
+        return {'success': False, 'error': str(error)}
+    cid, eid = urllib.parse.quote(str(calendar_id), safe=''), urllib.parse.quote(str(event_id), safe='')
+    return _calendar_result(_api('PATCH', f'{CALENDAR_BASE}/calendars/{cid}/events/{eid}', body,
+                                 params={'supportsAttachments': 'true'} if attachments is not None else None), body)
+
+
+def calendar_delete_event(event_id, calendar_id="primary"):
+    cid, eid = urllib.parse.quote(str(calendar_id), safe=''), urllib.parse.quote(str(event_id), safe='')
+    result = _api('DELETE', f'{CALENDAR_BASE}/calendars/{cid}/events/{eid}')
+    if 'error' in result:
+        return {'success': False, **result}
+    return {'success': True, 'id': event_id, 'deleted': True}
+
+
+def calendar_add_attachment(event_id, file_url, title=None, calendar_id="primary"):
+    try:
+        parts = urllib.parse.urlsplit(file_url)
+        if parts.scheme not in {'http', 'https'} or not parts.netloc:
+            raise ValueError('Attachment must use a valid http or https URL.')
+    except (TypeError, ValueError) as error:
+        return {'success': False, 'error': str(error)}
+    cid, eid = urllib.parse.quote(str(calendar_id), safe=''), urllib.parse.quote(str(event_id), safe='')
+    current = _api('GET', f'{CALENDAR_BASE}/calendars/{cid}/events/{eid}')
+    if 'error' in current:
+        return {'success': False, **current}
+    attachments = list(current.get('attachments', []))
+    attachments.append({'fileUrl': file_url, 'title': title or parts.path.rsplit('/', 1)[-1] or parts.netloc})
+    result = _api('PATCH', f'{CALENDAR_BASE}/calendars/{cid}/events/{eid}', {'attachments': attachments}, params={'supportsAttachments': 'true'})
+    return _calendar_result(result, current)
+
+
+def calendar_check_availability(start_datetime, end_datetime, calendar_id="primary", time_zone="Asia/Kolkata"):
+    try:
+        start, end = calendar_interval(start_datetime, end_datetime, time_zone)
+    except ValueError as error:
+        return {'success': False, 'error': str(error)}
+    result = _api('POST', f'{CALENDAR_BASE}/freeBusy', {'timeMin': start['dateTime'], 'timeMax': end['dateTime'],
+                  'timeZone': start['timeZone'], 'items': [{'id': calendar_id}]})
+    if 'error' in result:
+        return {'success': False, **result}
+    calendars = result.get('calendars', {})
+    calendar = calendars.get(calendar_id)
+    if calendar is None and calendar_id == 'primary' and len(calendars) == 1:
+        calendar = next(iter(calendars.values()))
+    if calendar is None or calendar.get('errors'):
+        return {'success': False, 'error': 'Calendar availability could not be verified.'}
+    return {'success': True, 'busy': calendar.get('busy', []), 'available': not calendar.get('busy'), 'time_zone': start['timeZone']}
 
 
 def calendar_list_calendars():
     res = _api("GET", f"{CALENDAR_BASE}/users/me/calendarList")
     if "error" in res: return {"success": False, "error": res["error"]}
     return {"success": True, "calendars": [{"id": x["id"], "summary": x.get("summary", ""), "primary": x.get("primary", False)} for x in res.get("items", [])[:50]]}
+
+
+def calendar_create_calendar(summary, description="", location="", time_zone="Asia/Kolkata"):
+    if not isinstance(summary, str) or not summary.strip():
+        return {"success": False, "error": "Calendar name is required."}
+    try:
+        zone = calendar_zone(time_zone)
+    except ValueError as error:
+        return {"success": False, "error": str(error)}
+    body = {"summary": summary.strip(), "description": description or "", "location": location or "", "timeZone": zone.key}
+    result = _api("POST", f"{CALENDAR_BASE}/calendars", body)
+    if "error" in result:
+        return {"success": False, **result}
+    return {"success": True, "id": result.get("id"), "summary": result.get("summary", body["summary"]),
+            "description": result.get("description", body["description"]), "time_zone": result.get("timeZone", zone.key)}
+
+
+def calendar_delete_calendar(calendar_id):
+    if not isinstance(calendar_id, str) or not calendar_id.strip() or calendar_id == "primary":
+        return {"success": False, "error": "Provide the exact non-primary calendar ID to delete."}
+    cid = urllib.parse.quote(calendar_id, safe="")
+    result = _api("DELETE", f"{CALENDAR_BASE}/calendars/{cid}")
+    if "error" in result:
+        return {"success": False, **result}
+    return {"success": True, "id": calendar_id, "deleted": True}
 
 
 def tasks_list_lists():
@@ -738,8 +892,15 @@ _DISPATCH = {
     "gmail_list_labels": lambda a: gmail_list_labels(),
     "calendar_list_events": lambda a: calendar_list_events(a.get("calendar_id", "primary"), a.get("max_results", 10), a.get("time_min"), a.get("time_max"), a.get("query")),
     "calendar_get_event": lambda a: calendar_get_event(a["event_id"], a.get("calendar_id", "primary")),
-    "calendar_create_event": lambda a: calendar_create_event(a["summary"], a["start_datetime"], a["end_datetime"], a.get("description", ""), a.get("location", ""), a.get("attendees"), a.get("calendar_id", "primary")),
+    "calendar_create_event": lambda a: calendar_create_event(a["summary"], a["start_datetime"], a["end_datetime"], a.get("description", ""), a.get("location", ""), a.get("attendees"), a.get("calendar_id", "primary"), a.get("time_zone", "Asia/Kolkata"), a.get("recurrence_rule"), a.get("reminder_minutes"), a.get("attachments")),
     "calendar_list_calendars": lambda a: calendar_list_calendars(),
+    "calendar_current_time": lambda a: calendar_current_time(a.get("time_zone", "Asia/Kolkata")),
+    "calendar_update_event": lambda a: calendar_update_event(**a),
+    "calendar_delete_event": lambda a: calendar_delete_event(a["event_id"], a.get("calendar_id", "primary")),
+    "calendar_add_attachment": lambda a: calendar_add_attachment(a["event_id"], a["file_url"], a.get("title"), a.get("calendar_id", "primary")),
+    "calendar_check_availability": lambda a: calendar_check_availability(**a),
+    "calendar_create_calendar": lambda a: calendar_create_calendar(**a),
+    "calendar_delete_calendar": lambda a: calendar_delete_calendar(a["calendar_id"]),
     "tasks_list_lists": lambda a: tasks_list_lists(),
     "tasks_list_tasks": lambda a: tasks_list_tasks(a.get("list_id", "@default")),
     "tasks_create_task": lambda a: tasks_create_task(a["title"], a.get("list_id", "@default")),
