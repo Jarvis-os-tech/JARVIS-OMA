@@ -199,6 +199,25 @@ class SystemControlUnitTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(res["executed"], "Terminal")
             mock_run.assert_awaited_once()
 
+    @patch("shutil.which", return_value="/usr/bin/hyprctl")
+    @patch("system_control._run_command", new_callable=AsyncMock)
+    async def test_execute_desktop_voice_window_commands(self, mock_run, _which):
+        mock_run.return_value = (0, "ok", "")
+        # Test tile left
+        res1 = await system_control.execute_desktop_command("tile left")
+        self.assertEqual(res1["status"], "success")
+        self.assertEqual(res1["action"], "movewindow l")
+
+        # Test fullscreen
+        res2 = await system_control.execute_desktop_command("fullscreen")
+        self.assertEqual(res2["status"], "success")
+        self.assertEqual(res2["action"], "fullscreen")
+
+        # Test new workspace
+        res3 = await system_control.execute_desktop_command("new workspace")
+        self.assertEqual(res3["status"], "success")
+        self.assertEqual(res3["action"], "workspace e+1")
+
     @patch("shutil.which", return_value="/usr/bin/omarchy-shell")
     @patch("system_control._run_command", new_callable=AsyncMock)
     async def test_list_bar_panels(self, mock_run, _which):
