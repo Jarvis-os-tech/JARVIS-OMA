@@ -8,6 +8,31 @@ from config import Config, load_config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_native_webrtc_gain_requires_native_backend_and_boolean_settings(self):
+        cfg = Config()
+        cfg.audio.native_webrtc_gain = True
+        with self.assertRaisesRegex(ValueError, 'requires the native backend'):
+            cfg.validate()
+        cfg.audio.backend = 'native'
+        cfg.validate()
+        for name in ('native_webrtc_gain', 'start_muted'):
+            for invalid in ('true', 1, None):
+                with self.subTest(name=name, invalid=invalid):
+                    candidate = Config()
+                    setattr(candidate.audio, name, invalid)
+                    with self.assertRaisesRegex(ValueError, 'must be a boolean'):
+                        candidate.validate()
+
+    def test_native_gain_and_start_mute_environment_override_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('[audio]\nbackend = "native"\nnative_webrtc_gain = false\nstart_muted = false\n')
+            with patch.dict(os.environ, {'JARVIS_NATIVE_WEBRTC_GAIN': 'true',
+                                         'JARVIS_START_MUTED': 'true'}):
+                cfg = load_config(path)
+            self.assertTrue(cfg.audio.native_webrtc_gain)
+            self.assertTrue(cfg.audio.start_muted)
+
     @patch('config._find_config_file', return_value=None)
     def test_default_config(self, _mock_find):
         cfg = load_config(path=None)
@@ -265,6 +290,8 @@ class ConfigTests(unittest.TestCase):
     def test_invalid_audio_environment_override_is_not_silently_ignored(self, _mock_find):
         for key, value in [('JARVIS_MIC_VOLUME_PERCENT', 'loud'),
                            ('JARVIS_NOISE_SUPPRESSION', 'maybe'),
+                           ('JARVIS_NATIVE_WEBRTC_GAIN', 'maybe'),
+                           ('JARVIS_START_MUTED', 'maybe'),
                            ('JARVIS_PLAYBACK_CUSHION_S', 'nan')]:
             with self.subTest(key=key), patch.dict(os.environ, {key: value}):
                 with self.assertRaises(ValueError):

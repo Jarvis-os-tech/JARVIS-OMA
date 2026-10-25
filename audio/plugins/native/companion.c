@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <math.h>
+#include "webrtc_gain.h"
 
 #define CAPACITY 262144u
 #define MASK (CAPACITY - 1u)
@@ -202,7 +203,16 @@ static int self_test(void) {
 }
 int main(int argc,char **argv) {
     if(argc==2 && !strcmp(argv[1],"--self-test")) return self_test();
-    if(argc!=4) { fprintf(stderr,"usage: jarvis-audio SOURCE SINK PREBUFFER_MS\n"); return 2; }
+    if(argc==2 && !strcmp(argv[1],"--self-test-webrtc-gain")) return jarvis_webrtc_gain_self_test();
+    if(argc==2 && !strcmp(argv[1],"--capabilities")) {
+        printf("{\"webrtc_gain\":%s,\"implementation\":\"webrtc-audio-processing-1\",\"version\":\"%s\"}\n",
+               jarvis_webrtc_gain_available()?"true":"false",jarvis_webrtc_gain_version());
+        return 0;
+    }
+    bool webrtc_gain=argc==5 && !strcmp(argv[4],"--webrtc-gain");
+    if(argc!=4 && !webrtc_gain) {
+        fprintf(stderr,"usage: jarvis-audio SOURCE SINK PREBUFFER_MS [--webrtc-gain]\n"); return 2;
+    }
     uint16_t endian=1; if(*(uint8_t*)&endian!=1) return 2;
     signal(SIGPIPE,SIG_IGN);
     struct runtime *r=calloc(1,sizeof(*r)); if(!r) return 2;
@@ -211,12 +221,28 @@ int main(int argc,char **argv) {
     for(size_t i=0;i<sizeof(*r);i+=4096) pages[i]=0;
     r->prebuffer=(uint32_t)strtoul(argv[3],NULL,10)*24;
     if(r->prebuffer>24000) { free(r); return 2; }
+    struct jarvis_webrtc_gain *gain=NULL;
+    if(webrtc_gain) {
+        int status=jarvis_webrtc_gain_create(1,&gain);
+        if(status) {
+            fprintf(stderr,"WebRTC gain startup failed (%d): %s\n",status,
+                    status==JARVIS_WEBRTC_GAIN_UNAVAILABLE?
+                    "companion built without webrtc-audio-processing-1 support":
+                    "audio processor initialization failed");
+            free(r); return 2;
+        }
+    }
     /* These environment variables must not override our independent targets. */
     unsetenv("PIPEWIRE_NODE"); unsetenv("PIPEWIRE_QUANTUM"); unsetenv("PIPEWIRE_LATENCY");
     pw_init(&argc,&argv); r->loop=pw_thread_loop_new("jarvis-audio",NULL);
-    if(!r->loop) { free(r); return 2; }
+    if(!r->loop) { jarvis_webrtc_gain_destroy(gain); pw_deinit(); free(r); return 2; }
     r->input=open_stream(r,argv[1],true); r->output=open_stream(r,argv[2],false);
-    if(!r->input || !r->output || pw_thread_loop_start(r->loop)<0) return 2;
+    if(!r->input || !r->output || pw_thread_loop_start(r->loop)<0) {
+        if(r->input) pw_stream_destroy(r->input);
+        if(r->output) pw_stream_destroy(r->output);
+        pw_thread_loop_destroy(r->loop); pw_deinit();
+        jarvis_webrtc_gain_destroy(gain); free(r); return 2;
+    }
     fcntl(STDIN_FILENO,F_SETFL,O_NONBLOCK); fcntl(STDOUT_FILENO,F_SETFL,O_NONBLOCK);
     _Alignas(8) uint8_t input[MAX_PAYLOAD+16],output[MAX_PAYLOAD+16]; size_t have=0,pending=0,sent=0;
     uint64_t stats_at=0,unready_since=0; bool ready=false,stop=false; int result=0;
@@ -284,11 +310,19 @@ int main(int argc,char **argv) {
             put64(output+16,end>count*62500?end-count*62500:0);
             pop(&r->capture,(int16_t*)(output+24),320);
             if(atomic_load(&r->muted)) memset(output+24,0,640);
+            else if(gain) {
+                /* APM owns internal state and may allocate: run exclusively
+                 * here on the control thread, never in PipeWire callbacks. */
+                int16_t *samples=(int16_t*)(output+24);
+                int status=jarvis_webrtc_gain_process(gain,samples,160);
+                if(!status) status=jarvis_webrtc_gain_process(gain,samples+160,160);
+                if(status) { fprintf(stderr,"WebRTC gain processing failed: %d\n",status); result=4; break; }
+            }
             type=CAPTURE; len=648;
         }
         if(type) {put32(output,MAGIC);put32(output+4,type);put32(output+8,atomic_load(&r->generation));put32(output+12,len);pending=16+len;}
     }
     if(atomic_load(&r->failed)) result=1;
     pw_thread_loop_stop(r->loop); pw_stream_destroy(r->input); pw_stream_destroy(r->output);
-    pw_thread_loop_destroy(r->loop); pw_deinit(); free(r); return result;
+    pw_thread_loop_destroy(r->loop); pw_deinit(); jarvis_webrtc_gain_destroy(gain); free(r); return result;
 }

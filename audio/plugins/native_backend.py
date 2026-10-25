@@ -61,11 +61,14 @@ class NativeCompanionEngine:
     """Device I/O in a native process, cloud/session orchestration in Python."""
     def __init__(self, loop=None, *, input_rate=16000, output_rate=24000,
                  input_frame_ms=20, output_frame_ms=20,
-                 native_cushion_s=0.08, queue_max_seconds=10, helper=HELPER, **kwargs):
+                 native_cushion_s=0.08, native_webrtc_gain=False,
+                 queue_max_seconds=10, helper=HELPER, **kwargs):
         if (input_rate, output_rate, input_frame_ms, output_frame_ms) != (16000, 24000, 20, 20):
             raise ValueError('native audio currently requires 16/24 kHz mono and 20 ms frames')
         if not 0 <= native_cushion_s <= 1 or not 1 <= queue_max_seconds <= 10:
             raise ValueError('native cushion must be 0..1 s and backlog 1..10 s')
+        if type(native_webrtc_gain) is not bool:
+            raise ValueError('native_webrtc_gain must be a boolean')
         self.loop = loop or asyncio.get_running_loop()
         self.helper = Path(helper)
         self.output_frame_bytes = 960
@@ -78,6 +81,7 @@ class NativeCompanionEngine:
         self.on_barge_in = self.on_state_change = None
         self.async_input_queue = CaptureQueue()
         self.native_cushion_s = native_cushion_s
+        self.native_webrtc_gain = native_webrtc_gain
         self._max_pending = queue_max_seconds * 48000
         self._process = None
         self._pending = deque()
@@ -123,8 +127,11 @@ class NativeCompanionEngine:
         self._stderr_tail.clear()
         self._last_message = time.monotonic()
         self._generation_samples = self._render_baseline = self._rendered = 0
+        command = [str(self.helper), source, sink, str(round(self.native_cushion_s * 1000))]
+        if self.native_webrtc_gain:
+            command.append('--webrtc-gain')
         self._process = subprocess.Popen(
-            [str(self.helper), source, sink, str(round(self.native_cushion_s * 1000))],
+            command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             bufsize=0, close_fds=True)
         for stream in (self._process.stdin, self._process.stdout, self._process.stderr):

@@ -32,6 +32,7 @@ from echo_cancel import EchoCancellation
 from skills import DesktopSkills, SkillError
 from audio.engine import NativeAudioEngine, StreamLostError
 from audio.downstream import DownstreamRouter
+from audio.extension import ExtendedAudioEngine
 from audio.plugins.standby import StandbyController
 from audio.plugins.native_backend import NativeCompanionEngine
 from orchestration.groq_tool_router import (
@@ -767,6 +768,15 @@ class LiveVoice:
                     self.stale_microphone_frames_discarded += 1
                     continue
                 async with self.send_lock:
+                    if isinstance(self.engine, ExtendedAudioEngine):
+                        # Keep capture deadlines/draining in the base queue;
+                        # extensions see only frames actually bound for cloud.
+                        if self.standby is not None and self.standby.engaged:
+                            self.stale_microphone_frames_discarded += 1
+                            continue
+                        chunk = self.engine.process_input_frame(chunk)
+                        if chunk is None:
+                            continue
                     await asyncio.wait_for(
                         session.send_realtime_input(
                             audio=types.Blob(
@@ -1427,6 +1437,8 @@ class LiveVoice:
                                 not self._wake_audio_received):
                             self._wake_audio_received = True
                             log.info('Wake confirmation audio received; playback started')
+                        if isinstance(self.engine, ExtendedAudioEngine):
+                            self.engine.mark_turn_started()
                         self.router.feed(blob.data)
             memory_config = getattr(self.config, 'memory', None)
             if self.skills is not None and memory_config and memory_config.enabled and (
@@ -1846,15 +1858,16 @@ async def recover_audio(engine, source, sink, retries):
     """Reopen audio before reconnecting; never continue with absent streams."""
     if type(retries) is not int or retries < 0:
         raise ValueError('audio recovery retries must be a nonnegative integer')
+    base_engine = engine.base_engine if isinstance(engine, ExtendedAudioEngine) else engine
     engine.handle_barge_in()
     for attempt in range(retries + 1):
-        if isinstance(engine, NativeCompanionEngine):
+        if isinstance(base_engine, NativeCompanionEngine):
             await engine.aclose()
         else:
             engine.terminate()
         try:
             engine.start(source, sink)
-            if isinstance(engine, NativeCompanionEngine):
+            if isinstance(base_engine, NativeCompanionEngine):
                 await engine.wait_ready(source, sink)
             return
         except Exception as error:
@@ -1927,9 +1940,10 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
         loop = asyncio.get_running_loop()
         engine_factory = NativeCompanionEngine if config.audio.backend == 'native' else NativeAudioEngine
         backend_options = ({'native_cushion_s': config.audio.native_cushion_s,
-                            'queue_max_seconds': config.audio.queue_max_seconds}
+                            'queue_max_seconds': config.audio.queue_max_seconds,
+                            'native_webrtc_gain': config.audio.native_webrtc_gain}
                            if config.audio.backend == 'native' else {})
-        audio_engine = engine_factory(
+        base_audio_engine = engine_factory(
             loop,
             **backend_options,
             input_rate=config.audio.input_sample_rate,
@@ -1950,6 +1964,9 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
             allow_barge_in=(config.audio.local_barge_in and
                             config.vad.activity_handling != 'NO_INTERRUPTION'),
         )
+        audio_engine = ExtendedAudioEngine(base_engine=base_audio_engine)
+        if config.audio.start_muted:
+            audio_engine.set_muted(True)
         audio_engine.start(echo.source, echo.sink)
         if config.audio.backend == 'native':
             await audio_engine.wait_ready(echo.source, echo.sink)
@@ -2005,6 +2022,10 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                     'barge_enabled': getattr(audio_engine, 'allow_barge_in', False),
                     'aec_input_bound': getattr(audio_engine, '_aec_input_bound', False),
                     'audio_backend': config.audio.backend,
+                    'native_webrtc_gain': bool(config.audio.backend == 'native' and
+                                               config.audio.native_webrtc_gain),
+                    'extension_processor_errors': audio_engine.registry.processor_errors,
+                    'extension_invalid_results': audio_engine.registry.invalid_results,
                     'response_wait_seconds': (round(time.monotonic() - voice._thinking_since, 1)
                                               if voice._thinking_since is not None else 0),
                     'native_callback_max_ns': getattr(audio_engine, 'callback_max_ns', None),
@@ -2196,7 +2217,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                 if audio_engine is not None:
                     try:
                         audio_engine.terminate()
-                        if isinstance(audio_engine, NativeCompanionEngine):
+                        if isinstance(audio_engine.base_engine, NativeCompanionEngine):
                             await audio_engine.aclose()
                     except Exception as error:
                         log.warning('Audio cleanup failed: %s', type(error).__name__)
@@ -2262,6 +2283,18 @@ def main():
                 parser.error('Build native audio first: make -C audio/plugins/native')
             if shutil.which('pw-dump') is None:
                 parser.error('Native audio requires pw-dump for graph verification')
+            if cfg.audio.native_webrtc_gain:
+                try:
+                    capabilities = subprocess.run(
+                        [str(HELPER), '--capabilities'], capture_output=True,
+                        text=True, check=True, timeout=3)
+                    supported = json.loads(capabilities.stdout)
+                    if not isinstance(supported, dict) or supported.get('webrtc_gain') is not True:
+                        raise ValueError('WebRTC gain processing is unavailable')
+                except (OSError, subprocess.SubprocessError, ValueError) as error:
+                    raise ValueError(
+                        'Native WebRTC gain was requested but the helper does not support it; '
+                        'rebuild with: make -C audio/plugins/native clean all') from error
         check_skills = None if not cfg.skills.enabled else DesktopSkills(args.skill_dir or None, config=cfg)
         types.LiveConnectConfig.model_validate(live_config(cfg.agent.voice, skills=check_skills, config=cfg))
     except ImportError:

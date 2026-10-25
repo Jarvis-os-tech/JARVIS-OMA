@@ -5,6 +5,7 @@ import struct
 import subprocess
 import time
 import unittest
+from unittest.mock import patch
 
 from audio.engine import StreamLostError
 from audio.plugins.native_backend import (
@@ -15,6 +16,24 @@ from audio.plugins.native_backend import (
 class NativeBackendTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.engine = NativeCompanionEngine()
+
+    async def test_gain_is_explicitly_requested_from_native_helper(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled):
+                engine = NativeCompanionEngine(native_webrtc_gain=enabled)
+                with patch.object(Path, 'is_file', return_value=True), \
+                     patch('audio.plugins.native_backend.subprocess.Popen',
+                           side_effect=OSError('test: no process opened')) as launch:
+                    with self.assertRaises(OSError):
+                        engine.start('cleaned-source', 'reference-sink')
+                args = launch.call_args.args[0]
+                self.assertEqual('--webrtc-gain' in args, enabled)
+                self.assertEqual(args[1:4], ['cleaned-source', 'reference-sink', '80'])
+
+    def test_gain_flag_rejects_ambiguous_values(self):
+        for value in ('true', 1, None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                NativeCompanionEngine(native_webrtc_gain=value)
 
     async def test_capture_expiration_and_mute_before_native_ack(self):
         old = struct.pack('<Q', time.monotonic_ns() - 200_000_000) + b'\x01\0' * 320
