@@ -49,6 +49,8 @@ class AudioConfig:
     """Audio capture and playback parameters."""
     backend: str = 'legacy'
     native_cushion_s: float = 0.08
+    native_webrtc_gain: bool = False
+    start_muted: bool = False
     input_sample_rate: int = 16000
     output_sample_rate: int = 24000
     input_frame_ms: int = 20
@@ -73,6 +75,11 @@ class AudioConfig:
     def validate(self):
         if self.backend not in ('legacy', 'native'):
             raise ValueError('audio.backend must be legacy or native')
+        for name in ('native_webrtc_gain', 'start_muted'):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f'audio.{name} must be a boolean')
+        if self.native_webrtc_gain and self.backend != 'native':
+            raise ValueError('audio.native_webrtc_gain requires the native backend')
         if (type(self.native_cushion_s) not in (int, float) or
                 not math.isfinite(self.native_cushion_s) or not 0 <= self.native_cushion_s <= 1):
             raise ValueError('audio.native_cushion_s must be between 0 and 1')
@@ -366,6 +373,8 @@ def _apply_env_overrides(config: Config):
         'JARVIS_NOISE_SUPPRESSION': ('audio', 'noise_suppression'),
         'JARVIS_AUDIO_BACKEND': ('audio', 'backend'),
         'JARVIS_NATIVE_CUSHION_S': ('audio', 'native_cushion_s'),
+        'JARVIS_NATIVE_WEBRTC_GAIN': ('audio', 'native_webrtc_gain'),
+        'JARVIS_START_MUTED': ('audio', 'start_muted'),
         'JARVIS_LOCAL_BARGE_IN': ('audio', 'local_barge_in'),
         'JARVIS_MIC_VOLUME_PERCENT': ('audio', 'mic_volume_percent'),
         'JARVIS_PLAYBACK_CUSHION_S': ('audio', 'playback_cushion_s'),

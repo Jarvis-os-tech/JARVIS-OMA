@@ -11,9 +11,9 @@ from audio.echo_cancel import EchoCancellation
 from audio.plugins.native_backend import NativeCompanionEngine
 
 
-async def probe(duration=0):
+async def probe(duration=0, *, webrtc_gain=False):
     echo = EchoCancellation()
-    engine = NativeCompanionEngine()
+    engine = NativeCompanionEngine(native_webrtc_gain=webrtc_gain)
     try:
         await echo.start(noise_suppression=True)
         engine.start(echo.source, echo.sink)
@@ -49,6 +49,7 @@ async def probe(duration=0):
         await asyncio.sleep(.3)
         assert not engine._failed, engine._failed
         print(json.dumps({'ready': True, 'links_verified': engine._aec_input_bound,
+                          'webrtc_gain_requested': engine.native_webrtc_gain,
                           'capture_frame_bytes': len(frame), 'rendered_samples': engine._rendered,
                           'callback_max_ns': engine.callback_max_ns,
                           'starved_samples': engine._starved}))
@@ -60,7 +61,8 @@ async def probe(duration=0):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--duration', type=float, default=0, help='Additional silent streaming seconds')
+    parser.add_argument('--webrtc-gain', action='store_true', help='Enable native WebRTC capture gain processing')
     args = parser.parse_args()
     if not 0 <= args.duration <= 300:
         parser.error('duration must be between 0 and 300 seconds')
-    asyncio.run(probe(args.duration))
+    asyncio.run(probe(args.duration, webrtc_gain=args.webrtc_gain))
