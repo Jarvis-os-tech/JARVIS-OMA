@@ -2,7 +2,7 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-25 09:38:45 IST`
+> **Last Verified & Synchronized**: `2026-10-25 09:57:18 IST`
 > **Active Working Branch**: `main` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
@@ -38,10 +38,11 @@
 ### Branch & Remote Status
 *   **Active Working Branch**: `main`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `9de3581b7d4b6a1eba8cc3464fabfc4e458929dc` (`9de3581`)
-*   **Latest Commit Subject**: `test(skills): add unit tests for desktop window voice commands`
+*   **Latest Commit SHA**: `3f80603f62a62c1116ada52ed6e790be5f4fbee4` (`3f80603`)
+*   **Latest Commit Subject**: `feat(orchestration): partition local system tools for groq routing and update codebase reference`
 
 ### Commit History (Recent Log)
+*   `3f80603` (2026-10-25): **feat(orchestration): partition local system tools for groq routing and update codebase reference**
 *   `9de3581` (2026-10-25): **test(skills): add unit tests for desktop window voice commands**
 *   `624b60e` (2026-10-25): **feat(mode): update agent prompts, jarvisctl CLI, system launcher, and tests on dev**
 *   `6a29f1f` (2026-10-25): **fix(audio): support optional active_generation and muted attributes in extended engine**
@@ -56,14 +57,14 @@
 *   `0305377` (2026-10-24): **fix: apply verified security and runtime repairs (S04-S09, E01-E10)**
 *   `ae5938e` (2026-10-21): **feat: integrate CLI-Anything hub skills, universal memory MCP service, and voice lock enforcement**
 *   `bd43684` (2026-10-20): **feat(orchestration): integrate harness2 adapter for agent context and outcome tracking**
-*   `78c07cb` (2026-10-20): **feat(orchestration): decouple ao integration and enable native tmux multi-agent launching**
 
 ### Working Tree Telemetry
 ```text
-M CODEBASE_REFERENCE.md
- M core/agent.py
- M orchestration/groq_tool_router.py
- M tests/test_orchestration/test_groq_tool_router.py
+M skills/system_control.py
+ D ui/omarchy-ai.orbit/AuraFieldOrbit.qml
+ D ui/omarchy-ai.orbit/OrbitOverlay.qml
+ D ui/omarchy-ai.orbit/manifest.json
+?? ui/island/
 ```
 
 ---
@@ -184,9 +185,9 @@ sequenceDiagram
 
 ---
 
-## 5. Complete Module Map (All 494 Files)
+## 5. Complete Module Map (All 495 Files)
 
-Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (494 files cataloged across modular subsections with zero omissions):
+Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (495 files cataloged across modular subsections with zero omissions):
 
 ### 5.1 Modular Core Runtime (`core/`) (9 files)
 
@@ -300,7 +301,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [skills/native/src/vision_ctrl.cpp](file:///home/g0pi/Projects/JARVIS-OMA/skills/native/src/vision_ctrl.cpp) | 316 | 12114 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/overlay_client.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/overlay_client.py) | 74 | 2118 | Native Wayland Overlay Client | Standalone WebKitGTK / GTK3 transparent window client launching JarvisInputBar strictly at 600x50 with RGBA transparency and zero compositor framing. |
 | [skills/skills.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/skills.py) | 2861 | 139238 | Desktop Skills Registry & Dispatcher | Discovers JSON manifests, validates strict argument schemas, maps 110 tools to safe adapters, enforces command dependencies, and degrades gracefully. |
-| [skills/system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_control.py) | 1429 | 65838 | System Control Adapters | Desktop system control adapters for volume, brightness, power state, and workspace navigation. |
+| [skills/system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_control.py) | 1441 | 66190 | System Control Adapters | Desktop system control adapters for volume, brightness, power state, and workspace navigation. |
 | [skills/system_extensions.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_extensions.py) | 177 | 9316 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/system_information.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_information.py) | 301 | 17458 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
@@ -1271,4 +1272,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-25 09:38:45 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-25 09:57:18 IST`.*

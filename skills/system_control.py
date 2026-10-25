@@ -431,7 +431,13 @@ async def _get_bindings() -> list[dict[str, Any]]:
     if _cached_bindings is not None and (now - _cached_bindings_time) < _BINDINGS_CACHE_TTL:
         return _cached_bindings
 
-    script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
+    user_script = Path.home() / ".local/bin/omarchy-menu-keybindings"
+    if user_script.exists():
+        script_path = str(user_script)
+    elif Path(_KEYBINDINGS_SCRIPT).exists():
+        script_path = _KEYBINDINGS_SCRIPT
+    else:
+        script_path = shutil.which("omarchy-menu-keybindings")
     if not script_path:
         return []
 
@@ -547,7 +553,13 @@ async def execute_desktop_command(title: str) -> dict[str, Any]:
             return {"status": "success", "executed": target, "action": VOICE_TO_HYPR[target]}
         return {"status": "error", "message": stderr or stdout or "hyprctl dispatch failed"}
 
-    script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
+    user_script = Path.home() / ".local/bin/omarchy-menu-keybindings"
+    if user_script.exists():
+        script_path = str(user_script)
+    elif Path(_KEYBINDINGS_SCRIPT).exists():
+        script_path = _KEYBINDINGS_SCRIPT
+    else:
+        script_path = shutil.which("omarchy-menu-keybindings")
     if not script_path:
         return {"status": "error", "message": "omarchy-menu-keybindings is not installed"}
 
