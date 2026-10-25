@@ -2,7 +2,7 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-25 09:57:18 IST`
+> **Last Verified & Synchronized**: `2026-10-25 11:22:31 IST`
 > **Active Working Branch**: `main` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
@@ -38,10 +38,11 @@
 ### Branch & Remote Status
 *   **Active Working Branch**: `main`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `3f80603f62a62c1116ada52ed6e790be5f4fbee4` (`3f80603`)
-*   **Latest Commit Subject**: `feat(orchestration): partition local system tools for groq routing and update codebase reference`
+*   **Latest Commit SHA**: `646ff81afd7a987a515089189827f2a6734c3c7f` (`646ff81`)
+*   **Latest Commit Subject**: `feat(skills): prioritize user keybindings script and jarvis commands`
 
 ### Commit History (Recent Log)
+*   `646ff81` (2026-10-25): **feat(skills): prioritize user keybindings script and jarvis commands**
 *   `3f80603` (2026-10-25): **feat(orchestration): partition local system tools for groq routing and update codebase reference**
 *   `9de3581` (2026-10-25): **test(skills): add unit tests for desktop window voice commands**
 *   `624b60e` (2026-10-25): **feat(mode): update agent prompts, jarvisctl CLI, system launcher, and tests on dev**
@@ -56,14 +57,12 @@
 *   `5d15f3b` (2026-10-24): **feat(calendar): add IST normalization and full calendar management tools**
 *   `0305377` (2026-10-24): **fix: apply verified security and runtime repairs (S04-S09, E01-E10)**
 *   `ae5938e` (2026-10-21): **feat: integrate CLI-Anything hub skills, universal memory MCP service, and voice lock enforcement**
-*   `bd43684` (2026-10-20): **feat(orchestration): integrate harness2 adapter for agent context and outcome tracking**
 
 ### Working Tree Telemetry
 ```text
-M skills/system_control.py
- D ui/omarchy-ai.orbit/AuraFieldOrbit.qml
- D ui/omarchy-ai.orbit/OrbitOverlay.qml
- D ui/omarchy-ai.orbit/manifest.json
+M scripts/jarvis
+ M scripts/jarvisctl.py
+ M tests/test_scripts/test_jarvisctl.py
 ?? ui/island/
 ```
 
@@ -185,9 +184,9 @@ sequenceDiagram
 
 ---
 
-## 5. Complete Module Map (All 495 Files)
+## 5. Complete Module Map (All 498 Files)
 
-Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (495 files cataloged across modular subsections with zero omissions):
+Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (498 files cataloged across modular subsections with zero omissions):
 
 ### 5.1 Modular Core Runtime (`core/`) (9 files)
 
@@ -515,10 +514,10 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [scripts/import_connector_credentials.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/import_connector_credentials.py) | 69 | 3492 | Connector Credential Importer | Securely imports and validates connector credentials into local storage. |
 | [scripts/install-service.sh](file:///home/g0pi/Projects/JARVIS-OMA/scripts/install-service.sh) | 13 | 675 | Systemd Service Installer | Automates installation, enablement, and user daemon management for jarvis-oma.service. |
 | [scripts/install_system_jarvis.sh](file:///home/g0pi/Projects/JARVIS-OMA/scripts/install_system_jarvis.sh) | 54 | 1744 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [scripts/jarvis](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvis) | 67 | 1995 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvis](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvis) | 78 | 2392 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/jarvis_mode.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvis_mode.py) | 272 | 9802 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [scripts/jarvisctl](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl) | 252 | 10184 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [scripts/jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py) | 252 | 10184 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvisctl](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl) | 312 | 12986 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py) | 312 | 12986 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/orbit_status.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/orbit_status.py) | 100 | 4056 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/register_obsidian_vault.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/register_obsidian_vault.py) | 34 | 1481 | Obsidian Vault Registration Script | Safely registers the JARVIS-OMA memory vault into Obsidian desktop settings (~/.config/obsidian/obsidian.json) with backup. |
 | [scripts/sync_obsidian_memory.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/sync_obsidian_memory.py) | 14 | 398 | Headless Memory Sync Utility | Executes an immediate one-shot synchronization of sovereign memory facts and history into the Obsidian vault. |
@@ -600,7 +599,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_proactive/test_runtime_workers.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_proactive/test_runtime_workers.py) | 126 | 4898 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_proactive/test_verified_execution.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_proactive/test_verified_execution.py) | 171 | 8770 | Verified Execution Tests | Tests sha256 artifact verification, path traversal rejection, and digest calculation. |
 | [tests/test_scripts/test_connect_github.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_scripts/test_connect_github.py) | 33 | 1484 | GitHub Script Tests | Tests GitHub authentication CLI and credential persistence. |
-| [tests/test_scripts/test_jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_scripts/test_jarvisctl.py) | 171 | 7440 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_scripts/test_jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_scripts/test_jarvisctl.py) | 211 | 9592 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/__init__.py) | 0 | 0 | Skills Test Package Marker | Package initialization marker for skills tests. |
 | [tests/test_skills/test_adjustment_routing.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_adjustment_routing.py) | 37 | 2022 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_agent_cost_policy.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_agent_cost_policy.py) | 97 | 4120 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -636,7 +635,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | :--- | :---: | :---: | :--- | :--- |
 | [AGENTS.md](file:///home/g0pi/Projects/JARVIS-OMA/AGENTS.md) | 45 | 2643 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [CLAUDE.md](file:///home/g0pi/Projects/JARVIS-OMA/CLAUDE.md) | 17 | 1110 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1274 | 188410 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
+| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1275 | 188480 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
 | [CONTRIBUTING.md](file:///home/g0pi/Projects/JARVIS-OMA/CONTRIBUTING.md) | 43 | 1304 | Contribution Guidelines | Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries. |
 | [LICENSE](file:///home/g0pi/Projects/JARVIS-OMA/LICENSE) | 21 | 1069 | MIT License | Open-source software license for JARVIS-OMA. |
 | [README.md](file:///home/g0pi/Projects/JARVIS-OMA/README.md) | 446 | 30921 | Project Documentation | Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, connectors, and memory matrix. |
@@ -1272,4 +1271,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-25 09:57:18 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-25 11:22:31 IST`.*

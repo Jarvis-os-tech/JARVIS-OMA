@@ -166,6 +166,46 @@ class TestJarvisCtl(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(code3, 0)
             self.assertIn(["systemctl", "--user", "status", "hyprland.service"], systemctl_calls)
 
+    async def test_enable_and_disable_service(self):
+        systemctl_calls = []
+
+        def mock_run(cmd, *args, **kwargs):
+            systemctl_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
+
+        test_autostart = Path(self.temp_dir.name) / "autostart.lua"
+        test_autostart.write_text('o.launch_on_start("systemctl --user start jarvis-oma.service")\n')
+
+        with patch("subprocess.run", side_effect=mock_run), \
+             patch("scripts.jarvisctl.configure_hypr_autostart") as mock_autostart:
+            code_dis = await jarvisctl.run_async(["disable"])
+            self.assertEqual(code_dis, 0)
+            self.assertIn(["systemctl", "--user", "stop", "jarvis-oma.service"], systemctl_calls)
+            self.assertIn(["systemctl", "--user", "disable", "jarvis-oma.service"], systemctl_calls)
+            mock_autostart.assert_called_with(enable=False)
+
+            systemctl_calls.clear()
+            code_en = await jarvisctl.run_async(["enable"])
+            self.assertEqual(code_en, 0)
+            self.assertIn(["systemctl", "--user", "enable", "jarvis-oma.service"], systemctl_calls)
+            self.assertIn(["systemctl", "--user", "start", "jarvis-oma.service"], systemctl_calls)
+            mock_autostart.assert_called_with(enable=True)
+
+    def test_configure_hypr_autostart_toggle(self):
+        autostart_path = Path(self.temp_dir.name) / "autostart.lua"
+        autostart_path.write_text('o.launch_on_start("systemctl --user start jarvis-oma.service")\n')
+
+        # Disable
+        res = jarvisctl.configure_hypr_autostart(enable=False, autostart_path=autostart_path)
+        self.assertTrue(res)
+        self.assertIn('-- o.launch_on_start("systemctl --user start jarvis-oma.service")', autostart_path.read_text())
+
+        # Enable
+        res = jarvisctl.configure_hypr_autostart(enable=True, autostart_path=autostart_path)
+        self.assertTrue(res)
+        self.assertIn('o.launch_on_start("systemctl --user start jarvis-oma.service")', autostart_path.read_text())
+        self.assertNotIn('-- o.launch_on_start', autostart_path.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

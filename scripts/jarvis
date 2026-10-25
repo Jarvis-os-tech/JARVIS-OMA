@@ -10,6 +10,14 @@ case "$COMMAND" in
     voice)
         exec jarvisctl toggle
         ;;
+    enable)
+        shift
+        exec jarvisctl enable "$@"
+        ;;
+    disable)
+        shift
+        exec jarvisctl disable "$@"
+        ;;
     shell)
         shift
         if command -v omarchy-shell >/dev/null 2>&1; then
@@ -40,6 +48,8 @@ Usage: jarvis <command> [args...]
 
 System Commands:
   voice                 Toggle voice listening state (mute/unmute)
+  enable                Enable & start JARVIS voice service and desktop autostart
+  disable               Disable & stop JARVIS voice service and desktop autostart
   shell [args...]       Launch or interact with Omarchy desktop shell
   heal [args...]        Run Omarchy system diagnostics and healing
   systemctl <svc> [act] Inspect or control OS services (jarvis, healer, hyprland)
@@ -49,6 +59,7 @@ Daemon Commands (forwarded to jarvisctl):
   toggle / mute / unmute Toggle voice input mute
   interrupt             Interrupt active AI voice speech
   start / stop / restart Start/stop/restart jarvis-oma service
+  enable / disable      Enable/disable jarvis-oma service and autostart
   mode [prod|test|sync] Query or switch JARVIS operating mode
   subscribe             Stream real-time daemon state events
 HELP_EOF
@@ -56,7 +67,7 @@ HELP_EOF
         ;;
     "")
         echo "JARVIS OS - Voice-First Operating System"
-        echo "Usage: jarvis {voice|shell|heal|systemctl|status|toggle|start|stop|restart|mode|subscribe}"
+        echo "Usage: jarvis {voice|enable|disable|shell|heal|systemctl|status|toggle|start|stop|restart|mode|subscribe}"
         echo "Run 'jarvis --help' for details."
         exit 0
         ;;
