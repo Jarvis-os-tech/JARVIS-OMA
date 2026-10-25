@@ -64,6 +64,9 @@ class DesktopSkills:
 
     # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
+        'jarvis.switch_mode': '_adapter_switch_jarvis_mode',
+        'jarvis.get_mode': '_adapter_get_jarvis_mode',
+        'jarvis.sync_branch': '_adapter_sync_jarvis_branch',
         'harness.status': '_adapter_harness_status',
         'harness.start_check': '_adapter_start_harness_check',
         'harness.check_status': '_adapter_harness_check_status',
@@ -262,6 +265,9 @@ class DesktopSkills:
 
     # ── Adapter → required system commands ────────────────────────────
     ADAPTER_COMMANDS = {
+        'jarvis.switch_mode': ('systemctl', 'git'),
+        'jarvis.get_mode': (),
+        'jarvis.sync_branch': ('systemctl', 'git'),
         'applications.list': (),
         'applications.open': ('gtk-launch',),
         'web.open': ('omarchy-launch-webapp',),
@@ -2534,6 +2540,64 @@ class DesktopSkills:
         except SkillError:
             await self._run(hypr, 'dispatch', *legacy_map[action])
         return {'status': 'done', 'action': action}
+
+    async def _deferred_service_restart(self, delay=2.0):
+        """Wait for spoken turn confirmation to complete, then restart jarvis-oma.service."""
+        try:
+            await asyncio.sleep(delay)
+            from scripts.jarvis_mode import restart_service
+            restart_service()
+        except Exception as error:
+            log.warning("Deferred service restart error: %s", type(error).__name__)
+
+    async def _adapter_get_jarvis_mode(self):
+        """Query active JARVIS mode (production on main vs test on dev)."""
+        try:
+            from scripts.jarvis_mode import current_mode
+            return await self._file_worker.run(current_mode)
+        except Exception as error:
+            raise SkillError(f"Failed to query JARVIS mode: {error}") from None
+
+    async def _adapter_switch_jarvis_mode(self, mode, sync=True):
+        """Switch JARVIS between production and test modes and schedule service restart."""
+        if mode not in ("production", "test"):
+            raise SkillError("mode must be 'production' or 'test'")
+        try:
+            from scripts.jarvis_mode import switch_mode
+            result = await self._file_worker.run(switch_mode, mode, sync=sync, restart=False)
+            asyncio.create_task(self._deferred_service_restart(delay=2.0))
+            branch = result.get("branch", mode)
+            return {
+                "status": "switching",
+                "target_mode": mode,
+                "branch": branch,
+                "root": result.get("root"),
+                "message": (
+                    f"Switched configuration to {mode} mode on branch {branch}. "
+                    "Restarting JARVIS service in two seconds to load changes."
+                ),
+            }
+        except Exception as error:
+            raise SkillError(f"Failed to switch JARVIS mode: {error}") from None
+
+    async def _adapter_sync_jarvis_branch(self):
+        """Sync active branch with latest git commits and restart."""
+        try:
+            from scripts.jarvis_mode import current_mode, sync_branch
+            cur = await self._file_worker.run(current_mode)
+            root = Path(cur["root"])
+            branch = cur["branch"]
+            sync_res = await self._file_worker.run(sync_branch, root, branch)
+            asyncio.create_task(self._deferred_service_restart(delay=2.0))
+            return {
+                "status": "synced",
+                "mode": cur["mode"],
+                "branch": branch,
+                "sync_result": sync_res.get("status"),
+                "message": f"Branch {branch} synced with git. Restarting JARVIS service in two seconds.",
+            }
+        except Exception as error:
+            raise SkillError(f"Failed to sync JARVIS branch: {error}") from None
 
     async def _adapter_control_power(self, action):
         """Manage system power profile and sleep states."""

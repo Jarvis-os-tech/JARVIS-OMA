@@ -97,6 +97,13 @@ async def run_async(argv: list[str]) -> int:
     subparsers.add_parser("stop", help="Stop jarvis-oma systemd service")
     subparsers.add_parser("restart", help="Restart jarvis-oma systemd service")
 
+    # mode
+    p_mode = subparsers.add_parser("mode", help="Query or switch JARVIS operating mode (production/test)")
+    p_mode.add_argument("mode", nargs="?", choices=["production", "test", "status", "promote", "sync"], default="status",
+                        help="Target mode: production (main), test (dev), status, promote, or sync")
+    p_mode.add_argument("--no-restart", action="store_true", help="Do not restart systemd service")
+    p_mode.add_argument("--no-sync", action="store_true", help="Do not sync git branch")
+
     # subscribe
     p_sub = subparsers.add_parser("subscribe", help="Stream real-time daemon state events")
     p_sub.add_argument("--max-events", type=int, default=None, help="Stop after N events")
@@ -118,6 +125,46 @@ async def run_async(argv: list[str]) -> int:
             return proc.returncode
         past = "stopped" if action == "stop" else f"{action}ed"
         print(f"Service jarvis-oma.service {past}.")
+        return 0
+
+    if args.subcommand == "mode":
+        try:
+            from scripts.jarvis_mode import switch_mode, promote_to_main, sync_branch, current_mode
+        except ImportError:
+            try:
+                from jarvis_mode import switch_mode, promote_to_main, sync_branch, current_mode
+            except ImportError:
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from jarvis_mode import switch_mode, promote_to_main, sync_branch, current_mode
+
+        try:
+            if args.mode == "promote":
+                result = promote_to_main()
+                print(f"JARVIS promoted to production: branch {result['branch']}, root {result['root']}")
+                return 0
+            elif args.mode == "sync":
+                cur = current_mode()
+                root = Path(cur["root"])
+                res = sync_branch(root, cur["branch"])
+                print(f"JARVIS sync ({cur['mode']}): {res.get('status')} - {res.get('message', res.get('output', ''))}")
+                return 0
+            else:
+                result = switch_mode(args.mode, sync=not getattr(args, 'no_sync', False),
+                                     restart=not args.no_restart)
+        except (RuntimeError, ValueError) as exc:
+            sys.stderr.write(f"Error: {exc}\n")
+            return 1
+
+        if args.mode == "status":
+            active_str = "running (PID {})".format(result['pid']) if result.get('service_active') and result.get('pid') else (
+                "active" if result.get('service_active') else "inactive"
+            )
+            print(f"JARVIS mode: {result['mode']} (branch {result['branch']})\n  Root:    {result['root']}\n  Service: {active_str}")
+        else:
+            print(
+                f"JARVIS mode: {result['mode']} "
+                f"(branch {result['branch']}, {result['root']})"
+            )
         return 0
 
     if args.subcommand == "subscribe":
