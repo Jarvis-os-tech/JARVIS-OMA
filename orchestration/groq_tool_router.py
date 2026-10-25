@@ -24,12 +24,66 @@ def configured_groq_api_keys(environ=None):
     return keys
 
 
+REMOTE_TOOL_PREFIXES = (
+    'github_',
+    'gmail_',
+    'calendar_',
+    'tasks_',
+    'drive_',
+    'docs_',
+    'sheets_',
+    'google_',
+    'phone_',
+)
+
+REMOTE_TOOL_NAMES = {
+    'internet_search',
+    'start_agent_goal',
+    'list_system_agents',
+    'delegate_agent',
+    'delegate_team',
+    'check_agent_team',
+    'cancel_agent_team',
+    'check_agent_job',
+    'list_agent_jobs',
+    'cancel_agent_job',
+    'start_development',
+    'development_status',
+    'list_development_jobs',
+    'cancel_development',
+    'start_model_processing',
+    'model_processing_status',
+    'control_vision_mode',
+    'check_vision_hardware',
+}
+
+# Compatibility alias
+SYSTEM_TOOL_NAMES = frozenset({'open_application', 'switch_workspace', 'type_text', 'set_volume', 'manage_window'})
+
+
+def is_local_tool(name: str) -> bool:
+    """Return True if the tool operates on the local machine/OS."""
+    if not name or name in REMOTE_TOOL_NAMES:
+        return False
+    if any(name.startswith(prefix) for prefix in REMOTE_TOOL_PREFIXES):
+        return False
+    return True
+
+
+def partition_declarations_for_router(declarations: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Partition tool declarations into local tools (for Groq) and remote/cloud tools (for Gemini)."""
+    local_decls = [d for d in declarations if is_local_tool(d.get('name', ''))]
+    remote_decls = [d for d in declarations if not is_local_tool(d.get('name', ''))]
+    return local_decls, remote_decls
+
+
 ROUTER_DECLARATION = {
-    'name': 'route_tool_command',
+    'name': 'route_local_command',
     'description': (
-        'Route a clear user request that requires a JARVIS desktop, file, web, todo, '
-        'calendar, memory, phone, or system tool. Pass the user request faithfully. '
-        'Do not call this for greetings or conversation that needs no tool.'),
+        'Fast router for all local machine and desktop actions: opening/closing applications and websites, '
+        'switching windows or workspaces, typing text, pressing keys, system settings (volume, brightness, power, wifi, bluetooth, night light, theme), '
+        'clipboard, local files (read/write/search), local notes, native todos and reminders, and system info. '
+        'Pass the user command faithfully. Do NOT call this for web searches, GitHub, Google services (Gmail, Calendar, Drive, Docs), or phone calls.'),
     'parameters_json_schema': {
         'type': 'object',
         'properties': {'command': {'type': 'string', 'minLength': 1, 'maxLength': 4000}},
@@ -67,19 +121,12 @@ class GroqToolRouter:
         return set(re.findall(r'[a-z0-9]+', text.lower()))
 
     def _tools_for(self, command):
-        """Stay below Groq's 128-function limit while retaining common controls."""
+        """Stay below Groq's 128-function limit while prioritizing system controls."""
         query = self._tokens(command)
-        common = {'open_application', 'close_application', 'list_applications',
-                  'list_windows', 'focus_window', 'type_text', 'press_key',
-                  'internet_search', 'add_todo', 'list_todos', 'complete_todo',
-                  'update_todo', 'delete_todo', 'enter_standby', 'set_volume',
-                  'get_system_information', 'inspect_screen', 'read_file',
-                  'write_file', 'edit_file', 'list_files', 'search_files',
-                  'search_file_content'}
         ranked = []
         for index, item in enumerate(self.declarations):
             searchable = f"{item.get('name', '')} {item.get('description', '')}"
-            ranked.append((item.get('name') in common,
+            ranked.append((is_local_tool(item.get('name', '')),
                            len(query & self._tokens(searchable)), -index, item))
         ranked.sort(reverse=True, key=lambda row: row[:3])
         # Large manifest schemas can exceed Groq's HTTP/context request limit well
@@ -94,8 +141,9 @@ class GroqToolRouter:
             'model': self.model,
             'messages': [
                 {'role': 'system', 'content': (
-                    'Select the exact JARVIS function needed for the user command. Use only '
-                    'supplied functions. Preserve names, paths, dates, and requested values. '
+                    'Select the exact JARVIS local machine tool function needed for the user command. '
+                    'Use only supplied functions (applications, window/workspace management, typing, local files, volume, system settings, todos, reminders). '
+                    'Preserve names, paths, and requested values. '
                     'Prefer one direct call; use parallel calls only when independently required.')},
                 {'role': 'user', 'content': command},
             ],

@@ -36,7 +36,8 @@ from audio.extension import ExtendedAudioEngine
 from audio.plugins.standby import StandbyController
 from audio.plugins.native_backend import NativeCompanionEngine
 from orchestration.groq_tool_router import (
-    GroqToolRouter, ROUTER_DECLARATION, configured_groq_api_keys)
+    GroqToolRouter, ROUTER_DECLARATION, configured_groq_api_keys,
+    partition_declarations_for_router, is_local_tool)
 try:
     from core.ipc import JarvisIPCServer
 except ImportError:
@@ -95,11 +96,13 @@ class LiveVoice:
         groq_keys = configured_groq_api_keys()
         if (skills is not None and config is not None and
                 config.agent.tool_router == 'groq' and groq_keys):
+            local_decls, _ = partition_declarations_for_router(skills.declarations)
             self.tool_router = GroqToolRouter(
-                groq_keys, skills.declarations,
+                groq_keys, local_decls,
                 model=config.agent.groq_tool_model,
                 timeout=config.agent.tool_router_timeout_seconds)
-            log.info('Groq tool router enabled with %d API key(s)', len(groq_keys))
+            log.info('Groq tool router enabled with %d API key(s) for %d local tools',
+                     len(groq_keys), len(local_decls))
         audio_cfg = config.audio if config else None
         self.input_bytes = audio_cfg.input_frame_bytes if audio_cfg else INPUT_BYTES
         self.input_sample_rate = audio_cfg.input_sample_rate if audio_cfg else 16000
@@ -1292,13 +1295,13 @@ class LiveVoice:
             # acknowledgement used to strand reads and searches in a later synthetic
             # user turn, so the model could not answer the original request.
             arguments = call.args or {}
-            if call.name == 'route_tool_command':
+            if call.name in ('route_local_command', 'route_system_command', 'route_tool_command'):
                 if self.tool_router is None:
                     raise SkillError('Groq tool routing is unavailable')
                 command = arguments.get('command', '')
-                self.publish_lifecycle_state('processing', activity='Selecting the fastest tool')
+                self.publish_lifecycle_state('processing', activity='Executing local command')
                 routed = await self.tool_router.route(command)
-                log.info('Groq routed command to: %s', ', '.join(item['name'] for item in routed))
+                log.info('Groq routed local command to: %s', ', '.join(item['name'] for item in routed))
                 routed_results = await asyncio.gather(*(
                     self._run_skill_call(item['name'], item['arguments']) for item in routed))
                 result = {'router': 'groq', 'calls': [
@@ -1860,7 +1863,11 @@ def live_config(voice, resume_handle=None, skills=None, *, config=None, memory_c
     if skills is not None:
         groq_enabled = (config is not None and config.agent.tool_router == 'groq' and
                         bool(configured_groq_api_keys()))
-        declarations = [ROUTER_DECLARATION] if groq_enabled else skills.declarations
+        if groq_enabled:
+            local_decls, remote_decls = partition_declarations_for_router(skills.declarations)
+            declarations = [ROUTER_DECLARATION] + remote_decls
+        else:
+            declarations = skills.declarations
         cfg['tools'] = [{'function_declarations': declarations}]
     return cfg
 

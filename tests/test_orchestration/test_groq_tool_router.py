@@ -4,12 +4,36 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from orchestration.groq_tool_router import GroqToolRouter, configured_groq_api_keys
+from orchestration.groq_tool_router import (
+    GroqToolRouter, configured_groq_api_keys, ROUTER_DECLARATION,
+    partition_declarations_for_router, SYSTEM_TOOL_NAMES)
 
 
 def declaration(index):
     return {'name': f'tool_{index}', 'description': f'Operate item {index}',
             'parameters_json_schema': {'type': 'object', 'properties': {}}}
+
+
+def test_partition_declarations_for_router():
+    decls = [
+        {'name': 'open_application', 'description': 'Open an app'},
+        {'name': 'type_text', 'description': 'Type text'},
+        {'name': 'switch_workspace', 'description': 'Switch workspace'},
+        {'name': 'set_volume', 'description': 'Set volume'},
+        {'name': 'read_file', 'description': 'Read a local file'},
+        {'name': 'create_todo', 'description': 'Create a native todo'},
+        {'name': 'internet_search', 'description': 'Search the web'},
+        {'name': 'gmail_search', 'description': 'Search emails'},
+        {'name': 'calendar_list_events', 'description': 'List calendar events'},
+        {'name': 'github_list_repositories', 'description': 'List repos'},
+    ]
+    local_decls, remote_decls = partition_declarations_for_router(decls)
+    local_names = {d['name'] for d in local_decls}
+    remote_names = {d['name'] for d in remote_decls}
+
+    assert local_names == {'open_application', 'type_text', 'switch_workspace', 'set_volume', 'read_file', 'create_todo'}
+    assert remote_names == {'internet_search', 'gmail_search', 'calendar_list_events', 'github_list_repositories'}
+    assert ROUTER_DECLARATION['name'] == 'route_local_command'
 
 
 def test_router_bounds_large_tool_catalog():
