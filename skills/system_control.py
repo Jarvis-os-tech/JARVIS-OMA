@@ -507,10 +507,45 @@ async def list_desktop_commands(query: str | None = None, limit: int = 25) -> di
     }
 
 
+VOICE_TO_HYPR: dict[str, str] = {
+    "tile left": "movewindow l",
+    "tile right": "movewindow r",
+    "tile up": "movewindow u",
+    "tile down": "movewindow d",
+    "move window left": "movewindow l",
+    "move window right": "movewindow r",
+    "move window up": "movewindow u",
+    "move window down": "movewindow d",
+    "fullscreen": "fullscreen",
+    "maximize": "fullscreen 1",
+    "float": "togglefloating",
+    "center": "centerwindow",
+    "close": "killactive",
+    "close window": "killactive",
+    "new workspace": "workspace e+1",
+    "next workspace": "workspace e+1",
+    "prev workspace": "workspace e-1",
+    "previous workspace": "workspace e-1",
+}
+
+
 async def execute_desktop_command(title: str) -> dict[str, Any]:
-    """Execute an Omarchy keybinding command by its title."""
+    """Execute a desktop command or Omarchy keybinding command by voice title."""
     if not title:
         return {"status": "error", "message": "command title is required"}
+
+    target = title.strip().lower()
+
+    # Direct voice-to-Hyprland desktop commands
+    if target in VOICE_TO_HYPR:
+        hyprctl = shutil.which("hyprctl")
+        if not hyprctl:
+            return {"status": "error", "message": "hyprctl is not installed"}
+        dispatch_args = VOICE_TO_HYPR[target].split()
+        code, stdout, stderr = await _run_command(hyprctl, "dispatch", *dispatch_args)
+        if code == 0:
+            return {"status": "success", "executed": target, "action": VOICE_TO_HYPR[target]}
+        return {"status": "error", "message": stderr or stdout or "hyprctl dispatch failed"}
 
     script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
     if not script_path:
@@ -520,7 +555,6 @@ async def execute_desktop_command(title: str) -> dict[str, Any]:
     if not bindings:
         return {"status": "error", "message": "no keybindings available"}
 
-    target = title.strip().lower()
     match = next((b for b in bindings if b["title"].lower() == target), None)
     if not match:
         matches = [b for b in bindings if target in b["title"].lower()]
@@ -712,9 +746,15 @@ async def _set_audio(device: str, percent: int | None, action: str | None, amoun
     return result
 
 
-async def set_volume(percent: int | None = None, action: str | None = None, amount: int = 5) -> dict[str, Any]:
-    """Adjust speakers through the plugin and verify with PipeWire; relative changes require a real reading."""
-    return await _set_audio("@DEFAULT_AUDIO_SINK@", percent, action, amount)
+async def set_volume(percent: int | None = None, action: str | None = None, amount: int = 5, delta: int | None = None) -> dict[str, Any]:
+    """Adjust speakers through the plugin and verify with PipeWire; supports absolute percent, delta, or action."""
+    if delta is not None:
+        action = "raise" if delta > 0 else "lower"
+        amount = abs(int(delta))
+    res = await _set_audio("@DEFAULT_AUDIO_SINK@", percent, action, amount)
+    if isinstance(res, dict) and "volume_percent" in res:
+        res["volume"] = res["volume_percent"]
+    return res
 
 
 async def control_microphone(action: str, volume: int | None = None) -> dict[str, Any]:

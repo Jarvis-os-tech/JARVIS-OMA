@@ -108,10 +108,48 @@ async def run_async(argv: list[str]) -> int:
     p_sub = subparsers.add_parser("subscribe", help="Stream real-time daemon state events")
     p_sub.add_argument("--max-events", type=int, default=None, help="Stop after N events")
 
+    # systemctl
+    p_systemctl = subparsers.add_parser("systemctl", help="Inspect or control JARVIS OS systemd services")
+    p_systemctl.add_argument("service_or_action", help="Service name (jarvis, healer, hyprland) or systemctl action (status, start, stop, restart)")
+    p_systemctl.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional systemctl arguments (e.g. action or service name)")
+
     args = parser.parse_args(argv)
     if not args.subcommand:
         parser.print_help()
         return 0
+
+    if args.subcommand == "systemctl":
+        services_map = {
+            "jarvis": "jarvis-oma.service",
+            "jarvis-oma": "jarvis-oma.service",
+            "healer": "omarchy-healer.service",
+            "omarchy-healer": "omarchy-healer.service",
+            "hyprland": "hyprland.service",
+            "voice": "omarchy-voice.service",
+        }
+        known_actions = {"start", "stop", "restart", "status", "enable", "disable", "reload", "is-active", "is-enabled"}
+
+        first = args.service_or_action
+        rest = list(args.extra_args or [])
+
+        # Case 1: jarvisctl systemctl jarvis [action]
+        if first in services_map:
+            service_unit = services_map[first]
+            action = rest[0] if rest and rest[0] in known_actions else (rest[0] if rest else "status")
+            extra = rest[1:] if rest and rest[0] == action else rest
+            cmd = ["systemctl", "--user", action, service_unit] + extra
+        # Case 2: jarvisctl systemctl status jarvis
+        elif first in known_actions:
+            action = first
+            target = rest[0] if rest else "jarvis"
+            service_unit = services_map.get(target, target if target.endswith(".service") else f"{target}.service")
+            extra = rest[1:]
+            cmd = ["systemctl", "--user", action, service_unit] + extra
+        else:
+            cmd = ["systemctl", "--user", first] + rest
+
+        proc = subprocess.run(cmd)
+        return proc.returncode
 
     if args.subcommand in ("start", "stop", "restart"):
         action = args.subcommand

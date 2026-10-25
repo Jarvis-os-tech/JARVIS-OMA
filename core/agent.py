@@ -189,6 +189,8 @@ class LiveVoice:
         """Translate the audio engine's playback state into assistant lifecycle state."""
         if state == 'speaking':
             self.publish_lifecycle_state('speaking')
+        elif state == 'barge_in':
+            self.publish_lifecycle_state('listening', activity='Listening')
         elif state == 'listening':
             if self.tool_tasks:
                 self.publish_lifecycle_state('processing', activity=self.activity_label)
@@ -347,6 +349,8 @@ class LiveVoice:
         return self._camera_stream_task
 
     def _on_local_barge_in(self):
+        self.publish_audio_state("barge_in")
+        self.discard_pending_microphone_audio()
         self.router.clear()
         self._drop_interrupted_audio = True
 

@@ -143,6 +143,29 @@ class TestJarvisCtl(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(code2, 0)
             self.assertIn(["systemctl", "--user", "stop", "jarvis-oma.service"], systemctl_calls)
 
+    async def test_systemctl_subcommand(self):
+        systemctl_calls = []
+
+        def mock_run(cmd, *args, **kwargs):
+            systemctl_calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
+
+        with patch("subprocess.run", side_effect=mock_run):
+            # Test: jarvisctl systemctl jarvis status
+            code1 = await jarvisctl.run_async(["systemctl", "jarvis", "status"])
+            self.assertEqual(code1, 0)
+            self.assertIn(["systemctl", "--user", "status", "jarvis-oma.service"], systemctl_calls)
+
+            # Test: jarvisctl systemctl restart healer
+            code2 = await jarvisctl.run_async(["systemctl", "restart", "healer"])
+            self.assertEqual(code2, 0)
+            self.assertIn(["systemctl", "--user", "restart", "omarchy-healer.service"], systemctl_calls)
+
+            # Test: jarvisctl systemctl hyprland
+            code3 = await jarvisctl.run_async(["systemctl", "hyprland"])
+            self.assertEqual(code3, 0)
+            self.assertIn(["systemctl", "--user", "status", "hyprland.service"], systemctl_calls)
+
 
 if __name__ == "__main__":
     unittest.main()

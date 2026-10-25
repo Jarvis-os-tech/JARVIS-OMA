@@ -223,7 +223,7 @@ class ExtendedAudioEngine:
 
     @property
     def active_generation(self) -> int:
-        return self._engine.active_generation
+        return getattr(self._engine, "active_generation", 0)
 
     def _dispatch_state_change(self, state: str) -> None:
         try:
@@ -234,7 +234,7 @@ class ExtendedAudioEngine:
         self.registry.dispatch_state_change(state)
 
     def _notify_barge_hooks(self) -> None:
-        generation = self._engine.active_generation
+        generation = getattr(self._engine, "active_generation", 0)
         self._turn_active = False
         if generation != self._last_barge_generation:
             self._last_barge_generation = generation
@@ -278,17 +278,21 @@ class ExtendedAudioEngine:
 
     def put_processed_output(self, frame: bytes) -> None:
         """Submit one output frame, capturing its generation before processing."""
-        generation = self._engine.active_generation
+        generation = getattr(self._engine, "active_generation", 0)
         self.enqueue_output(generation, frame)
 
     def enqueue_output(self, generation: int, frame: bytes) -> None:
         """Intercept the actual router path without retagging interrupted audio."""
-        if generation != self._engine.active_generation or self._engine.muted:
+        curr_gen = getattr(self._engine, "active_generation", 0)
+        muted = getattr(self._engine, "muted", False)
+        if generation != curr_gen or muted:
             return
         if not isinstance(frame, bytes) or len(frame) != self._engine.output_frame_bytes:
             raise ValueError('extension output requires one complete PCM16 frame')
         processed = self.registry.apply_output_frame(frame)
-        if processed is None or generation != self._engine.active_generation or self._engine.muted:
+        curr_gen = getattr(self._engine, "active_generation", 0)
+        muted = getattr(self._engine, "muted", False)
+        if processed is None or generation != curr_gen or muted:
             return
         self._engine.enqueue_output(generation, processed)
 
