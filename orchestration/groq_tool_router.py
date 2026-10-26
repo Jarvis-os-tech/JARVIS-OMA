@@ -37,6 +37,13 @@ REMOTE_TOOL_PREFIXES = (
 )
 
 REMOTE_TOOL_NAMES = {
+    'get_hermes_status',
+    'create_task_agent',
+    'task_agent_status',
+    'list_task_agents',
+    'cancel_task_agent',
+    'followup_task_agent',
+    'start_harness_refinement',
     'internet_search',
     'start_agent_goal',
     'list_system_agents',

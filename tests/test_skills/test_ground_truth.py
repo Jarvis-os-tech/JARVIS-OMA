@@ -206,7 +206,7 @@ class TaskRunnerGroundTruthTests(unittest.IsolatedAsyncioTestCase):
                 return {"status": "written"}
 
             runner = TaskRunner(mock_execute, lambda t, a: True)
-            plan = json.dumps([{"tool": "write_file", "args": {"path": str(target_file)}}])
+            plan = json.dumps([{"tool": "write_file", "args": {"path": str(target_file), "content": "Hello Step"}}])
             res = runner.start("test task", plan)
             
             # Wait for completion
@@ -228,7 +228,7 @@ class TaskRunnerGroundTruthTests(unittest.IsolatedAsyncioTestCase):
                 return {"status": "written"}
 
             runner = TaskRunner(mock_execute_lying, lambda t, a: True)
-            plan = json.dumps([{"tool": "write_file", "args": {"path": str(missing_file)}}])
+            plan = json.dumps([{"tool": "write_file", "args": {"path": str(missing_file), "content": "Hello Step"}}])
             res = runner.start("lying task", plan)
 
             for _ in range(20):

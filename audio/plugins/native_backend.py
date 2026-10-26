@@ -31,6 +31,7 @@ class CaptureQueue(asyncio.Queue):
     def __init__(self):
         super().__init__(maxsize=8)
         self.expired_frames = 0
+        self.last_capture_ns = None
 
     def empty(self):
         # Consumers such as the wake listener drain with empty()/get_nowait().
@@ -46,6 +47,7 @@ class CaptureQueue(asyncio.Queue):
         while True:
             captured_ns, pcm = super().get_nowait()
             if time.monotonic_ns() - captured_ns <= 150_000_000:
+                self.last_capture_ns = captured_ns
                 return pcm
             self.expired_frames += 1
 
@@ -59,14 +61,18 @@ class CaptureQueue(asyncio.Queue):
 
 class NativeCompanionEngine:
     """Device I/O in a native process, cloud/session orchestration in Python."""
+    # Provider VAD must keep hearing corrections while it prepares a reply.
+    # Capture expiry, rather than a turn-wide mic gate, prevents old requests.
+    continuous_capture = True
+
     def __init__(self, loop=None, *, input_rate=16000, output_rate=24000,
                  input_frame_ms=20, output_frame_ms=20,
                  native_cushion_s=0.08, native_webrtc_gain=False,
-                 queue_max_seconds=10, helper=HELPER, **kwargs):
+                 queue_max_seconds=60, helper=HELPER, **kwargs):
         if (input_rate, output_rate, input_frame_ms, output_frame_ms) != (16000, 24000, 20, 20):
             raise ValueError('native audio currently requires 16/24 kHz mono and 20 ms frames')
-        if not 0 <= native_cushion_s <= 1 or not 1 <= queue_max_seconds <= 10:
-            raise ValueError('native cushion must be 0..1 s and backlog 1..10 s')
+        if not 0 <= native_cushion_s <= 1 or not 1 <= queue_max_seconds <= 120:
+            raise ValueError('native cushion must be 0..1 s and backlog 1..120 s')
         if type(native_webrtc_gain) is not bool:
             raise ValueError('native_webrtc_gain must be a boolean')
         self.loop = loop or asyncio.get_running_loop()
@@ -86,6 +92,10 @@ class NativeCompanionEngine:
         self._process = None
         self._pending = deque()
         self._pending_bytes = 0
+        self._pending_partial = False
+        self._writing_audio = None
+        self._submitted_samples = 0
+        self._device_window_samples = 24000  # One second; below native ring capacity.
         self._rx = bytearray()
         self._stderr_tail = bytearray()
         self._failed = None
@@ -97,6 +107,7 @@ class NativeCompanionEngine:
         self._render_baseline = 0
         self._native_queued = 0
         self._native_playing = False
+        self._applied_generation = None
         self._reaping = None
         self.callback_max_ns = 0
         self._last_message = time.monotonic()
@@ -127,6 +138,10 @@ class NativeCompanionEngine:
         self._stderr_tail.clear()
         self._last_message = time.monotonic()
         self._generation_samples = self._render_baseline = self._rendered = 0
+        self._submitted_samples = 0
+        self._applied_generation = None
+        self._native_queued = 0
+        self._native_playing = False
         command = [str(self.helper), source, sink, str(round(self.native_cushion_s * 1000))]
         if self.native_webrtc_gain:
             command.append('--webrtc-gain')
@@ -190,7 +205,8 @@ class NativeCompanionEngine:
         if self._failed:
             raise StreamLostError(self._failed)
         packet = HEADER.pack(MAGIC, kind, generation & 0xffffffff, len(payload)) + payload
-        if self._pending_bytes + len(packet) > self._max_pending + 65536:
+        framing_bytes = (self._max_pending // self.output_frame_bytes) * HEADER.size
+        if self._pending_bytes + len(packet) > self._max_pending + framing_bytes + 65536:
             self._error('Native audio IPC backlog exceeded its limit')
             raise StreamLostError(self._failed)
         self._pending.append(memoryview(packet))
@@ -206,12 +222,26 @@ class NativeCompanionEngine:
                     self.loop.remove_writer(self._process.stdin.fileno())
                     return
                 packet = self._pending[0]
+                if not self._pending_partial:
+                    _, kind, generation, length = HEADER.unpack_from(packet)
+                    self._writing_audio = (generation, length // 2) if kind == AUDIO else None
+                    if (kind == AUDIO and generation == self.active_generation and
+                            self._submitted_samples - self._rendered + length // 2 > self._device_window_samples):
+                        # Wait for consumer credit (STATS), not pipe writability:
+                        # a writable fd here would spin and overflow the ring.
+                        self.loop.remove_writer(self._process.stdin.fileno())
+                        return
                 count = os.write(self._process.stdin.fileno(), packet)
                 self._pending_bytes -= count
                 if count == len(packet):
                     self._pending.popleft()
+                    self._pending_partial = False
+                    if self._writing_audio and self._writing_audio[0] == self.active_generation:
+                        self._submitted_samples += self._writing_audio[1]
+                    self._writing_audio = None
                 else:
                     self._pending[0] = packet[count:]
+                    self._pending_partial = self._pending_partial or count > 0
                     return
         except BlockingIOError:
             return
@@ -270,11 +300,14 @@ class NativeCompanionEngine:
             self._captured, self._capture_drops = captured, drops
             if gen == self.active_generation:
                 self._rendered = rendered
+                self._applied_generation = gen
+                self._native_queued, self._native_playing = queued, bool(playing)
+                if self._pending and self._process:
+                    self.loop.add_writer(self._process.stdin.fileno(), self._write)
             self.callback_max_ns = max_ns
             if starved > self._starved:
                 self.playback_rebuffers += 1
             self._starved = starved
-            self._native_queued, self._native_playing = queued, bool(playing)
             if gen == self.active_generation and self.speaking and (
                     rendered >= self._generation_samples and not queued and not playing):
                 self.speaking = False
@@ -306,8 +339,23 @@ class NativeCompanionEngine:
         self.active_generation += 1
         self._rendered = 0
         self._generation_samples = 0
+        self._submitted_samples = 0
+        # Finish the one packet whose prefix is already in the pipe. Dropping
+        # its suffix would corrupt framing. All wholly unsent packets can go:
+        # cancellation must not wait behind seconds of obsolete playback.
+        partial = self._pending[0] if self._pending_partial and self._pending else None
+        self._pending.clear()
+        self._pending_bytes = 0
+        if partial is not None:
+            self._pending.append(partial)
+            self._pending_bytes = len(partial)
+        else:
+            self._pending_partial = False
+            self._writing_audio = None
         if self._process and not self._failed:
             self._command(FLUSH, self.active_generation)
+            # Reassert mute because a superseded queued MUTE may be discarded.
+            self._command(MUTE, int(self.muted))
         self.speaking = False
         self._state('listening')
 
@@ -317,8 +365,6 @@ class NativeCompanionEngine:
     def set_muted(self, muted):
         self.muted = bool(muted)
         self.handle_barge_in()
-        if self._process and not self._failed:
-            self._command(MUTE, int(self.muted))
         while not self.async_input_queue.empty():
             asyncio.Queue.get_nowait(self.async_input_queue)
 
@@ -355,6 +401,8 @@ class NativeCompanionEngine:
         self._reaping = self.loop.run_in_executor(None, reap)
         self._pending.clear()
         self._pending_bytes = 0
+        self._pending_partial = False
+        self._writing_audio = None
         self._aec_input_bound = False
         self.speaking = False
         self._state('idle')

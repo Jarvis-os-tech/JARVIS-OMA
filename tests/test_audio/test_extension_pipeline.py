@@ -73,6 +73,45 @@ def output_frames(engine):
 
 
 class ExtensionPipelineTests(unittest.IsolatedAsyncioTestCase):
+    async def test_native_keeps_hearing_corrections_while_model_is_thinking(self):
+        base = NativeCompanionEngine()
+        voice = LiveVoice(ExtendedAudioEngine(base))
+        voice._request_pending = True
+        self.assertFalse(base.speaking)
+        sent = await self.send_next(voice, base)
+        self.assertEqual(sent[0].data, INPUT)
+        self.assertEqual(voice.microphone_frames_sent, 1)
+
+    async def test_native_frame_expiring_behind_send_lock_is_discarded(self):
+        base = NativeCompanionEngine()
+        voice = LiveVoice(ExtendedAudioEngine(base))
+        sent = asyncio.Event()
+        session = NS(send_realtime_input=AsyncMock(side_effect=lambda **kw: sent.set()))
+        await voice.send_lock.acquire()
+        capture(base)
+        sender = asyncio.create_task(voice.send_audio(session))
+        try:
+            # Wait for dequeue while the sender is blocked on the held lock.
+            for _ in range(10):
+                await asyncio.sleep(0)
+                if base.async_input_queue.last_capture_ns is not None:
+                    break
+            self.assertIsNotNone(base.async_input_queue.last_capture_ns)
+            with patch('core.agent.time.monotonic_ns', return_value=base.async_input_queue.last_capture_ns + 200_000_000):
+                voice.send_lock.release()
+                for _ in range(5):
+                    await asyncio.sleep(0)
+            session.send_realtime_input.assert_not_awaited()
+            self.assertEqual(voice.stale_microphone_frames_discarded, 1)
+            capture(base)
+            await asyncio.wait_for(sent.wait(), 1)
+            session.send_realtime_input.assert_awaited_once()
+        finally:
+            if voice.send_lock.locked():
+                voice.send_lock.release()
+            sender.cancel()
+            await asyncio.gather(sender, return_exceptions=True)
+
     async def send_next(self, voice, base, frames=(INPUT,)):
         sent, ready = [], asyncio.Event()
 

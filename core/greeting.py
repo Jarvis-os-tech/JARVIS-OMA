@@ -7,6 +7,10 @@ from contextlib import closing, contextmanager
 
 
 class GreetingMemory:
+    # Keep enough activations to support continuity and repetition avoidance
+    # without allowing the local greeting database to grow forever.
+    MAX_RECORDS = 1000
+
     def __init__(self, root):
         root.mkdir(parents=True, exist_ok=True)
         self.path = root / 'greetings.db'
@@ -45,6 +49,10 @@ class GreetingMemory:
             cursor = db.execute(
                 'INSERT INTO greetings(timestamp,day,context_key,text,boot_id) VALUES(?,?,?,?,?)',
                 (current.timestamp(), current.date().isoformat(), key, '', boot_id))
+            db.execute(
+                'DELETE FROM greetings WHERE id NOT IN '
+                '(SELECT id FROM greetings ORDER BY id DESC LIMIT ?)',
+                (self.MAX_RECORDS,))
             return cursor.lastrowid
 
     def record_text(self, identifier, text):

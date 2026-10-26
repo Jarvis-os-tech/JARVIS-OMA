@@ -8,6 +8,16 @@ from config import Config, load_config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_native_backlog_is_bounded_but_allows_burst_generated_long_replies(self):
+        cfg = Config()
+        cfg.audio.backend = 'native'
+        self.assertEqual(cfg.audio.queue_max_seconds, 60)
+        cfg.audio.queue_max_seconds = 120
+        cfg.validate()
+        cfg.audio.queue_max_seconds = 121
+        with self.assertRaisesRegex(ValueError, '120 s backlog'):
+            cfg.validate()
+
     def test_native_webrtc_gain_requires_native_backend_and_boolean_settings(self):
         cfg = Config()
         cfg.audio.native_webrtc_gain = True

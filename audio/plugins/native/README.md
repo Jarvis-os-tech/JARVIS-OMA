@@ -10,6 +10,11 @@ Dependencies: a C11 compiler, make, pkg-config, PipeWire development headers,
 and the project's Python environment. Runtime needs a user PipeWire session,
 `pw-dump`, and `pactl` for the existing private AEC module owner.
 
+Optional native gain control also needs a C++17 compiler and the
+`webrtc-audio-processing-1` development package. The build detects that package;
+`WITH_WEBRTC=1` requires it, while `WITH_WEBRTC=0` builds without gain support.
+Check the actual binary with `audio/plugins/native/jarvis-audio --capabilities`.
+
 ```sh
 make -C audio/plugins/native check
 .venv/bin/pytest -q tests/test_audio/test_native_backend.py
@@ -28,7 +33,10 @@ To select the backend, set the following in the chosen JARVIS configuration:
 [audio]
 backend = "native"
 native_cushion_s = 0.08
-queue_max_seconds = 10
+queue_max_seconds = 60
+native_webrtc_gain = true
+noise_suppression = true
+start_muted = true
 ```
 
 Alternatively use `JARVIS_AUDIO_BACKEND=native` and
@@ -37,6 +45,21 @@ service; see `systemd/native-audio.conf.example` for an optional drop-in. An
 existing `.env` sourced by run.sh can override service environment settings.
 Restart once after selecting the backend. Roll back by selecting `legacy` and
 restarting. The binary is a build artifact and is intentionally gitignored.
+
+`native_webrtc_gain` requires the native backend and a gain-capable helper.
+Its environment override is `JARVIS_NATIVE_WEBRTC_GAIN=true`; startup mute uses
+`JARVIS_START_MUTED=true`. Startup mute is applied before audio starts. Unmute
+using the ordinary JARVIS control when ready. For a local device check with gain,
+run `.venv/bin/python -m audio.plugins.native_probe --duration 20 --webrtc-gain`
+while the primary voice service is stopped, then restart the same service.
+
+Gain processing uses the installed WebRTC Audio Processing library, with
+adaptive digital AGC1, a -3 dBFS target, 9 dB compression gain and limiter.
+It runs in two 10 ms blocks after capture leaves the device callback.
+PipeWire owns echo cancellation and noise suppression; those features are
+disabled in this additional stage to avoid processing them twice. The linked
+library version is reported by `--capabilities`; it is not an extracted Chrome
+binary or a promise of identical acoustic behavior.
 
 ## Process and thread ownership
 
@@ -51,8 +74,14 @@ restarting. The binary is a build artifact and is intentionally gitignored.
 - Preallocated single-producer/single-consumer rings separate control and device
   execution. Capture retains at most 100 ms at the native boundary and expires
   at 150 ms in Python. Old speech is not replayed after a long outage.
-- Playback has a configurable priming target and bounded backlog (1–10 s).
-  Overflow is an explicit failure and recovery event, not silent truncation.
+- Playback has a configurable priming target and a bounded future-audio queue
+  (60 seconds by default, configurable from 1–120 seconds). Consumer credit
+  admits at most one second into the native transport at a time, allowing
+  fast-generated long replies to drain without overrunning the device ring.
+  The future queue limit is a memory ceiling, not a startup delay. Beyond that
+  ceiling overflow remains an explicit failure, not silent truncation.
+- Interruption discards wholly unsent packets before sending the latest flush;
+  any partially written packet finishes first to preserve protocol framing.
 - Generation cancellation is acknowledged by the render consumer before the
   producer publishes new-generation samples. Old epochs cannot restart output.
 - The adapter verifies both endpoint directions and companion process ownership
@@ -90,7 +119,9 @@ of graph xruns. Native stderr is read outside callbacks and retained bounded.
 The initial candidate uses server-confirmed interruptions; the legacy local
 FFT gate is not part of this backend. The native priming target is fixed, not
 yet adaptive. Existing shared network send scheduling and reconnect cleanup
-are unchanged; a WebSocket outage can still interrupt a reply. The existing
+retain their existing policy; a WebSocket outage can still interrupt a reply.
+Native capture continues while the model thinks, allowing spoken corrections.
+Frame expiry is rechecked after acquiring the network send lock. The existing
 PipeWire AEC implementation is reused, so its observed graph errors still need
 direct before/after measurement. Native callback metrics do not replace those
 graph metrics. No automatic claim of real-time scheduling is made.
@@ -100,3 +131,15 @@ permission/device changes, disconnect recovery, suspend/resume, graph error
 deltas, and at least 60 minutes of conversation under load. Compare identical
 model/VAD/device conditions with the browser baseline. Keep the legacy backend
 available until these gates pass.
+
+For the repeatable local acceptance run (no provider, silent playback), stop
+the primary voice service and run:
+
+```sh
+.venv/bin/python -m audio.plugins.native_acceptance --duration 300 --output /tmp/native-acceptance.json
+```
+
+It exercises 30 turns, 20 interruption acknowledgements, failure/recovery of
+its own child, and paced playback with jitter. Always restart the primary
+service afterward, even if a check fails. This probe does not establish
+acoustic latency, echo quality, or network recovery.

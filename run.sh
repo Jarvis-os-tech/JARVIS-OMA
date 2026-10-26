@@ -9,6 +9,14 @@ if [[ -f "${AGENT_DIR}/.env" ]]; then
     set +a
 fi
 
+# An initialized private local harness opts normal terminal/systemd startup in.
+# Explicit environment configuration wins; disable with JARVIS_LEARNING_DISABLED=1.
+if [[ "${JARVIS_LEARNING_DISABLED:-0}" == "1" ]]; then
+    unset JARVIS_LEARNING_DIR
+elif [[ -z "${JARVIS_LEARNING_DIR+x}" && -f "${AGENT_DIR}/.jarvis-learning/active.json" ]]; then
+    export JARVIS_LEARNING_DIR="${AGENT_DIR}/.jarvis-learning"
+fi
+
 # Suggest a conservative client latency; negotiate the graph period separately.
 export PIPEWIRE_LATENCY="${PIPEWIRE_LATENCY:-1024/48000}"
 # Let AEC and device streams negotiate a compatible graph period. Forcing a

@@ -115,7 +115,10 @@ static void render(struct runtime *r, int16_t *out, uint32_t n) {
         atomic_store(&r->rendered,0);
     }
     bool muted=atomic_load_explicit(&r->muted,memory_order_relaxed);
-    if(!r->primed && (available(&r->playback)>=r->prebuffer ||
+    uint64_t queued=available(&r->playback);
+    /* Completion releases a short turn, not an empty ring. In particular a
+     * zero cushion must not repeatedly count idle silence as starvation. */
+    if(!r->primed && queued && (queued>=r->prebuffer ||
                       atomic_load_explicit(&r->complete,memory_order_acquire))) {
         r->primed=true; r->fade_left=240;
     }
@@ -132,7 +135,9 @@ static void render(struct runtime *r, int16_t *out, uint32_t n) {
     if(got<n && r->primed && !muted && !atomic_load(&r->complete)) {
         atomic_fetch_add_explicit(&r->starved,n-got,memory_order_relaxed); r->primed=false;
     }
-    if(got<n && atomic_load(&r->complete)) r->primed=false;
+    /* A completed turn can end exactly on a callback boundary. Reset priming
+     * there too, so the following turn cannot inherit a bypassed cushion. */
+    if(atomic_load(&r->complete) && !available(&r->playback)) r->primed=false;
     atomic_store_explicit(&r->playing,got>0,memory_order_relaxed);
     atomic_fetch_add_explicit(&r->rendered,got,memory_order_relaxed);
     /* Ack only after the old callback is finished. The producer will not
@@ -199,7 +204,61 @@ static int self_test(void) {
     assert(!push(&r->capture,in,CAPACITY+1));
     atomic_store(&r->complete,true); assert(push(&r->playback,in,100)); render(r,out,480);
     assert(available(&r->playback)==0); assert(out[99]>0);
-    free(r); puts("native audio self-test passed"); return 0;
+    free(r);
+
+    r=calloc(1,sizeof(*r)); assert(r);
+    /* Zero-cushion idle is not an underrun, including after a short turn. */
+    for(int i=0;i<20;i++) render(r,out,480);
+    assert(atomic_load(&r->starved)==0 && !r->primed);
+    assert(push(&r->playback,in,480)); atomic_store(&r->complete,true);
+    render(r,out,480);
+    assert(atomic_load(&r->rendered)==480 && !r->primed);
+    for(int i=0;i<20;i++) render(r,out,480);
+    assert(atomic_load(&r->starved)==0);
+    free(r);
+
+    r=calloc(1,sizeof(*r)); assert(r); r->prebuffer=1920;
+    /* Exact-boundary completion must not make a new turn bypass its 80 ms
+     * cushion. Completion still releases a genuinely short final turn. */
+    assert(push(&r->playback,in,480)); atomic_store(&r->complete,true);
+    render(r,out,480); assert(!r->primed);
+    atomic_store(&r->complete,false); assert(push(&r->playback,in,480));
+    render(r,out,480); assert(available(&r->playback)==480);
+    assert(atomic_load(&r->rendered)==480 && atomic_load(&r->starved)==0);
+    atomic_store(&r->complete,true); render(r,out,480);
+    assert(atomic_load(&r->rendered)==960 && !r->primed);
+    free(r);
+
+    r=calloc(1,sizeof(*r)); assert(r); r->prebuffer=1920;
+    /* Four-frame network bursts, alternating 60/100 ms arrival spacing:
+     * the initial cushion must absorb this jitter without losing samples. */
+    uint64_t supplied=0;
+    for(int tick=0;tick<400;tick++) {
+        if(tick%8==0 || tick%8==3) {
+            for(int i=0;i<4;i++) {assert(push(&r->playback,in,480));supplied+=480;}
+        }
+        render(r,out,480);
+    }
+    atomic_store(&r->complete,true);
+    while(available(&r->playback)) render(r,out,480);
+    assert(atomic_load(&r->rendered)==supplied && atomic_load(&r->starved)==0);
+    /* Repeated cancellation drains the old epoch before admitting the next;
+     * deliberately use opposite signs so old data cannot masquerade as new. */
+    for(unsigned gen=1;gen<=100;gen++) {
+        assert(push(&r->playback,in,480));
+        atomic_store(&r->flush_boundary,atomic_load(&r->playback.write));
+        atomic_store(&r->complete,false); atomic_store(&r->generation,gen);
+        render(r,out,480);
+        assert(available(&r->playback)==0);
+        assert(atomic_load(&r->rendered)==0);
+        assert(atomic_load(&r->applied_generation)==gen);
+        for(int i=0;i<480;i++) in[i]=-1000;
+        assert(push(&r->playback,in,480)); atomic_store(&r->complete,true);
+        render(r,out,480); assert(out[479]==-1000);
+        assert(atomic_load(&r->rendered)==480 && !r->primed);
+        for(int i=0;i<480;i++) in[i]=1000;
+    }
+    free(r); puts("native audio self-test passed (idle, boundaries, jitter, 100 cancellations)"); return 0;
 }
 int main(int argc,char **argv) {
     if(argc==2 && !strcmp(argv[1],"--self-test")) return self_test();

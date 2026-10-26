@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import stat
 import uuid
 from datetime import datetime
 from urllib.parse import quote
@@ -33,6 +34,128 @@ def path_for(value: str) -> Path:
     if not isinstance(value, str) or not value.strip() or '\x00' in value or len(value) > 4096:
         raise FileOperationError('invalid file path')
     return Path(value).expanduser().absolute()
+
+
+def _canonical_path(path: Path) -> Path:
+    """Resolve aliases for protection checks without changing the operation path."""
+    return path.resolve(strict=False)
+
+
+def _is_protected(path: Path) -> bool:
+    """Check path identity and symlink target against protected roots.
+
+    Callers still operate on ``path`` itself, so deleting a symlink never
+    follows it. Resolving here is only for deciding whether the target is
+    protected.
+    """
+    try:
+        canonical_path = _canonical_path(path)
+        protected_paths = {_canonical_path(item) for item in CRITICAL_PATHS}
+    except (OSError, RuntimeError):
+        # An ambiguous path (for example, a symlink loop) must not be allowed
+        # through a destructive-operation guard.
+        return True
+    # A destructive operation on an ancestor directory can remove an
+    # otherwise protected entry. Descendants remain usable; only exact
+    # protected paths and paths containing them are rejected.
+    return (canonical_path in protected_paths or path in CRITICAL_PATHS or
+            any(canonical_path in protected.parents for protected in protected_paths))
+
+
+def _operation_path(path: Path) -> Path:
+    """Normalize parent aliases while preserving a final symlink as an entry."""
+    if path.name in {'', '.', '..'}:
+        # Dot components are navigation, not a final filesystem entry. Resolve
+        # them with the filesystem's symlink semantics intact.
+        return path.resolve(strict=False)
+    return path.parent.resolve(strict=False) / path.name
+
+
+def _paths_overlap(source: Path, destination: Path) -> bool:
+    """Return whether replacing destination could remove or alias source.
+
+    Parent symlinks and ``..`` segments are normalized, but the final path
+    component is intentionally not resolved: copy/move operate on a final
+    symlink itself rather than its target.
+    """
+    try:
+        source_path = _operation_path(source)
+        destination_path = _operation_path(destination)
+    except (OSError, RuntimeError):
+        # An ambiguous alias must never be allowed into an overwrite path.
+        return True
+    if (source_path == destination_path or
+            source_path in destination_path.parents or
+            destination_path in source_path.parents):
+        return True
+
+    # Hard-linked regular files can have distinct names and parents. Removing
+    # an overwrite destination would still remove the source's directory
+    # entry, so treat them as an overlap. Do not follow final symlinks here.
+    try:
+        source_mode = source.lstat().st_mode
+        destination_mode = destination.lstat().st_mode
+        return (stat.S_ISREG(source_mode) and stat.S_ISREG(destination_mode)
+                and os.path.samefile(source, destination))
+    except OSError:
+        return False
+
+
+def _entry_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _remove_entry(path: Path) -> None:
+    """Remove one filesystem entry without following a final symlink."""
+    if path.is_symlink() or not path.is_dir():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _sibling_path(path: Path, label: str) -> Path:
+    return path.with_name(f'.{path.name}.{label}.{uuid.uuid4().hex}')
+
+
+def _copy_entry(source: Path, destination: Path) -> None:
+    if source.is_dir() and not source.is_symlink():
+        shutil.copytree(source, destination, symlinks=True)
+    elif source.is_symlink():
+        destination.symlink_to(os.readlink(source))
+    else:
+        shutil.copy2(source, destination)
+
+
+def _publish_staged(staged: Path, destination: Path, *, retain_backup: bool = False) -> Path | None:
+    """Publish a complete sibling stage, restoring the old entry on failure."""
+    backup = _sibling_path(destination, 'backup')
+    had_destination = _entry_exists(destination)
+    moved_old = False
+    try:
+        if had_destination:
+            destination.replace(backup)
+            moved_old = True
+        staged.replace(destination)
+    except OSError as publish_error:
+        try:
+            if moved_old:
+                backup.replace(destination)
+        except OSError as restore_error:
+            raise FileOperationError(
+                f'cannot publish replacement: {publish_error}; previous destination is recoverable at {backup} '
+                f'(restore failed: {restore_error})') from None
+        raise
+
+    if moved_old and retain_backup:
+        return backup
+    if moved_old:
+        try:
+            _remove_entry(backup)
+        except OSError as cleanup_error:
+            # Publication is committed. Cleanup may have partially removed a
+            # directory backup, so never roll back by deleting the new copy.
+            return backup
+    return None
 
 
 def details(path: Path) -> dict:
@@ -242,26 +365,63 @@ def make_directory(value: str) -> dict:
 
 def move_path(source: str, destination: str, overwrite: bool = False) -> dict:
     src, dst = path_for(source), path_for(destination)
-    if src in CRITICAL_PATHS or src == Path('/'):
+    if _is_protected(src):
         raise FileOperationError('cannot move system root or home directory')
     if not src.exists() and not src.is_symlink():
         raise FileOperationError('source does not exist')
-    if dst in CRITICAL_PATHS or dst == Path('/'):
+    if _is_protected(dst):
         raise FileOperationError('cannot overwrite system root or home directory')
-    if src == dst or src in dst.parents:
-        raise FileOperationError('cannot move a directory inside itself')
-    if dst.exists() or dst.is_symlink():
-        if not overwrite:
-            raise FileOperationError('destination already exists; set overwrite to true to replace it')
-        if dst.is_dir() and not dst.is_symlink():
-            shutil.rmtree(dst)
-        else:
-            dst.unlink()
+    if _paths_overlap(src, dst):
+        raise FileOperationError('source and destination paths overlap')
+    if _entry_exists(dst) and not overwrite:
+        raise FileOperationError('destination already exists; set overwrite to true to replace it')
+    stage = _sibling_path(dst, 'stage')
+    source_backup = _sibling_path(src, 'move-backup')
+    source_stashed = False
+    destination_backup = None
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
+        # Build the destination beside itself. Rename the source aside only
+        # after the copy completed, so copy/ENOSPC failures leave it untouched.
+        _copy_entry(src, stage)
+        src.replace(source_backup)
+        source_stashed = True
+        destination_backup = _publish_staged(stage, dst, retain_backup=True)
     except OSError as error:
+        try:
+            _remove_entry(stage)
+            if source_stashed:
+                source_backup.replace(src)
+        except OSError as recovery_error:
+            raise FileOperationError(
+                f'cannot move path: {error}; source is recoverable at {source_backup} '
+                f'(recovery failed: {recovery_error})') from None
         raise FileOperationError(f'cannot move path: {error.strerror}') from None
+    except FileOperationError:
+        try:
+            _remove_entry(stage)
+            if source_stashed and not _entry_exists(src):
+                source_backup.replace(src)
+        except OSError as recovery_error:
+            raise FileOperationError(
+                f'cannot move path; source is recoverable at {source_backup} (recovery failed: {recovery_error})') from None
+        raise
+    try:
+        _remove_entry(source_backup)
+    except OSError as error:
+        result = {'status': 'moved', 'source': str(src), 'destination': str(dst),
+                  'cleanup_warning': str(error), 'recovery_backup': str(source_backup)}
+        if destination_backup is not None:
+            result['previous_destination_backup'] = str(destination_backup)
+        return result
+    if destination_backup is not None:
+        try:
+            _remove_entry(destination_backup)
+        except OSError:
+            # The move itself succeeded; preserve the old destination as an
+            # explicit recovery copy if its post-commit cleanup is blocked.
+            return {'status': 'moved', 'source': str(src), 'destination': str(dst),
+                    'recovery_backup': str(destination_backup)}
     return {'status': 'moved', 'source': str(src), 'destination': str(dst)}
 
 
@@ -269,28 +429,35 @@ def copy_path(source: str, destination: str, overwrite: bool = False) -> dict:
     src, dst = path_for(source), path_for(destination)
     if not src.exists() and not src.is_symlink():
         raise FileOperationError('source does not exist')
-    if dst in CRITICAL_PATHS or dst == Path('/'):
+    if _is_protected(dst):
         raise FileOperationError('cannot overwrite system root or home directory')
-    if src == dst or src in dst.parents:
-        raise FileOperationError('cannot copy a directory inside itself')
-    if dst.exists() or dst.is_symlink():
-        if not overwrite:
-            raise FileOperationError('destination already exists; set overwrite to true to replace it')
-        if dst.is_dir() and not dst.is_symlink():
-            shutil.rmtree(dst)
-        else:
-            dst.unlink()
+    if _paths_overlap(src, dst):
+        raise FileOperationError('source and destination paths overlap')
+    if _entry_exists(dst) and not overwrite:
+        raise FileOperationError('destination already exists; set overwrite to true to replace it')
+    stage = _sibling_path(dst, 'stage')
+    recovery_backup = None
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if src.is_dir() and not src.is_symlink():
-            shutil.copytree(src, dst, symlinks=True)
-        elif src.is_symlink():
-            dst.symlink_to(os.readlink(src))
-        else:
-            shutil.copy2(src, dst)
+        _copy_entry(src, stage)
+        recovery_backup = _publish_staged(stage, dst)
     except OSError as error:
+        try:
+            _remove_entry(stage)
+        except OSError:
+            pass
         raise FileOperationError(f'cannot copy path: {error.strerror}') from None
-    return {'status': 'copied', 'source': str(src), 'destination': str(dst)}
+    except FileOperationError:
+        try:
+            _remove_entry(stage)
+        except OSError:
+            pass
+        raise
+    result = {'status': 'copied', 'source': str(src), 'destination': str(dst)}
+    if recovery_backup is not None:
+        result.update({'cleanup_warning': 'previous destination backup could not be fully removed',
+                       'recovery_backup': str(recovery_backup)})
+    return result
 
 
 def replace_text(value: str, old: str, new: str) -> dict:
@@ -312,7 +479,7 @@ def replace_text(value: str, old: str, new: str) -> dict:
 
 def trash_path(value: str) -> dict:
     path = path_for(value)
-    if path in CRITICAL_PATHS or path == Path('/') or not (path.exists() or path.is_symlink()):
+    if _is_protected(path) or not (path.exists() or path.is_symlink()):
         raise FileOperationError('cannot trash this path')
     data_home = Path(os.getenv('XDG_DATA_HOME') or Path.home() / '.local/share')
     trash = data_home / 'Trash'
@@ -332,7 +499,7 @@ def trash_path(value: str) -> dict:
 
 def delete_path(value: str, recursive: bool = False) -> dict:
     path = path_for(value)
-    if path in CRITICAL_PATHS or path == Path('/'):
+    if _is_protected(path):
         raise FileOperationError('cannot delete system root or home directory')
     if not path.exists() and not path.is_symlink():
         raise FileOperationError('path does not exist')

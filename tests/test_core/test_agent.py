@@ -922,7 +922,9 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 cleaned.append('echo')
 
         async def no_wait(delay):
-            if delay >= 30:
+            if len(attempts) == 3:
+                self.assertGreaterEqual(delay, 5)
+                self.assertLessEqual(delay, 7)
                 raise asyncio.CancelledError()
 
         class MockAudioEngine:

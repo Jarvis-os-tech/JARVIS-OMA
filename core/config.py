@@ -55,7 +55,7 @@ class AudioConfig:
     output_sample_rate: int = 24000
     input_frame_ms: int = 20
     output_frame_ms: int = 20
-    queue_max_seconds: int = 10
+    queue_max_seconds: int = 60
     playback_latency_ms: int = 100
     capture_latency_ms: int = 30
     command_timeout: int = 8
@@ -101,8 +101,8 @@ class AudioConfig:
                 raise ValueError(f'audio.{direction}_frame_ms must produce an integral number of samples')
         if self.backend == 'native' and (
                 (self.input_sample_rate, self.output_sample_rate, self.input_frame_ms, self.output_frame_ms)
-                != (16000, 24000, 20, 20) or self.queue_max_seconds > 10):
-            raise ValueError('native audio requires 16/24 kHz, 20 ms frames and at most 10 s backlog')
+                != (16000, 24000, 20, 20) or self.queue_max_seconds > 120):
+            raise ValueError('native audio requires 16/24 kHz, 20 ms frames and at most 120 s backlog')
         if self.barge_in_after_ms <= self.duck_after_ms:
             raise ValueError('audio.barge_in_after_ms must be greater than audio.duck_after_ms')
         if type(self.fade_ms) is not int or self.fade_ms < 0:

@@ -3,3 +3,6 @@
 [Service]
 Environment=JARVIS_AUDIO_BACKEND=native
 Environment=JARVIS_NATIVE_CUSHION_S=0.08
+# Requires a WebRTC-capable helper; inspect its --capabilities output first.
+Environment=JARVIS_NATIVE_WEBRTC_GAIN=true
+Environment=JARVIS_START_MUTED=true

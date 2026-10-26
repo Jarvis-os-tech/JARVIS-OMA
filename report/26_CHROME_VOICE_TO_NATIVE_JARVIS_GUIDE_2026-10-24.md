@@ -307,3 +307,305 @@ The middle command records the initial mixed result, not an all-green suite. Dia
 - [Media Capture and Streams](https://w3c.github.io/mediacapture-main/): distinction between requested constraints and actual track settings.
 
 The localhost source and saved artifacts establish the reference's implementation. The official documents explain the underlying components; they do not substitute for the remaining real-call comparison.
+
+## 10. Native integration and rollout — 25 October 2026
+
+The earlier sections record the analysis-stage snapshot. The following work is
+now implemented and enabled on this machine; the acceptance comparison with
+Chrome remains outstanding.
+
+### What was implemented
+
+- The saved REA analysis of the JavaScript served by localhost:3000 informed the
+  native pipeline. Browser APIs were mapped to system components; Chrome code
+  was not copied into Python. REA remains a separate project.
+- `audio/plugins/native/webrtc_gain.cpp` links the installed standalone WebRTC
+  Audio Processing library (reported version 1.3). Gain control uses adaptive
+  digital AGC1 with a limiter, -3 dBFS target and 9 dB compression gain. Capture
+  is processed as two 10 ms blocks outside the PipeWire device callback.
+- PipeWire retains echo cancellation and noise suppression. The added gain
+  stage disables its own AEC and noise suppression to avoid duplication.
+- `ExtendedAudioEngine` is connected to the real capture-send and playback
+  boundaries. Extensions preserve frame length, mute state and cancellation
+  generations. Failed processors retain the last valid PCM frame; the native
+  capture queue and its expiry behavior remain intact.
+- The native helper advertises build capabilities. Configuration checks reject
+  requested gain if the helper lacks support. Startup mute is applied before
+  starting audio. IPC status exposes the backend and gain selection.
+- The existing Gemini realtime conversation, tools and system service remain
+  responsible for dialogue. No Chrome process or browser page is required by
+  this audio path.
+
+### Reproduce the build and startup
+
+1. Install the native dependencies listed in `audio/plugins/native/README.md`,
+   including `webrtc-audio-processing-1` development headers for gain support.
+2. Run `make -C audio/plugins/native WITH_WEBRTC=1 check`. Verify
+   `audio/plugins/native/jarvis-audio --capabilities` reports `webrtc_gain: true`.
+3. Select the following settings in the effective configuration:
+
+   ```toml
+   [audio]
+   backend = "native"
+   native_webrtc_gain = true
+   native_cushion_s = 0.08
+   noise_suppression = true
+   start_muted = true
+   ```
+
+4. Run `.venv/bin/python agent.py --check --no-skills`. Confirm environment and
+   `.env` overrides do not select different audio settings.
+5. With the primary service stopped, run
+   `.venv/bin/python -m audio.plugins.native_probe --duration 20 --webrtc-gain`.
+   This reads microphone frames locally and renders silence; it sends nothing
+   to a provider. Restart the primary service after the check, including if the
+   probe fails.
+6. Restart `jarvis-oma.service` and verify IPC reports native audio, gain enabled,
+   AEC input bound and muted. Use the normal unmute control for a listening test.
+7. Complete the spoken acceptance scenarios in section 6 before claiming
+   equivalence to Chrome. To roll back, select `backend = "legacy"` and
+   `native_webrtc_gain = false`, then restart the same unit. Keep startup mute
+   enabled if preserving the current muted state.
+
+### Verification performed during rollout
+
+| Check | Observed result |
+| --- | --- |
+| Entire audio test directory plus core agent/config tests | 208 passed, 74 subtests passed |
+| IPC tests with local socket access | 9 passed; earlier lifecycle stall resolved |
+| Native build target and self-tests | Ring/cancellation self-test and WebRTC gain self-test passed |
+| Gain test | Disabled path bit-exact; 80,000 enabled samples; quiet RMS gain 1.60; loud peak 23,438 |
+| Gain capability | `webrtc-audio-processing-1`, version `1.3`, available |
+| Local real-device probe | 20-second sustained phase passed; 640-byte input frames; links verified; 489,120 rendered samples; zero starved samples |
+| Maximum callback duration in that probe | 123,094 ns; this is execution duration, not acoustic latency or scheduling jitter |
+| Startup after activation | Native backend, gain enabled, AEC input bound, muted, service active; zero service restarts at initial verification |
+| Follow-up service verification | Idle, muted, one gain-enabled native companion, zero starved samples and zero service restarts |
+| Protected voice files | All seven lock hashes verified intact |
+
+Active configuration is in the ignored repository `config.toml`. A pre-rollout
+backup was saved outside the repository in the session artifact directory as
+`native-rollout-config-before.toml`. The unit itself was not replaced.
+
+These checks establish native device operation and automated contract coverage.
+They do not establish audible browser parity, double-talk quality, network
+recovery under load or crash-free operation. The service was deliberately left
+muted, matching its pre-rollout state.
+
+## 11. Smoothness fixes and matched-reference checks — 25 October 2026
+
+### Reference identity
+
+The user supplied [Jarvis-os-tech/voice-buddy](https://github.com/Jarvis-os-tech/voice-buddy),
+checked out separately at commit `bc73eb90e42bed273939c5268ce1c250b9394a2f`.
+Its `src/App.tsx` and `src/utils/audio.ts` exactly match the original TypeScript
+embedded in the previously captured source maps. The earlier REA findings
+therefore apply to these files. The temporary reference server was bound to
+loopback; synthetic requests used the existing Gemini credential without
+copying it into repository files. No live microphone audio was sent by the
+comparison scripts.
+
+### Reproduced issues fixed
+
+1. **Long replies cut off:** the reference produced a 287,041-sample reply
+   (about 12 seconds) fast enough to exceed JARVIS's previous 10-second backlog
+   ceiling. The first native replay failed with an explicit backlog error.
+   Native delivery now maintains a bounded 60-second future-audio queue by
+   default (configurable up to 120 seconds), while consumer credit admits only
+   one second into the device transport. All three replies then replayed fully.
+   This ceiling bounds memory; it does not delay startup by 60 seconds.
+2. **Cancellation delayed by pending audio:** wholly unsent packets are now
+   discarded before the latest flush. A partially written packet retains its
+   suffix so cancellation cannot corrupt the pipe protocol. Repeated interrupts
+   reassert the current mute state.
+3. **Mic frames becoming stale while waiting:** native capture timestamps are
+   rechecked after acquiring the network send lock. An expired frame is dropped
+   before transport; a following fresh frame still sends.
+4. **Corrections lost while thinking:** native capture now remains live while
+   the model prepares a response. This matches the reference's continuous-input
+   behavior; capture expiry prevents stale requests without closing the mic for
+   a whole turn. Standby and mute remain authoritative.
+5. **Consecutive-turn buffer bypass:** completion on an exact render-callback
+   boundary now resets priming, so the following reply receives its intended
+   cushion. Empty zero-cushion playback no longer falsely counts starvation.
+
+The native C regressions were reproduced against the original render code and
+pass after the fix. Added tests cover jitter, short turns, 100 cancellations,
+partial-write cancellation, long-response credit, continuous input while
+thinking, and expiry at the actual send boundary. All protected voice files
+remain unchanged.
+
+### Measured results
+
+- **Final regression suite:** 244 tests and 74 subtests passed, covering audio,
+  agent/configuration, IPC, startup and worker lifecycle. Voice-lock verification
+  confirmed all seven protected files intact.
+
+- **Final local device run:** 300 seconds under one controlled CPU-load worker,
+  15,000 paced input-to-render test frames and 7,200,000 rendered samples;
+  zero starved playback samples and zero dropped capture frames. The run uses
+  silence, so these are transport/device checks, not subjective sound ratings.
+- **Turn and interrupt checks:** 30 completed turns and 20 interruptions;
+  maximum interruption acknowledgement 80.53 ms, p95 79.96 ms. These are native
+  acknowledgement times, not measured speaker-to-ear silence latency.
+- **Owned-helper crash recovery:** 52.88 ms in this run. This does not measure
+  provider-network reconnection or physical-device replacement.
+- **Resource observations:** helper RSS grew by one 4,096-byte page; maximum
+  callback execution 2.04 ms. Maximum capture delivery gap, including forced
+  recovery, was 161.61 ms. This is a five-minute check, not a leak proof or
+  a 60-minute conversation soak.
+- **Identical provider audio replay:** 72,961 / 90,001 / 287,041 supplied samples
+  all completed without starvation. The native fixed-frame router added
+  479 / 239 / 479 trailing zero samples respectively, each under 20 ms.
+- **Chrome reference scheduler:** the actual saved `AudioQueuePlayer` ran in
+  Chrome's `OfflineAudioContext` with the same provider chunk timing, grouped
+  to its 128-sample rendering quanta. Scheduled inter-chunk gaps were
+  1,775 / 1,263 / 1,135 samples. This controlled scheduler result is not a
+  measurement of the user's original live browser call or acoustic output.
+- **Real JARVIS/Gemini speech loop:** two synthetic spoken turns completed using
+  JARVIS's actual sender, receiver and configuration, with zero stale frames
+  sent. End-of-input to first reply audio was approximately 845 ms and 1,011 ms.
+  Device output was tested separately using the exact captured PCM.
+- **Original relay with browser-equivalent 256 ms mic batching:** the same two
+  inputs completed in approximately 1,321 ms and 1,416 ms to first reply audio.
+  The runs share model and voice but differ in provider VAD configuration and
+  occur at different times. Two nondeterministic trials do not establish a
+  statistically reliable latency advantage.
+
+### Reproduction and remaining limits
+
+Use `audio/plugins/native_acceptance.py` for the local repeatable run described
+in the native README. The session artifact directory contains
+`native-smoothness-acceptance.json`, `native-provider-replay.json`,
+`voice-reference-stream.json`, `jarvis-chrome-provider-comparison.json`,
+`native-live-synthetic-conversation.json`, and
+`reference-live-synthetic-conversation.json`, along with the local replay and
+capture scripts. The reference fixtures contain only synthetic test speech.
+
+The implementation fixes the observed cutoffs and timing defects and matches
+continuous input and uninterrupted playout in the exercised scenarios. It does
+**not** certify identical microphone/room acoustics, double-talk echo quality,
+all network conditions, device unplug/suspend recovery, or crash-free operation.
+A real spoken A/B comparison and the longer acceptance scenarios in section 6
+remain necessary for those claims. The service is left muted, as before.
+
+## 12. Follow-up repair for intermittent breaks — 26 October 2026
+
+Earlier inspection found the following possible failure paths. Those historical
+log entries did not establish the cause of the user's active conversation breaks:
+
+- A PipeWire playback stream could lose its target after a sink, dock, or
+  session-graph change. Recovery previously reopened the native child against
+  stale private AEC nodes. Native stream recovery now closes and recreates the
+  private echo-cancel graph before reopening the companion, then verifies both
+  graph directions again.
+- Repeated provider transport timeouts could reach a 30–35 second retry delay.
+  An initial change reset the retry budget at every successful connection;
+  section 13 corrects that because repeated worker failures must remain bounded.
+  Ordinary transient
+  reconnects use short exponential delays capped at 8 seconds; HTTP 429 keeps
+  its deliberate longer backoff.
+
+The native helper self-tests, startup/recovery tests, and audio pipeline tests
+passed after this repair. The service was rebuilt and restarted successfully;
+it is idle, using the native backend, and remains muted. The latest status has
+zero restarts and no immediate `target not found` error.
+
+## 13. Current disconnects and latency report review — 26 October 2026
+
+Timestamped logs show abnormal WebSocket closures (1006) at 17:21:42 and
+17:27:35 IST. In both cases, the running code discarded its provider resumption
+handle and started a fresh conversation. The first reconnect reached LIVE at
+17:21:46. This proves a conversation continuity defect; it does not prove the
+network cause or explain every perceived interruption.
+
+Repairs in the unlocked conversation coordinator:
+
+- Preserve the provider resume handle on transport errors. Discard it only if
+  a resumed connection's setup is explicitly rejected (400/1008), or if the
+  provider marks its handle nonresumable. Provider model switching and standby
+  retain their existing separate policies.
+- Keep retry limits for unexpected worker failures, including failures after a
+  successful connection. SDK-wrapped abnormal transport close codes qualify for
+  transient retry. Rate-limit backoff remains intact.
+- Delay background notices while the user is speaking, a reply is pending,
+  tools are executing, playback is active, or JARVIS is muted. A delayed startup
+  greeting is suppressed if the conversation has already started. This avoids
+  unsolicited `send_client_content(turn_complete=True)` preempting that turn.
+- Count and log provider interruption events without recording transcript text.
+  IPC exposes `provider_interruptions` for future symptom correlation.
+
+The 17:27 live status showed 832 starved native samples (about 34.7 ms total at
+24 kHz) and 10 rebuffers over that process lifetime. The counters do not identify
+which utterance was affected. Zero PortAudio underflows does not imply zero
+native starvation. The playback cushion remains 80 ms.
+
+### Review of the supplied latency analysis
+
+The external report is useful as a hypothesis list, not a measured latency
+waterfall. A TCP connection time cannot establish a particular server region,
+per-turn RTT, or symmetric one-way delay. Dividing characters by four estimates
+tokens; it does not measure provider prefill work on every streaming turn.
+
+The current local catalog contains 203 declarations, with 88,058 serialized
+schema characters and a 30,504-character default instruction. The existing
+Groq option reduces that to 78 declarations and 34,885 schema characters, while
+leaving the instruction unchanged. It does not reduce the catalog to about ten
+tools. It also adds a second provider request for local commands, so reduced
+setup size alone does not prove faster command execution.
+
+The proposed 280 ms/HIGH endpointing and 40 ms playback cushion are not enabled
+while premature interruptions remain under investigation. Google's guidance
+warns that short silence thresholds can split natural pauses; see
+[Live API capabilities](https://ai.google.dev/gemini-api/docs/live-api/capabilities).
+No locked voice file or runtime monkeypatch is needed for the repairs above.
+
+Local verification: 251 tests and 74 subtests passed across the audio suite,
+agent, startup/retry, configuration, greeting, new continuity regressions and
+Groq router tests. Another 38 tests and 9 subtests passed for IPC, background
+workers, mute and video/audio contention; those tests require permission to
+create temporary local Unix sockets. Total: 289 tests and 83 subtests.
+Voice-lock verification passed for all seven files.
+These checks prove the exercised control flow, not subjective Chrome parity or
+instantaneous cloud responses.
+
+### Approved synthetic cloud timing comparison
+
+After explicit user approval, six real Gemini calls exercised LiveVoice's
+sender/receiver with identical synthetic PCM and the local default system
+instruction/tool declarations. Two rounds used reversed profile ordering.
+Tools were never executed, no microphone was captured, and physical speaker
+output was not measured. The live learning bundle was not included. Timing
+begins at the final submitted speech frame after trimming the fixture's silent
+tail with a fixed amplitude threshold; it is not a human speech-end annotation.
+
+| Profile | Round 1, first audio | Round 2, first audio |
+| --- | ---: | ---: |
+| Gemini tools, 500 ms end pause | 2,942.5 ms | 1,751.8 ms |
+| Gemini tools, 350 ms end pause | 2,110.0 ms | 1,190.5 ms |
+| Groq routing declarations, 350 ms end pause | 1,514.5 ms | 1,367.8 ms |
+
+All six completed with zero stale microphone frames in the test. Two trials per
+profile do not isolate the effect from provider/network variance or establish
+percentiles. The router profile measures Gemini voice delivery only, not the
+extra Groq request required to execute a desktop command.
+
+Applied locally: `config.toml` now uses `silence_duration_ms = 350`, retaining
+LOW end sensitivity and the 80 ms native cushion. This is a reversible latency
+tradeoff: a user pause longer than the endpoint threshold can end a turn sooner.
+The Groq router remains disabled because it did not consistently improve on the
+350 ms profile and command execution latency was not exercised. No IP addresses
+were pinned and the protected downstream code was not altered.
+
+Raw results: `latency-profile-comparison.json` in the session artifact directory.
+The approved test script is saved there as `jarvis-latency-compare.py`.
+
+### Provider interruption follow-up
+
+After the first repair restart, the new counter recorded 11 provider-triggered
+interruptions by 17:34:28 IST. These are separate from connection failures and
+do not prove false detection: transcripts and a synchronized room recording
+were not collected. As a mitigation for the reported self-cutoffs, local
+`start_sensitivity` was reduced from HIGH to LOW while retaining server barge-in,
+LOW end sensitivity, 350 ms end pause and 80 ms playback cushion. This requires
+real conversation validation; the six timing trials above used HIGH start
+sensitivity, so their numbers are not a measurement of this final adjustment.

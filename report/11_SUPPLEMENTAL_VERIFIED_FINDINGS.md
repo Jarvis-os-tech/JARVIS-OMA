@@ -168,3 +168,9 @@ E09 is repaired with an optional validated IANA `time_zone` parameter across the
 ## Calendar follow-up — IST and management
 
 Extended E09's repair with explicit IST datetime normalization, conflict rejection, a fresh clock, saved-time readback metadata, delete/reschedule, availability, recurrence, and popup reminders. The user's exact past mis-scheduling cause remains unconfirmed without the original timestamps. 47 tests and 12 subtests passed; no live calendar changes performed. Remaining calendar API gaps and voice checks are in `24_CALENDAR_IST_AND_MANAGEMENT.md`.
+
+## Repair status update — Remaining ten findings
+
+The user requested ten Luna workers and a parent review/repair loop. S01, S02, S03, S06, E03, E04, E05, E07, E08, and E11 now have implementations and regression coverage. Original reproduction assertions in report 12 now assert corrected behavior. This addresses all 20 individually tracked findings; it is not an exhaustive claim that the application has no remaining defects.
+
+See `28_REMAINING_AUDIT_REPAIR_LOOP.md` for worker assignments, parent review corrections, test evidence, voice/CLI checks, and practical limits including path-race exposure, staged replacement disk overhead, and live transport behavior. Existing unrelated changes from other sessions were preserved. No live account operations or daemon restart were performed during this repair pass.

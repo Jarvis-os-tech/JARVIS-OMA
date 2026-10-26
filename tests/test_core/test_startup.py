@@ -108,6 +108,93 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
         close.assert_awaited_once()
         self.assertEqual(len(self.connect_calls), 1)
 
+    async def test_native_stream_loss_rebuilds_private_echo_graph_before_reopen(self):
+        self.config.audio.backend = 'native'
+        self.config.audio.native_webrtc_gain = False
+        from audio.plugins.native_backend import NativeCompanionEngine
+        attempts = 0
+
+        async def lose_stream_once(*workers):
+            nonlocal attempts
+            for worker in workers:
+                worker.close()
+            attempts += 1
+            if attempts == 1:
+                raise StreamLostError('target not found')
+            raise asyncio.CancelledError()
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(NativeCompanionEngine, 'start'), \
+             patch.object(NativeCompanionEngine, 'wait_ready', new_callable=AsyncMock), \
+             patch.object(NativeCompanionEngine, 'terminate'), \
+             patch.object(NativeCompanionEngine, 'aclose', new_callable=AsyncMock), \
+             patch.object(agent, 'recover_audio', new_callable=AsyncMock) as recover, \
+             patch('google.genai.Client', return_value=self.client), \
+             patch.object(agent, 'supervise', side_effect=lose_stream_once):
+            with self.assertRaises(asyncio.CancelledError):
+                await agent.run(self.args, 'fake', config=self.config)
+        self.assertGreaterEqual(self.echo.close.await_count, 2)
+        self.assertGreaterEqual(self.echo.start.await_count, 2)
+        recover.assert_awaited_once()
+
+    async def test_abnormal_disconnect_preserves_resume_until_setup_rejects_it(self):
+        original_voice = agent.LiveVoice
+        voices = []
+
+        def make_voice(*args, **kwargs):
+            voice = original_voice(*args, **kwargs)
+            voices.append(voice)
+            return voice
+
+        class ProviderError(Exception):
+            def __init__(self, code):
+                self.code = code
+
+        @contextlib.asynccontextmanager
+        async def connect(**kwargs):
+            self.connect_calls.append(kwargs)
+            if len(self.connect_calls) == 2:
+                raise ProviderError(1008)  # explicitly rejects resumed setup
+            yield NS()
+
+        @contextlib.asynccontextmanager
+        async def client_context():
+            yield NS(live=NS(connect=connect))
+
+        async def disconnect_once(*workers):
+            for worker in workers:
+                worker.close()
+            if len(self.connect_calls) == 1:
+                voices[0].resume_handle = 'latest-provider-handle'
+                raise ProviderError(1006)
+            raise asyncio.CancelledError()
+
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(agent, 'NativeAudioEngine', return_value=self.engine), \
+             patch.object(agent, 'LiveVoice', side_effect=make_voice), \
+             patch('google.genai.Client', return_value=NS(aio=client_context())), \
+             patch.object(agent, 'supervise', side_effect=disconnect_once), \
+             patch.object(agent.asyncio, 'sleep', new_callable=AsyncMock):
+            with self.assertRaises(asyncio.CancelledError):
+                await agent.run(self.args, 'fake', config=self.config)
+        self.assertEqual([c['config']['session_resumption']['handle']
+                          for c in self.connect_calls],
+                         [None, 'latest-provider-handle', None])
+
+    async def test_worker_programming_errors_do_not_reset_retry_budget(self):
+        async def broken_worker(*workers):
+            for worker in workers:
+                worker.close()
+            raise KeyError('worker bug after connection')
+
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(agent, 'NativeAudioEngine', return_value=self.engine), \
+             patch('google.genai.Client', return_value=self.client), \
+             patch.object(agent, 'supervise', side_effect=broken_worker), \
+             patch.object(agent.asyncio, 'sleep', new_callable=AsyncMock):
+            with self.assertRaisesRegex(RuntimeError, 'unexpected failure'):
+                await agent.run(self.args, 'fake', config=self.config)
+        self.assertEqual(len(self.connect_calls), self.args.retries + 1)
+
     async def test_programming_errors_keep_finite_retry_budget(self):
         @contextlib.asynccontextmanager
         async def broken_connect(**kwargs):

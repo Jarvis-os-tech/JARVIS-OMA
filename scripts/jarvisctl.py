@@ -120,8 +120,8 @@ async def run_async(argv: list[str]) -> int:
 
     # toggle / mute
     subparsers.add_parser("toggle", help="Toggle mute state")
-    subparsers.add_parser("mute", help="Toggle mute state (alias)")
-    subparsers.add_parser("unmute", help="Toggle mute state (alias)")
+    subparsers.add_parser("mute", help="Mute JARVIS")
+    subparsers.add_parser("unmute", help="Unmute JARVIS")
 
     # interrupt
     subparsers.add_parser("interrupt", help="Interrupt active AI speech")
@@ -271,8 +271,8 @@ async def run_async(argv: list[str]) -> int:
     cmd_map = {
         "status": {"command": "status"},
         "toggle": {"command": "toggle_mute"},
-        "mute": {"command": "toggle_mute"},
-        "unmute": {"command": "toggle_mute"},
+        "mute": {"command": "set_mute", "muted": True},
+        "unmute": {"command": "set_mute", "muted": False},
         "interrupt": {"command": "interrupt"},
     }
 

@@ -35,6 +35,7 @@ from connectors import github
 from connectors import internet_search as web_search
 from config import MemoryConfig
 from core.workers import BoundedWorker, WorkerBusyError
+from core.secret_env import sanitized_subprocess_env
 from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
 try:
     from skills.input_bar import TestBar
@@ -64,6 +65,21 @@ class DesktopSkills:
 
     # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
+        'hermes.status': '_adapter_hermes_status',
+        'personal_agents.create': '_adapter_create_task_agent',
+        'personal_agents.status': '_adapter_task_agent_status',
+        'personal_agents.list': '_adapter_list_task_agents',
+        'personal_agents.cancel': '_adapter_cancel_task_agent',
+        'personal_agents.followup': '_adapter_followup_task_agent',
+        'harness.refine': '_adapter_start_harness_refinement',
+        'learning.feedback_list': '_adapter_list_research_feedback',
+        'harness.status': '_adapter_harness_status',
+        'harness.start_check': '_adapter_start_harness_check',
+        'harness.check_status': '_adapter_harness_check_status',
+        'harness.cancel_check': '_adapter_cancel_harness_check',
+        'learning.status': '_adapter_learning_status',
+        'learning.lessons': '_adapter_learning_lessons',
+        'learning.feedback': '_adapter_learning_feedback',
         'jarvis.switch_mode': '_adapter_switch_jarvis_mode',
         'jarvis.get_mode': '_adapter_get_jarvis_mode',
         'jarvis.sync_branch': '_adapter_sync_jarvis_branch',
@@ -458,6 +474,7 @@ class DesktopSkills:
         self._memory_api_key = api_key
         self._search_key_cooldown = {}
         self._memory = None
+        self.learning_service = None
         self._memory_worker = BoundedWorker('jarvis-memory', capacity=16)
         self._file_worker = BoundedWorker('jarvis-files', capacity=16)
         self._memory_writes = set()
@@ -751,7 +768,7 @@ class DesktopSkills:
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                limit=64 * 1024)
+                limit=64 * 1024, env=sanitized_subprocess_env())
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
@@ -782,7 +799,7 @@ class DesktopSkills:
         try:
             process = await asyncio.create_subprocess_exec(
                 *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                start_new_session=True)
+                start_new_session=True, env=sanitized_subprocess_env())
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
@@ -1315,6 +1332,10 @@ class DesktopSkills:
 
     async def close_agent_jobs(self):
         try:
+            if hasattr(self, '_task_agents'):
+                await self._task_agents.close()
+            if self.learning_service is not None:
+                await self.learning_service.close()
             if hasattr(self, '_model_jobs'):
                 await self._model_jobs.close()
             if self._proactive is not None:
@@ -1342,7 +1363,8 @@ class DesktopSkills:
                 proc = await asyncio.create_subprocess_exec(
                     '/usr/bin/python3', '-c',
                     'import gi; gi.require_version("WebKit2", "4.1"); from gi.repository import WebKit2',
-                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    env=sanitized_subprocess_env())
                 if await proc.wait() == 0:
                     await self._launch('/usr/bin/python3', overlay_script, url)
                     return {'status': 'opened', 'accepts': ['text', 'image', 'audio', 'pdf', 'file']}
@@ -1429,6 +1451,116 @@ class DesktopSkills:
         def invoke():
             return getattr(self.memory, method)(*args, **kwargs)
         return await self._memory_worker.run(invoke)
+
+    async def _learning_call(self, method, *args, **kwargs):
+        if self.learning_service is None:
+            if method == 'status':
+                return {'enabled': False, 'automatic_refinement': False,
+                        'message': 'Learning capture is disabled. Start JARVIS with --learning-dir to enable it.'}
+            raise SkillError('Research learning is disabled; start with --learning-dir')
+        try:
+            return await self._file_worker.run(getattr(self.learning_service, method), *args, **kwargs)
+        except (OSError, ValueError, KeyError, sqlite3.Error, WorkerBusyError) as error:
+            raise SkillError('Research learning operation unavailable: ' + type(error).__name__) from None
+
+    async def _adapter_learning_status(self):
+        return await self._learning_call('status')
+
+    def _personal_agents(self):
+        if not hasattr(self, '_task_agents'):
+            from orchestration.task_agents import TaskAgents
+            root = (self.learning_service.capture.store.root if self.learning_service is not None
+                    else Path(__file__).resolve().parents[1] / '.jarvis-learning')
+            self._task_agents = TaskAgents(root / 'task-agents', events=self.task_events)
+        return self._task_agents
+
+    async def _adapter_hermes_status(self):
+        try:
+            return await self._personal_agents().capabilities()
+        except (OSError, ValueError, TimeoutError) as error:
+            raise SkillError('Hermes connection unavailable: ' + type(error).__name__) from None
+
+    async def _adapter_create_task_agent(self, task, role='assistant', context='', timeout_seconds=300):
+        try:
+            return self._personal_agents().start(task, role=role, context=context,
+                                                 timeout_seconds=timeout_seconds)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_task_agent_status(self, job_id=None):
+        try:
+            return self._personal_agents().status(job_id)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_task_agents(self):
+        return self._personal_agents().list()
+
+    async def _adapter_cancel_task_agent(self, job_id):
+        try:
+            return await self._personal_agents().cancel(job_id)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_followup_task_agent(self, job_id, message):
+        try:
+            return self._personal_agents().followup(job_id, message)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_list_research_feedback(self):
+        return await self._learning_call('feedback_items')
+
+    async def _adapter_start_harness_refinement(self, feedback_ids):
+        if self.learning_service is None:
+            raise SkillError('Initialize local research learning before refinement')
+        try:
+            # Validation reads the bounded local ledger; process launch stays on this loop.
+            prepared = await self._file_worker.run(self.learning_service.prepare_refinement, feedback_ids)
+            return self.learning_service.jobs.start_refinement(**prepared)
+        except (OSError, ValueError, WorkerBusyError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_harness_status(self):
+        if self.learning_service is None:
+            from learning.jobs import local_status
+            try:
+                status = await self._file_worker.run(local_status)
+            except (OSError, ValueError, WorkerBusyError) as error:
+                raise SkillError('Local Harness status unavailable: ' + type(error).__name__) from None
+            return {**status, 'learning_enabled': False,
+                    'next_actions': ['Start one JARVIS instance using scripts/start-learning.sh.']}
+        return await self._learning_call('harness_status')
+
+    def _harness_jobs(self):
+        if self.learning_service is None:
+            raise SkillError('Local Harness checks require scripts/start-learning.sh or --learning-dir')
+        return self.learning_service.jobs
+
+    async def _adapter_start_harness_check(self):
+        try:
+            return self._harness_jobs().start()
+        except (ValueError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_harness_check_status(self, job_id=None):
+        try:
+            return self._harness_jobs().status(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_cancel_harness_check(self, job_id=None):
+        try:
+            return await self._harness_jobs().cancel(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_learning_lessons(self):
+        return await self._learning_call('lessons')
+
+    async def _adapter_learning_feedback(self, text, category='other'):
+        episode = self.learning_service.capture.previous if self.learning_service is not None else None
+        return await self._learning_call('feedback', text, category, episode)
 
     def queue_memory_exchange(self, user, assistant):
         if not user and not assistant:
@@ -2586,7 +2718,8 @@ class DesktopSkills:
             self._command('wl-copy'), '--',
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE)
+            stderr=asyncio.subprocess.PIPE,
+            env=sanitized_subprocess_env())
         try:
             _, stderr = await asyncio.wait_for(
                 process.communicate(content.encode('utf-8')), 5)

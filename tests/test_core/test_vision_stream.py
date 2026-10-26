@@ -8,7 +8,7 @@ import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core.agent import LiveVoice
+from core.agent import LiveVoice, RenewConnection
 from core.ipc import JarvisIPCServer
 from skills import DesktopSkills
 
@@ -161,25 +161,31 @@ class VisionStreamTests(unittest.IsolatedAsyncioTestCase):
             mock_proc.kill.assert_called_once()
             mock_proc.wait.assert_awaited_once()
 
-    async def test_stream_vision_timeout_resilience(self):
+    async def test_stream_vision_transport_timeout_requests_session_renewal(self):
         fake_frame = b'\xff\xd8\xff\xe0fake_jpeg_content'
         self.voice._capture_screen_frame = AsyncMock(return_value=fake_frame)
 
-        session = MagicMock()
-        # Simulate send_realtime_input timing out
-        session.send_realtime_input = AsyncMock(side_effect=asyncio.TimeoutError)
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+        async def stalled_send(**kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        session = MagicMock(send_realtime_input=stalled_send)
 
         self.voice.set_vision_mode('screen')
         task = asyncio.create_task(self.voice.stream_vision(session))
-        await asyncio.sleep(0.05)
-
-        # Worker should remain alive and not crash the task
-        self.assertFalse(task.done())
+        await asyncio.wait_for(started.wait(), timeout=1)
+        with self.assertRaisesRegex(RenewConnection, 'realtime video send timed out'):
+            await task
+        self.assertTrue(cancelled.is_set())
+        self.assertFalse(self.voice.send_lock.locked())
 
         self.voice.set_vision_mode('off')
-        task.cancel()
-        with contextlib_suppress(asyncio.CancelledError):
-            await task
 
 
     async def test_capture_camera_frame_live_stream_cache(self):

@@ -14,6 +14,7 @@ TASK_TOOLS = frozenset({
 MAX_STEPS = 30
 MAX_JOBS = 20
 MAX_EVENTS = 32
+MAX_VERIFICATION_BYTES = 5 * 1024 * 1024
 
 
 class TaskPlanError(ValueError):
@@ -80,14 +81,16 @@ class TaskRunner:
                 step['status'] = 'running'
                 job['updated_at'] = _now()
                 try:
+                    before_state = await self._capture_step_state(step['tool'], step['args'])
                     result = await self._execute(step['tool'], step['args'])
+                    self._reject_error_result(result)
                     if task_id in self._cancel_requested:
                         step['status'] = 'completed'
                         step['result'] = result
                         job['completed_steps'] += 1
                         job['status'] = 'cancelled'
                         break
-                    await self._verify_step_ground_truth(step['tool'], step['args'])
+                    await self._verify_step_ground_truth(step['tool'], step['args'], before_state)
                 except Exception as error:
                     if task_id in self._cancel_requested:
                         step['status'] = 'cancelled'
@@ -126,7 +129,80 @@ class TaskRunner:
                 self.events.get_nowait()
             self.events.put_nowait(event)
 
-    async def _verify_step_ground_truth(self, tool: str, args: dict) -> None:
+    @staticmethod
+    def _reject_error_result(result) -> None:
+        """Treat the executor's explicit error result as a failed step."""
+        if not isinstance(result, dict):
+            return
+        if result.get('success') is False:
+            detail = result.get('error') or result.get('message') or 'success was false'
+            raise TaskPlanError(f'Executor reported failure: {str(detail)[:250]}')
+        status = result.get('status')
+        if isinstance(status, str) and status.strip().casefold() in {'error', 'failed'}:
+            detail = result.get('error') or result.get('message') or status
+            raise TaskPlanError(f'Executor reported failure: {str(detail)[:250]}')
+        if result.get('error'):
+            raise TaskPlanError(f'Executor reported failure: {str(result["error"])[:250]}')
+
+    async def _capture_step_state(self, tool: str, args: dict):
+        """Capture bounded file state needed to prove a content operation."""
+        if tool not in ('write_file', 'append_file', 'edit_file'):
+            return None
+
+        def _capture():
+            from pathlib import Path
+
+            raw_path = args.get('path', '')
+            if not raw_path:
+                return None
+            path = Path(raw_path).expanduser().resolve()
+            if tool == 'write_file':
+                content = args.get('content')
+                if not isinstance(content, str):
+                    raise TaskPlanError('Cannot verify write: content must be text')
+                expected = content.encode('utf-8')
+                if len(expected) > MAX_VERIFICATION_BYTES:
+                    raise TaskPlanError('Cannot verify write: content exceeds 5 MiB')
+                return expected
+            try:
+                if not path.exists():
+                    if tool == 'append_file':
+                        previous = b''
+                    else:
+                        raise TaskPlanError(f'Cannot verify edit: file {raw_path} does not exist')
+                elif not path.is_file():
+                    raise TaskPlanError(f'Cannot verify content operation: {raw_path} is not a file')
+                else:
+                    if path.stat().st_size > MAX_VERIFICATION_BYTES:
+                        raise TaskPlanError('Cannot verify content operation: file exceeds 5 MiB')
+                    with path.open('rb') as stream:
+                        previous = stream.read(MAX_VERIFICATION_BYTES + 1)
+                    if len(previous) > MAX_VERIFICATION_BYTES:
+                        raise TaskPlanError('Cannot verify content operation: file exceeds 5 MiB')
+                if tool == 'append_file':
+                    content = args.get('content')
+                    if not isinstance(content, str):
+                        raise TaskPlanError('Cannot verify append: content must be text')
+                    expected = previous + content.encode('utf-8')
+                else:
+                    old, new = args.get('old'), args.get('new')
+                    if not isinstance(old, str) or not old or not isinstance(new, str):
+                        raise TaskPlanError('Cannot verify edit: old and new must be text')
+                    # Path.read_text() in the adapter uses universal newline
+                    # translation before replacement, then writes normalized text.
+                    previous_text = previous.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+                    if previous_text.count(old) != 1:
+                        raise TaskPlanError('Cannot verify edit: expected exactly one matching passage')
+                    expected = previous_text.replace(old, new, 1).encode('utf-8')
+                if len(expected) > MAX_VERIFICATION_BYTES:
+                    raise TaskPlanError('Cannot verify content operation: expected file exceeds 5 MiB')
+                return expected
+            except OSError as error:
+                raise TaskPlanError(f'Cannot capture file before execution: {error}') from None
+
+        return await asyncio.to_thread(_capture)
+
+    async def _verify_step_ground_truth(self, tool: str, args: dict, expected_content=None) -> None:
         """Deterministically verify physical ground truth on disk after step execution."""
         def _verify_disk():
             from pathlib import Path
@@ -134,9 +210,21 @@ class TaskRunner:
                 raw_path = args.get('path', '')
                 if raw_path:
                     path = Path(raw_path).expanduser().resolve()
-                    # Empty content is valid for writes, appends, and edits.
                     if not path.is_file():
                         raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} not found')
+                    try:
+                        if path.stat().st_size > MAX_VERIFICATION_BYTES:
+                            raise TaskPlanError('Ground-truth verification failed: file exceeds 5 MiB')
+                        with path.open('rb') as stream:
+                            actual = stream.read(MAX_VERIFICATION_BYTES + 1)
+                    except OSError as error:
+                        raise TaskPlanError(f'Ground-truth verification failed: cannot read {raw_path}: {error}') from None
+                    if len(actual) > MAX_VERIFICATION_BYTES:
+                        raise TaskPlanError('Ground-truth verification failed: file exceeds 5 MiB')
+                    if not isinstance(expected_content, bytes):
+                        raise TaskPlanError('Ground-truth verification failed: could not determine expected content')
+                    if actual != expected_content:
+                        raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} does not contain the expected content')
             elif tool == 'make_directory':
                 raw_path = args.get('path', '')
                 if raw_path:

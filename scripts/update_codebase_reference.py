@@ -54,6 +54,14 @@ def collect_file_inventory():
     return inventory
 
 KNOWN_ROLES = {
+    "orchestration/hermes_bridge.py": ("Hermes Background Gateway Bridge", "Authenticated communication with the installed Hermes gateway using owned task sessions, bounded protocol results and explicit cancellation."),
+    "orchestration/_hermes_gateway_worker.py": ("Installed Hermes Client Worker", "Bounded authenticated local gateway operations using the existing Hermes interpreter, without bootstrap, installation or session takeover."),
+    "learning/feedback.py": ("Selected Refinement Observations", "Bounded sanitized feedback notes and evidence identities for the proposer only; never resolved automatically or granted instruction authority."),
+    "orchestration/task_agents.py": ("Temporary Personal Task Agents", "Role-specific Hermes task sessions, bounded background supervision, private durable status and explicit follow-ups."),
+    "skill_manifests/personal-agents.json": ("Personal Agent Voice Controls", "Hermes health, temporary helper creation, status, list, cancellation and authorized follow-up."),
+    "skill_manifests/harness-refinement.json": ("Feedback Refinement Voice Controls", "Scoped feedback selection and explicit cloud-inference research harness proposals without automatic activation."),
+    "core/harness_config.py": ("Shared Harness Configuration", "Audio-independent prompt and tool declarations shared by the live assistant and local research refinement."),
+    "core/tool_dispatch.py": ("Shared Tool Execution Policy", "The same bounded tool execution and microphone policy for live voice and headless harness runs."),
     "learning/bundles.py": ("Versioned Research Harness Bundles", "Content-addressed instruction bundles, explicit activation, integrity checks, and previous-version restoration."),
     "learning/evidence.py": ("Opt-in Task Evidence", "Bounded background capture of observed requests, tool results, outputs, corrections, and capture health; no automatic diagnosis or optimization."),
     "learning/research.py": ("Offline Research Fixture", "Corpus-only search/read dispatcher, narrow deterministic citation checks, and scripted native-runtime fixture."),
@@ -61,6 +69,13 @@ KNOWN_ROLES = {
     "learning/research_runtime.py": ("Bounded Native Research Runtime", "Explicit Gemini text transport, call/time budgets, fixed-corpus tools through JARVIS dispatch, and offline scripted transport."),
     "learning/refinement.py": ("Real Harness² Research Integration", "Pinned upstream recursion, isolated Git worktrees, instruction-only proposals, baseline and held-out checks, audit artifacts, and review-only candidates."),
     "learning/trials.py": ("Controlled Research Trial Gate", "Artifact integrity and provenance checks, independent reassessment, strict improvement eligibility, explicit trial selection, rollback, and bundle-aware voice checklist."),
+    "learning/jobs.py": ("Durable Local Harness Checks", "Bounded offline subprocess checks, persistent job journals, recovery without replay, owned-process cancellation and terminal notifications."),
+    "learning/experience.py": ("Scoped Research Experience", "Existing KnowledgeStore proposals, trial-and-voice-reviewed publication, revocation, model/project/bundle scope and approved-only optimizer context."),
+    "learning/service.py": ("Learning Runtime Service", "Bound capture, memory queries, local Harness jobs and voice tool lifecycle."),
+    "learning/doctor.py": ("Local Harness Diagnostics", "No-cloud readiness checks for the reviewed upstream, private state, database integrity, voice adapters and locked voice files."),
+    "scripts/start-learning.sh": ("Local Harness Launcher", "Initialize private local learning state and optionally diagnose readiness without opening audio or cloud sessions."),
+    "skill_manifests/harness-local.json": ("Harness Voice Controls", "Local status, explicit offline check launch, durable results and cancellation."),
+    "skill_manifests/research-learning.json": ("Learning Voice Controls", "Actual learning status, scoped reviewed lessons and unverified feedback recording."),
     "learning/__main__.py": ("Learning Administration CLI", "Explicit bundle initialization, activation, restoration, evidence inspection, feedback, and cloud-free demo."),
     "docs/harness-learning.md": ("Harness Learning Foundation Guide", "Opt-in usage, bundle administration, evidence privacy/limits, offline validation, and future Harness² boundary."),
     # Modular Core Runtime
@@ -72,6 +87,12 @@ KNOWN_ROLES = {
     "core/README.md": ("Core Subsystem Documentation", "Architecture documentation for core voice agent and configuration subsystem."),
 
     # Modular Audio Subsystem
+    "audio/extension.py": ("Audio Extension Composition", "Validated PCM processors and lifecycle hooks around either backend, preserving mute and interruption generations."),
+    "audio/plugins/native_backend.py": ("Native Companion Adapter", "Bounded PCM transport, capture expiry, native graph verification and companion lifecycle."),
+    "audio/plugins/native/companion.c": ("PipeWire Device Companion", "Native capture/render callbacks, bounded rings and generation cancellation acknowledgement."),
+    "audio/plugins/native/webrtc_gain.cpp": ("Optional WebRTC Gain Control", "Gain-only native audio processing outside device callbacks; PipeWire retains AEC and noise suppression ownership."),
+    "audio/plugins/native_probe.py": ("Local Native Audio Probe", "Device and generation smoke checks with silent playback and no cloud transport."),
+    "audio/plugins/native_acceptance.py": ("Native Audio Acceptance Run", "Local turn, interruption, owned-helper recovery and paced playback checks without cloud transmission."),
     "audio/__init__.py": ("Modular Audio Package Marker", "Package initialization marker for native PipeWire audio pipeline."),
     "audio/echo_cancel.py": ("PipeWire AEC Audio Router", "Session-owned WebRTC echo cancellation via pactl load-module module-echo-cancel, source volume capping, and automatic cleanup."),
     "audio/downstream.py": ("Downstream Audio Router", "Accumulates variable-length Gemini audio chunks into fixed output frames with generation-tagged barge-in fencing."),
