@@ -20,16 +20,17 @@ class AudioFrameProcessor(Protocol):
     def process_input_frame(self, frame: bytes) -> bytes | None:
         """Process or inspect an upstream 16 kHz capture PCM frame.
 
-        Return modified bytes to alter the stream, the original bytes to pass through,
-        or None to drop the frame.
+        Return same-length PCM16 bytes to alter the stream, the original bytes
+        to pass through, or None to drop the frame. Processing is synchronous
+        on the conversation loop; processors must not block or perform I/O.
         """
         return frame
 
     def process_output_frame(self, frame: bytes) -> bytes | None:
         """Process or inspect a downstream 24 kHz playback PCM frame.
 
-        Return modified bytes to alter the stream, the original bytes to pass through,
-        or None to drop the frame.
+        Return same-length PCM16 bytes to alter the stream, the original bytes
+        to pass through, or None to drop the frame.
         """
         return frame
 
@@ -61,6 +62,8 @@ class AudioExtensionRegistry:
     def __init__(self) -> None:
         self._processors: list[tuple[int, AudioFrameProcessor]] = []
         self._hooks: list[AudioHook] = []
+        self.processor_errors = 0
+        self.invalid_results = 0
 
     def register_processor(self, processor: AudioFrameProcessor, *, priority: int = 100) -> None:
         """Register a frame processor with priority (lower number runs earlier)."""
@@ -99,51 +102,52 @@ class AudioExtensionRegistry:
         return list(self._hooks)
 
     def apply_input_frame(self, frame: bytes) -> bytes | None:
-        current: bytes | None = frame
-        for _, processor in self._processors:
-            if current is None:
-                break
-            try:
-                current = processor.process_input_frame(current)
-            except Exception:
-                # Extension failures must never crash audio pipeline
-                continue
-        return current
+        return self._apply_frame(frame, 'process_input_frame')
 
     def apply_output_frame(self, frame: bytes) -> bytes | None:
+        return self._apply_frame(frame, 'process_output_frame')
+
+    def _apply_frame(self, frame: bytes, method: str) -> bytes | None:
+        """Keep valid PCM and its timing when a processor fails its contract."""
         current: bytes | None = frame
-        for _, processor in self._processors:
+        # Extensions may register/unregister themselves while processing.
+        for _, processor in tuple(self._processors):
             if current is None:
                 break
             try:
-                current = processor.process_output_frame(current)
+                result = getattr(processor, method)(current)
             except Exception:
+                self.processor_errors += 1
                 continue
+            if result is not None and (not isinstance(result, bytes) or len(result) != len(frame)):
+                self.invalid_results += 1
+                continue
+            current = result
         return current
 
     def dispatch_state_change(self, state: str) -> None:
-        for hook in self._hooks:
+        for hook in tuple(self._hooks):
             try:
                 hook.on_state_change(state)
             except Exception:
                 continue
 
     def dispatch_barge_in(self) -> None:
-        for hook in self._hooks:
+        for hook in tuple(self._hooks):
             try:
                 hook.on_barge_in()
             except Exception:
                 continue
 
     def dispatch_turn_started(self) -> None:
-        for hook in self._hooks:
+        for hook in tuple(self._hooks):
             try:
                 hook.on_turn_started()
             except Exception:
                 continue
 
     def dispatch_turn_completed(self) -> None:
-        for hook in self._hooks:
+        for hook in tuple(self._hooks):
             try:
                 hook.on_turn_completed()
             except Exception:
@@ -151,51 +155,98 @@ class AudioExtensionRegistry:
 
 
 class ExtendedAudioEngine:
-    """Composition wrapper around NativeAudioEngine providing non-invasive extensibility.
+    """Composition around either native backend at the live PCM boundaries.
 
-    Leaves NativeAudioEngine completely unmodified while enabling arbitrary
-    upstream/downstream DSP filters, taps, and lifecycle hooks.
+    The base capture queue is deliberately exposed unchanged: draining stale
+    audio and detecting a local wake word must not run cloud-input processors.
+    LiveVoice calls process_input_frame immediately before sending a frame;
+    DownstreamRouter calls enqueue_output for each complete playback frame.
     """
 
     def __init__(
         self,
-        base_engine: NativeAudioEngine | None = None,
+        base_engine: Any = None,
         registry: AudioExtensionRegistry | None = None,
         **engine_kwargs: Any,
     ) -> None:
         self.registry = registry or AudioExtensionRegistry()
-        user_on_barge_in = engine_kwargs.pop("on_barge_in", None)
-        user_on_state_change = engine_kwargs.pop("on_state_change", None)
-
-        def _combined_barge_in() -> None:
-            if user_on_barge_in:
-                try:
-                    user_on_barge_in()
-                except Exception:
-                    pass
-            self.registry.dispatch_barge_in()
-
-        def _combined_state_change(state: str) -> None:
-            if user_on_state_change:
-                try:
-                    user_on_state_change(state)
-                except Exception:
-                    pass
-            self.registry.dispatch_state_change(state)
-
-        if base_engine is not None:
-            self._engine = base_engine
-        else:
-            self._engine = NativeAudioEngine(
-                on_barge_in=_combined_barge_in,
-                on_state_change=_combined_state_change,
-                **engine_kwargs,
-            )
+        self._engine = base_engine if base_engine is not None else NativeAudioEngine(**engine_kwargs)
+        self._on_barge_in = engine_kwargs.get('on_barge_in', getattr(self._engine, 'on_barge_in', None))
+        self._on_state_change = engine_kwargs.get('on_state_change', getattr(self._engine, 'on_state_change', None))
+        self._turn_active = False
+        self._last_barge_generation = None
+        # These are the base engine's documented mutable callbacks, not
+        # replacements for any locked core method.
+        self._engine.on_barge_in = self._dispatch_barge_in
+        self._engine.on_state_change = self._dispatch_state_change
 
     @property
-    def base_engine(self) -> NativeAudioEngine:
-        """The underlying, unmodified NativeAudioEngine."""
+    def base_engine(self) -> Any:
+        """The underlying, unmodified device/transport engine."""
         return self._engine
+
+    @property
+    def async_input_queue(self):
+        return self._engine.async_input_queue
+
+    @property
+    def on_barge_in(self) -> Callable[[], None] | None:
+        return self._on_barge_in
+
+    @on_barge_in.setter
+    def on_barge_in(self, callback: Callable[[], None] | None) -> None:
+        self._on_barge_in = callback
+
+    @property
+    def on_state_change(self) -> Callable[[str], None] | None:
+        return self._on_state_change
+
+    @on_state_change.setter
+    def on_state_change(self, callback: Callable[[str], None] | None) -> None:
+        self._on_state_change = callback
+
+    @property
+    def muted(self) -> bool:
+        return self._engine.muted
+
+    @muted.setter
+    def muted(self, value: bool) -> None:
+        self.set_muted(value)
+
+    @property
+    def allow_barge_in(self) -> bool:
+        return self._engine.allow_barge_in
+
+    @allow_barge_in.setter
+    def allow_barge_in(self, value: bool) -> None:
+        self._engine.allow_barge_in = bool(value)
+
+    @property
+    def active_generation(self) -> int:
+        return getattr(self._engine, "active_generation", 0)
+
+    def _dispatch_state_change(self, state: str) -> None:
+        try:
+            if callable(self._on_state_change):
+                self._on_state_change(state)
+        except Exception:
+            pass
+        self.registry.dispatch_state_change(state)
+
+    def _notify_barge_hooks(self) -> None:
+        generation = getattr(self._engine, "active_generation", 0)
+        self._turn_active = False
+        if generation != self._last_barge_generation:
+            self._last_barge_generation = generation
+            self.registry.dispatch_barge_in()
+
+    def _dispatch_barge_in(self) -> None:
+        try:
+            if callable(self._on_barge_in):
+                self._on_barge_in()
+        except Exception:
+            pass
+        self._notify_barge_hooks()
 
     def register_processor(self, processor: AudioFrameProcessor, *, priority: int = 100) -> None:
         """Register an extension processor."""
@@ -205,28 +256,76 @@ class ExtendedAudioEngine:
         """Register an extension lifecycle hook."""
         self.registry.register_hook(hook)
 
+    def process_input_frame(self, frame: bytes) -> bytes | None:
+        """Process cloud-bound PCM without changing the base capture queue."""
+        frame_bytes = (getattr(self._engine, 'input_rate', 16000)
+                       * self._engine.input_frame_ms // 1000 * 2)
+        if not isinstance(frame, bytes) or len(frame) != frame_bytes:
+            return None
+        # Muting is authoritative even if an extension synthesizes new PCM.
+        if self._engine.muted:
+            return bytes(frame_bytes)
+        processed = self.registry.apply_input_frame(frame)
+        return bytes(frame_bytes) if self._engine.muted else processed
+
     async def get_processed_input(self) -> bytes:
         """Read next captured frame from async_input_queue with processor pipeline applied."""
         while True:
             raw_frame = await self._engine.async_input_queue.get()
-            processed = self.registry.apply_input_frame(raw_frame)
+            processed = self.process_input_frame(raw_frame)
             if processed is not None:
                 return processed
 
     def put_processed_output(self, frame: bytes) -> None:
-        """Process PCM and submit it through the engine's generation-safe API."""
-        generation = self._engine.active_generation
+        """Submit one output frame, capturing its generation before processing."""
+        generation = getattr(self._engine, "active_generation", 0)
+        self.enqueue_output(generation, frame)
+
+    def enqueue_output(self, generation: int, frame: bytes) -> None:
+        """Intercept the actual router path without retagging interrupted audio."""
+        curr_gen = getattr(self._engine, "active_generation", 0)
+        muted = getattr(self._engine, "muted", False)
+        if generation != curr_gen or muted:
+            return
+        if not isinstance(frame, bytes) or len(frame) != self._engine.output_frame_bytes:
+            raise ValueError('extension output requires one complete PCM16 frame')
         processed = self.registry.apply_output_frame(frame)
-        if processed is not None:
-            self._engine.enqueue_playback(processed, generation=generation)
+        curr_gen = getattr(self._engine, "active_generation", 0)
+        muted = getattr(self._engine, "muted", False)
+        if processed is None or generation != curr_gen or muted:
+            return
+        self._engine.enqueue_output(generation, processed)
+
+    def handle_barge_in(self) -> None:
+        self._engine.handle_barge_in()
+        self._notify_barge_hooks()
+
+    def trigger_barge_in(self, notify_orchestrator: bool = True) -> None:
+        self.handle_barge_in()
+        if notify_orchestrator:
+            self._dispatch_barge_in()
+
+    async def stop_speaking(self) -> None:
+        await self._engine.stop_speaking()
+        self._notify_barge_hooks()
+
+    def set_muted(self, muted: bool):
+        result = self._engine.set_muted(muted)
+        if muted:
+            self._turn_active = False
+        return result
 
     def mark_turn_started(self) -> None:
-        self._engine.mark_turn_started()
-        self.registry.dispatch_turn_started()
+        if not self._turn_active:
+            self._turn_active = True
+            self._engine.mark_turn_started()
+            self.registry.dispatch_turn_started()
 
     def mark_turn_complete(self) -> None:
         self._engine.mark_turn_complete()
-        self.registry.dispatch_turn_completed()
+        if self._turn_active:
+            self._turn_active = False
+            self.registry.dispatch_turn_completed()
 
     def __getattr__(self, name: str) -> Any:
         """Forward all other calls directly to the underlying NativeAudioEngine."""

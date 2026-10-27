@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# JARVIS OS - Canonical System Control CLI
+# Unifies voice control, shell, healing diagnostics, and system services.
+
+set -e
+
+COMMAND="${1:-}"
+
+case "$COMMAND" in
+    voice)
+        exec jarvisctl toggle
+        ;;
+    enable)
+        shift
+        exec jarvisctl enable "$@"
+        ;;
+    disable)
+        shift
+        exec jarvisctl disable "$@"
+        ;;
+    shell)
+        shift
+        if command -v omarchy-shell >/dev/null 2>&1; then
+            exec omarchy-shell "$@"
+        else
+            echo "Error: omarchy-shell is not installed" >&2
+            exit 1
+        fi
+        ;;
+    heal)
+        shift
+        if command -v omarchy-healer >/dev/null 2>&1; then
+            exec omarchy-healer "$@"
+        else
+            echo "Error: omarchy-healer is not installed" >&2
+            exit 1
+        fi
+        ;;
+    systemctl)
+        shift
+        exec jarvisctl systemctl "$@"
+        ;;
+    -h|--help|help)
+        cat << 'HELP_EOF'
+JARVIS OS - System Control CLI
+
+Usage: jarvis <command> [args...]
+
+System Commands:
+  voice                 Toggle voice listening state (mute/unmute)
+  enable                Enable & start JARVIS voice service and desktop autostart
+  disable               Disable & stop JARVIS voice service and desktop autostart
+  shell [args...]       Launch or interact with Omarchy desktop shell
+  heal [args...]        Run Omarchy system diagnostics and healing
+  systemctl <svc> [act] Inspect or control OS services (jarvis, healer, hyprland)
+
+Daemon Commands (forwarded to jarvisctl):
+  status [--json]       Show JARVIS daemon status
+  toggle / mute / unmute Toggle voice input mute
+  interrupt             Interrupt active AI voice speech
+  start / stop / restart Start/stop/restart jarvis-oma service
+  enable / disable      Enable/disable jarvis-oma service and autostart
+  mode [prod|test|sync] Query or switch JARVIS operating mode
+  subscribe             Stream real-time daemon state events
+HELP_EOF
+        exit 0
+        ;;
+    "")
+        echo "JARVIS OS - Voice-First Operating System"
+        echo "Usage: jarvis {voice|enable|disable|shell|heal|systemctl|status|toggle|start|stop|restart|mode|subscribe}"
+        echo "Run 'jarvis --help' for details."
+        exit 0
+        ;;
+    *)
+        # Forward any other subcommand (status, toggle, mode, etc.) to jarvisctl
+        exec jarvisctl "$@"
+        ;;
+esac

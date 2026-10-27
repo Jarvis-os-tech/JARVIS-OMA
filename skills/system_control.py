@@ -10,6 +10,7 @@ import asyncio
 import difflib
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -17,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from core.secret_env import sanitized_subprocess_env
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ _TEXTBAR_ALIASES = {
 
 def _desktop_env() -> dict[str, str]:
     """Preserve essential desktop session and Wayland environment variables."""
-    env = dict(os.environ)
+    env = sanitized_subprocess_env(os.environ)
     if "OMARCHY_PATH" not in env:
         env["OMARCHY_PATH"] = "/usr/share/omarchy"
     return env
@@ -140,6 +142,11 @@ def _clean_window_target(target: str) -> str:
 
 async def _focus_window_target(target: str) -> tuple[bool, str, dict[str, Any] | None]:
     """Focus a target window by alias, address, class, or title substring and verify focus."""
+    from skills import ground_truth
+    context = ground_truth.ACTION_TARGET.get()
+    if context is not None:
+        focused, reason = await ground_truth.ensure_dispatch_focus()
+        return focused, reason, context['window']
     hyprctl = shutil.which("hyprctl")
     if not hyprctl:
         return False, "hyprctl is not installed", None
@@ -228,7 +235,7 @@ async def _focus_window_target(target: str) -> tuple[bool, str, dict[str, Any] |
         return False, f"target window '{target}' not found among open windows", None
 
     address = match.get("address", "")
-    if not address:
+    if ground_truth.window_identity(match) is None:
         return False, f"target window '{target}' has no valid window address", None
 
     # Dispatch focus
@@ -251,15 +258,7 @@ async def _focus_window_target(target: str) -> tuple[bool, str, dict[str, Any] |
         match_addr = match.get("address", "").casefold()
         match_class = match.get("class", "").casefold()
 
-        is_active_match = False
-        if active_addr == match_addr or active_class == match_class:
-            is_active_match = True
-        elif cleaned and (cleaned in active_class or (len(active_class) >= 3 and active_class in cleaned)):
-            is_active_match = True
-        elif match_class and match_class in active_class:
-            is_active_match = True
-
-        if is_active_match:
+        if ground_truth.same_window(match, active):
             return True, "verified_active", active
 
         # Verification failed! Check if blocked by an active authentication dialog:
@@ -272,9 +271,11 @@ async def _focus_window_target(target: str) -> tuple[bool, str, dict[str, Any] |
             ), active
 
         # If stolen by a background window, attempt focus healing once
-        heal_res = await modal_healing.heal_window_focus(target)
+        heal_res = await modal_healing.heal_window_focus(address)
         if heal_res.get("recovered"):
-            return True, "verified_active", heal_res.get("target_window")
+            recovered_active = await _query_active_window()
+            if ground_truth.same_window(match, recovered_active):
+                return True, "verified_active_healed", recovered_active
 
         # Verification failed! Check if still stuck in terminal:
         is_terminal = any(term in active_class for term in _TERMINAL_CLASSES)
@@ -290,7 +291,7 @@ async def _focus_window_target(target: str) -> tuple[bool, str, dict[str, Any] |
             f"expected '{target}'. Blocked keystrokes to prevent typing into the wrong window."
         ), active
 
-    return True, "focused_unverified", match
+    return False, "active window readback unavailable; no input may be sent", match
 
 
 async def type_text(text: str, target_window: str | None = None, press_enter: bool = False) -> dict[str, Any]:
@@ -316,6 +317,10 @@ async def type_text(text: str, target_window: str | None = None, press_enter: bo
         if not focused:
             return {"status": "error", "message": reason}
         focused_window_info = win_info
+    from skills import ground_truth
+    focused, reason = await ground_truth.ensure_dispatch_focus()
+    if not focused:
+        return {'status': 'blocked', 'verified': False, 'dispatched': False, 'message': reason}
 
     # Handle multi-line text via clipboard paste
     if "\n" in clean_text:
@@ -342,11 +347,18 @@ async def type_text(text: str, target_window: str | None = None, press_enter: bo
 
             argv = [wtype, "-M", "ctrl"] + (["-M", "shift"] if is_terminal else []) + ["-k", "v"]
             argv += (["-m", "shift"] if is_terminal else []) + ["-m", "ctrl"]
+            focused, reason = await ground_truth.ensure_dispatch_focus()
+            if not focused:
+                return {'status': 'blocked', 'verified': False, 'dispatched': False, 'message': reason}
             code, _, stderr = await _run_command(*argv)
             if code != 0:
                 return {"status": "error", "message": f"paste keypress failed: {stderr}"}
 
             if press_enter:
+                focused, reason = await ground_truth.ensure_dispatch_focus()
+                if not focused:
+                    return {'status': 'unverified_effect', 'verified': False, 'message': reason,
+                            'fallback': 'use_accessibility_or_cli'}
                 await _run_command(wtype, "-k", "Return")
 
             return {
@@ -362,6 +374,10 @@ async def type_text(text: str, target_window: str | None = None, press_enter: bo
         return {"status": "error", "message": f"wtype typing failed: {stderr}"}
 
     if press_enter:
+        focused, reason = await ground_truth.ensure_dispatch_focus()
+        if not focused:
+            return {'status': 'unverified_effect', 'verified': False, 'message': reason,
+                    'fallback': 'use_accessibility_or_cli'}
         await _run_command(wtype, "-k", "Return")
 
     return {
@@ -413,6 +429,10 @@ async def press_key(key: str, modifiers: str | list[str] | None = None, target_w
     for m in reversed(normalized_mods):
         argv += ["-m", m]
 
+    from skills import ground_truth
+    focused, reason = await ground_truth.ensure_dispatch_focus()
+    if not focused:
+        return {'status': 'blocked', 'verified': False, 'dispatched': False, 'message': reason}
     code, _, stderr = await _run_command(*argv)
     if code == 0:
         return {"status": "success", "key": key, "modifiers": normalized_mods, "target_window": target_window}
@@ -431,7 +451,13 @@ async def _get_bindings() -> list[dict[str, Any]]:
     if _cached_bindings is not None and (now - _cached_bindings_time) < _BINDINGS_CACHE_TTL:
         return _cached_bindings
 
-    script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
+    user_script = Path.home() / ".local/bin/omarchy-menu-keybindings"
+    if user_script.exists():
+        script_path = str(user_script)
+    elif Path(_KEYBINDINGS_SCRIPT).exists():
+        script_path = _KEYBINDINGS_SCRIPT
+    else:
+        script_path = shutil.which("omarchy-menu-keybindings")
     if not script_path:
         return []
 
@@ -507,12 +533,64 @@ async def list_desktop_commands(query: str | None = None, limit: int = 25) -> di
     }
 
 
+VOICE_TO_HYPR: dict[str, str] = {
+    "tile left": "movewindow l",
+    "tile right": "movewindow r",
+    "tile up": "movewindow u",
+    "tile down": "movewindow d",
+    "move window left": "movewindow l",
+    "move window right": "movewindow r",
+    "move window up": "movewindow u",
+    "move window down": "movewindow d",
+    "fullscreen": "fullscreen",
+    "maximize": "fullscreen 1",
+    "float": "togglefloating",
+    "center": "centerwindow",
+    "close": "killactive",
+    "close window": "killactive",
+    "new workspace": "workspace e+1",
+    "next workspace": "workspace e+1",
+    "prev workspace": "workspace e-1",
+    "previous workspace": "workspace e-1",
+}
+
+
 async def execute_desktop_command(title: str) -> dict[str, Any]:
-    """Execute an Omarchy keybinding command by its title."""
+    """Execute a desktop command or Omarchy keybinding command by voice title."""
     if not title:
         return {"status": "error", "message": "command title is required"}
 
-    script_path = _KEYBINDINGS_SCRIPT if Path(_KEYBINDINGS_SCRIPT).exists() else shutil.which("omarchy-menu-keybindings")
+    target = title.strip().lower()
+
+    window_aliases = {"fullscreen": "fullscreen", "maximize": "maximize", "float": "float",
+                      "center": "center", "close": "close", "close window": "close"}
+    workspace_aliases = {"new workspace": "next", "next workspace": "next",
+                         "prev workspace": "previous", "previous workspace": "previous"}
+    if target in window_aliases:
+        return {**await manage_window(window_aliases[target]), "command": target}
+    if target in workspace_aliases:
+        return {**await switch_workspace(workspace_aliases[target]), "command": target}
+
+    # Direct voice-to-Hyprland desktop commands
+    if target in VOICE_TO_HYPR:
+        hyprctl = shutil.which("hyprctl")
+        if not hyprctl:
+            return {"status": "error", "message": "hyprctl is not installed"}
+        dispatch_args = VOICE_TO_HYPR[target].split()
+        code, stdout, stderr = await _run_command(hyprctl, "dispatch", *dispatch_args)
+        if code == 0:
+            return {"status": "unverified", "verified": False, "executed": target,
+                    "action": VOICE_TO_HYPR[target],
+                    "message": "Input dispatched; this desktop command has no outcome verifier yet."}
+        return {"status": "error", "message": stderr or stdout or "hyprctl dispatch failed"}
+
+    user_script = Path.home() / ".local/bin/omarchy-menu-keybindings"
+    if user_script.exists():
+        script_path = str(user_script)
+    elif Path(_KEYBINDINGS_SCRIPT).exists():
+        script_path = _KEYBINDINGS_SCRIPT
+    else:
+        script_path = shutil.which("omarchy-menu-keybindings")
     if not script_path:
         return {"status": "error", "message": "omarchy-menu-keybindings is not installed"}
 
@@ -520,7 +598,6 @@ async def execute_desktop_command(title: str) -> dict[str, Any]:
     if not bindings:
         return {"status": "error", "message": "no keybindings available"}
 
-    target = title.strip().lower()
     match = next((b for b in bindings if b["title"].lower() == target), None)
     if not match:
         matches = [b for b in bindings if target in b["title"].lower()]
@@ -712,9 +789,15 @@ async def _set_audio(device: str, percent: int | None, action: str | None, amoun
     return result
 
 
-async def set_volume(percent: int | None = None, action: str | None = None, amount: int = 5) -> dict[str, Any]:
-    """Adjust speakers through the plugin and verify with PipeWire; relative changes require a real reading."""
-    return await _set_audio("@DEFAULT_AUDIO_SINK@", percent, action, amount)
+async def set_volume(percent: int | None = None, action: str | None = None, amount: int = 5, delta: int | None = None) -> dict[str, Any]:
+    """Adjust speakers through the plugin and verify with PipeWire; supports absolute percent, delta, or action."""
+    if delta is not None:
+        action = "raise" if delta > 0 else "lower"
+        amount = abs(int(delta))
+    res = await _set_audio("@DEFAULT_AUDIO_SINK@", percent, action, amount)
+    if isinstance(res, dict) and "volume_percent" in res:
+        res["volume"] = res["volume_percent"]
+    return res
 
 
 async def control_microphone(action: str, volume: int | None = None) -> dict[str, Any]:
@@ -1200,44 +1283,173 @@ async def open_control_panel(category: str | None = None, action: str = "open") 
     return {"status": "error", "message": "Control Panel launcher or omarchy-shell not found"}
 
 
+async def _desktop_observe(hyprctl: str, query: str) -> dict[str, Any]:
+    """Read compositor state without treating an unavailable reading as an empty desktop."""
+    try:
+        code, stdout, stderr = await _run_command(hyprctl, "-j", query, timeout=2)
+        if code != 0:
+            return _observation_error(stderr or "Compositor observation failed", query)
+        data = json.loads(stdout)
+        expected_type = list if query in ("clients", "workspaces", "monitors") else dict
+        if not isinstance(data, expected_type):
+            return _observation_error("Invalid compositor observation", query)
+        if isinstance(data, list) and any(not isinstance(item, dict) for item in data):
+            return _observation_error("Invalid compositor observation entries", query)
+        return {"status": "success", "data": data, "source": "hyprctl " + query,
+                "observed_at": datetime.now(timezone.utc).isoformat()}
+    except (OSError, ValueError, TypeError) as exc:
+        return _observation_error("Compositor observation unavailable: " + str(exc), query)
+
+
+async def _desktop_dispatch(hyprctl: str, lua: str, legacy: list[str],
+                            active_address: str | None = None) -> dict[str, Any]:
+    """Use a checked fallback only where the legacy command can bind its target."""
+    try:
+        code, stdout, stderr = await _run_command(hyprctl, "dispatch", lua, timeout=2)
+        if code == -1:
+            return {"status": "unverified", "verified": False,
+                    "message": "Compositor request timed out; its effect is unknown. Do not retry automatically."}
+        if code != 0:
+            if active_address is not None:
+                return _observation_error("Legacy fallback cannot bind the exact window safely; action stopped",
+                                          target=active_address)
+            code, stdout, stderr = await _run_command(hyprctl, "dispatch", *legacy, timeout=2)
+        if code != 0:
+            return {"status": "unverified" if code == -1 else "error", "verified": False,
+                    "message": stderr or stdout or "Both compositor dispatches failed", "exit_code": code}
+        return {"status": "executed", "method": "hyprctl", "verified": False}
+    except (OSError, ValueError) as exc:
+        return _observation_error("Compositor dispatch failed: " + str(exc))
+
+
+async def _desktop_readback(hyprctl: str, query: str, predicate) -> tuple[bool, dict[str, Any]]:
+    """Allow a bounded compositor update delay, without replaying the action."""
+    observation = {}
+    for attempt in range(8):
+        observation = await _desktop_observe(hyprctl, query)
+        if observation.get("status") == "success" and predicate(observation["data"]):
+            return True, observation
+        if attempt < 7:
+            await asyncio.sleep(0.08)
+    return False, observation
+
+
 async def manage_window(action: str) -> dict[str, Any]:
-    """Manage the active window: fullscreen, close, minimize, float, center, or maximize."""
+    """Bind the active window by address and verify the requested postcondition."""
     hyprctl = shutil.which("hyprctl")
     if not hyprctl:
-        return {"status": "error", "message": "hyprctl is not installed"}
+        return _observation_error("hyprctl is not installed")
 
-    lua_map = {
-        "fullscreen": 'hl.dsp.window.fullscreen({ mode = "fullscreen" })',
-        "maximize": 'hl.dsp.window.fullscreen({ mode = "maximized" })',
-        "close": 'hl.dsp.window.close()',
-        "minimize": 'hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })',
-        "float": 'hl.dsp.window.float({ action = "toggle" })',
-        "center": 'hl.dsp.window.center()',
-    }
-    legacy_map = {
-        "fullscreen": ["fullscreen"],
-        "maximize": ["fullscreen", "1"],
-        "close": ["killactive"],
-        "minimize": ["movetospecialsilent"],
-        "float": ["togglefloating"],
-        "center": ["centerwindow"],
-    }
     clean_action = str(action).strip().lower()
-    if clean_action not in lua_map:
-        return {"status": "error", "message": f"action must be one of: {', '.join(sorted(lua_map))}"}
+    if clean_action not in ("fullscreen", "maximize", "close", "minimize", "float", "center"):
+        return _observation_error("action must be fullscreen, maximize, close, minimize, float, or center")
+    before = await _desktop_observe(hyprctl, "activewindow")
+    window = before.get("data", {})
+    from skills import ground_truth
+    context = ground_truth.ACTION_TARGET.get()
+    if context is not None and not ground_truth.same_window(context['window'], window):
+        return _observation_error('Target focus changed before window dispatch; no action dispatched')
+    address = window.get("address", "")
+    if not isinstance(address, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", address) or int(address, 16) == 0:
+        return _observation_error("No exact active window is available; no action dispatched")
+    selector = "address:" + address
+    expected: dict[str, Any] = {}
+    center = None
+    if clean_action in ("fullscreen", "maximize"):
+        state = window.get("fullscreen")
+        if type(state) is not int or state not in (0, 1, 2, 3):
+            return _observation_error("Fullscreen state is unknown; no toggle dispatched")
+        mode = 2 if clean_action == "fullscreen" else 1
+        expected["fullscreen"] = 0 if state & mode else mode
+        lua_action = "unset" if state & mode else "set"
+        lua_mode = "fullscreen" if mode == 2 else "maximized"
+        lua = f'hl.dsp.window.fullscreen({{ mode = "{lua_mode}", action = "{lua_action}", window = "{selector}" }})'
+        legacy = ["fullscreen", "0" if mode == 2 else "1"]
+    elif clean_action == "float":
+        if type(window.get("floating")) is not bool:
+            return _observation_error("Floating state is unknown; no toggle dispatched")
+        expected["floating"] = not window["floating"]
+        toggle = "enable" if expected["floating"] else "disable"
+        lua = f'hl.dsp.window.float({{ action = "{toggle}", window = "{selector}" }})'
+        legacy = ["togglefloating", selector]
+    elif clean_action == "close":
+        expected["present"] = False
+        lua = f'hl.dsp.window.close({{ window = "{selector}" }})'
+        legacy = ["closewindow", selector]
+    elif clean_action == "minimize":
+        expected["workspace"] = "special:scratchpad"
+        lua = f'hl.dsp.window.move({{ workspace = "special:scratchpad", follow = false, window = "{selector}" }})'
+        legacy = ["movetoworkspacesilent", "special:scratchpad," + selector]
+    else:
+        if window.get("floating") is not True or window.get("fullscreen", 0) != 0:
+            return _observation_error("Center is supported only for a non-fullscreen floating window; no action dispatched")
+        monitors = await _desktop_observe(hyprctl, "monitors")
+        monitor = next((item for item in monitors.get("data", []) if item.get("id") == window.get("monitor")), None)
+        try:
+            if monitor is None:
+                raise ValueError("Target monitor is unavailable")
+            width, height = monitor["width"], monitor["height"]
+            if monitor.get("transform", 0) in (1, 3, 5, 7):
+                width, height = height, width
+            scale = float(monitor["scale"])
+            if scale <= 0:
+                raise ValueError("Invalid monitor scale")
+            left, top, right, bottom = monitor.get("reserved", [0, 0, 0, 0])
+            dimensions = (width, height, scale, monitor["x"], monitor["y"], left, top, right, bottom)
+            if any(type(value) not in (int, float) or not math.isfinite(value) for value in dimensions):
+                raise ValueError("Invalid monitor geometry")
+            if width / scale <= left + right or height / scale <= top + bottom:
+                raise ValueError("Monitor has no usable work area")
+            center = (monitor["x"] + (width / scale + left - right) / 2,
+                      monitor["y"] + (height / scale + top - bottom) / 2)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            return _observation_error("Target monitor geometry is unknown; no center dispatched")
+        expected["center"] = list(center)
+        lua = f'hl.dsp.window.center({{ window = "{selector}" }})'
+        legacy = ["centerwindow"]
 
-    code, _, _ = await _run_command(hyprctl, "dispatch", lua_map[clean_action])
-    if code != 0:
-        await _run_command(hyprctl, "dispatch", *legacy_map[clean_action])
-    return {"status": "success", "action": clean_action}
+    dispatched = await _desktop_dispatch(hyprctl, lua, legacy,
+        active_address=address if clean_action in ("fullscreen", "maximize", "center") else None)
+    result = {"action": clean_action, "target": {"address": address, "pid": window.get("pid")}, "expected": expected}
+    if dispatched["status"] != "executed":
+        return {**dispatched, **result}
+
+    def matches(clients):
+        observed = next((item for item in clients if item.get("address") == address), None)
+        if clean_action == "close":
+            return observed is None or observed.get("mapped") is False
+        if observed is None or (window.get("pid") is not None and observed.get("pid") != window["pid"]):
+            return False
+        if clean_action == "minimize":
+            return isinstance(observed.get("workspace"), dict) and observed["workspace"].get("name") == expected["workspace"]
+        if clean_action == "center":
+            try:
+                x, y = observed["at"]
+                width, height = observed["size"]
+                return (observed.get("monitor") == window.get("monitor") and width > 0 and height > 0
+                        and abs(x + width / 2 - center[0]) <= 2 and abs(y + height / 2 - center[1]) <= 2)
+            except (KeyError, TypeError, ValueError):
+                return False
+        return all(type(observed.get(key)) is type(value) and observed[key] == value for key, value in expected.items())
+
+    verified, observation = await _desktop_readback(hyprctl, "clients", matches)
+    if verified:
+        return {**result, "status": "success", "verified": True, "executed": True,
+                "evidence": {"source": observation["source"], "observed_at": observation["observed_at"],
+                             "address": address, "postcondition": expected}}
+    return {**result, "status": "error" if observation.get("status") == "success" else "unverified",
+            "verified": False, "executed": True,
+            "message": "Window request executed, but its exact target outcome was not verified. Do not claim success."}
 
 
 async def switch_workspace(workspace: int | str) -> dict[str, Any]:
-    """Switch active desktop workspace to 1-10, next, or previous."""
+    """Resolve a workspace identity before dispatch and verify it after dispatch."""
     hyprctl = shutil.which("hyprctl")
     if not hyprctl:
-        return {"status": "error", "message": "hyprctl is not installed"}
+        return _observation_error("hyprctl is not installed")
 
+    if isinstance(workspace, bool):
+        return _observation_error("workspace must be 1 to 10, next, or previous")
     target = str(workspace).strip().lower()
     if target in ("next", "e+1"):
         target_ws = "e+1"
@@ -1247,15 +1459,43 @@ async def switch_workspace(workspace: int | str) -> dict[str, Any]:
         try:
             ws_num = int(target)
             if not 1 <= ws_num <= 10:
-                return {"status": "error", "message": "workspace must be between 1 and 10"}
+                return _observation_error("workspace must be between 1 and 10")
             target_ws = str(ws_num)
         except ValueError:
-            return {"status": "error", "message": "workspace must be 1 to 10, next, or previous"}
+            return _observation_error("workspace must be 1 to 10, next, or previous")
 
-    code, _, _ = await _run_command(hyprctl, "dispatch", f'hl.dsp.focus({{ workspace = "{target_ws}" }})')
-    if code != 0:
-        await _run_command(hyprctl, "dispatch", "workspace", target_ws)
-    return {"status": "success", "workspace": workspace}
+    before = await _desktop_observe(hyprctl, "activeworkspace")
+    current = before.get("data", {}).get("id")
+    if type(current) is not int or current <= 0:
+        return _observation_error("Active workspace is unknown; no switch dispatched")
+    if target_ws in ("e+1", "e-1"):
+        workspaces = await _desktop_observe(hyprctl, "workspaces")
+        ids = sorted({item["id"] for item in workspaces.get("data", [])
+                      if type(item.get("id")) is int and item["id"] > 0})
+        if current not in ids:
+            return _observation_error("Workspace list is unavailable or stale; no relative switch dispatched")
+        index = ids.index(current)
+        offset = 1 if target_ws == "e+1" else -1
+        target_ws = str(ids[(index + offset) % len(ids)])
+    if int(target_ws) == current:
+        return {"status": "success", "verified": True, "executed": False, "unchanged": True,
+                "workspace": workspace, "target_workspace": current, "previous_workspace": current,
+                "evidence": {"source": before["source"], "observed_at": before["observed_at"],
+                             "workspace_id": current}}
+    dispatched = await _desktop_dispatch(hyprctl,
+        f'hl.dsp.focus({{ workspace = "{target_ws}" }})', ["workspace", target_ws])
+    result = {"workspace": workspace, "target_workspace": int(target_ws), "previous_workspace": current}
+    if dispatched["status"] != "executed":
+        return {**dispatched, **result}
+    verified, observation = await _desktop_readback(hyprctl, "activeworkspace",
+        lambda data: type(data.get("id")) is int and data["id"] == int(target_ws))
+    if verified:
+        return {**result, "status": "success", "verified": True, "executed": True,
+                "evidence": {"source": observation["source"], "observed_at": observation["observed_at"],
+                             "workspace_id": int(target_ws)}}
+    return {**result, "status": "error" if observation.get("status") == "success" else "unverified",
+            "verified": False, "executed": True,
+            "message": "Workspace request executed, but its target was not verified. Do not claim success."}
 
 
 async def lock_screen() -> dict[str, Any]:
