@@ -38,12 +38,16 @@ class OpenWakeWordDetector:
         self._pcm = bytearray()
         self.last_score = 0.0
         self.peak_score = 0.0
+        self._candidate_hits = 0
+        self._candidate_age = 0
 
     def reset(self) -> None:
         self._pcm.clear()
         self._model.reset()
         self.last_score = 0.0
         self.peak_score = 0.0
+        self._candidate_hits = 0
+        self._candidate_age = 0
 
     def process(self, frame: bytes) -> bool:
         self._pcm.extend(frame)
@@ -58,11 +62,26 @@ class OpenWakeWordDetector:
                                if scores else 0.0)
             self.peak_score = max(getattr(self, 'peak_score', 0.0), self.last_score)
             if self.last_score >= self.threshold:
-                detected = True
-                log.info('Wake phrase matched (confidence %.3f, threshold %.3f)',
-                         self.last_score, self.threshold)
-                self.reset()
-                break
+                self._candidate_hits = getattr(self, '_candidate_hits', 0) + 1
+                self._candidate_age = 0
+                # Low thresholds help this microphone hear the phrase, but a
+                # single low-confidence spike is too easy for room speech to
+                # produce. Only an unmistakable score may wake immediately;
+                # ordinary valid phrases must confirm on a nearby frame.
+                strong_threshold = min(1.0, max(0.15, self.threshold + 0.05))
+                if (self.last_score >= strong_threshold or
+                        self._candidate_hits >= 2):
+                    detected = True
+                    log.info(
+                        'Wake phrase matched (confidence %.3f, threshold %.3f, hits %d)',
+                        self.last_score, self.threshold, self._candidate_hits)
+                    self.reset()
+                    break
+            elif getattr(self, '_candidate_hits', 0):
+                self._candidate_age = getattr(self, '_candidate_age', 0) + 1
+                if self._candidate_age > 12:
+                    self._candidate_hits = 0
+                    self._candidate_age = 0
         return detected
 
 
@@ -70,13 +89,20 @@ class StandbyController:
     """Coordinate live-session shutdown and local wake-word activation."""
 
     def __init__(self, *, enabled: bool = True, threshold: float = 0.05,
-                 vad_threshold: float = 0.0, detector=None):
+                 vad_threshold: float = 0.0, detector=None,
+                 arming_delay: float = 1.0):
         self.enabled = enabled
         self.threshold = threshold
         self.vad_threshold = vad_threshold
         self.detector = detector
+        self.arming_delay = max(0.0, float(arming_delay))
         self.active = False
         self._requested = asyncio.Event()
+
+    @property
+    def engaged(self) -> bool:
+        """True from the instant standby is requested until wake completes."""
+        return self._requested.is_set() or self.active
 
     async def prepare(self) -> None:
         if self.enabled and self.detector is None:
@@ -96,16 +122,19 @@ class StandbyController:
 
     async def wait_until_requested(self) -> None:
         await self._requested.wait()
-        self._requested.clear()
 
     async def listen_for_wake_word(self, engine) -> None:
         if self.detector is None:
             raise WakeWordUnavailable('wake-word detector is not ready')
         self.active = True
-        self.detector.reset()
-        while not engine.async_input_queue.empty():
-            engine.async_input_queue.get_nowait()
         try:
+            if self.arming_delay:
+                await asyncio.sleep(self.arming_delay)
+            # Discard speech/playback tails captured while the cloud session was
+            # closing. Otherwise the command that entered standby can wake it again.
+            while not engine.async_input_queue.empty():
+                engine.async_input_queue.get_nowait()
+            self.detector.reset()
             windows = 0
             while True:
                 frame = await engine.async_input_queue.get()
@@ -120,3 +149,4 @@ class StandbyController:
                     self.detector.peak_score = 0.0
         finally:
             self.active = False
+            self._requested.clear()

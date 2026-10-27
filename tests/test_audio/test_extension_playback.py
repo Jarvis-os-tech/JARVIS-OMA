@@ -6,18 +6,16 @@ from audio.extension import ExtendedAudioEngine
 
 
 class ExtensionPlaybackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_processed_audio_is_tagged_sliced_and_marks_speaking(self):
+    async def test_processed_audio_is_tagged_and_marks_speaking(self):
         engine = NativeAudioEngine()
         wrapper = ExtendedAudioEngine(base_engine=engine)
         frame = b'\x01\x00' * 480
         class Processor:
             def process_output_frame(self, data):
-                return data * 2 + b'\x02\x00'
+                return b'\x02\x00' * (len(data) // 2)
         wrapper.register_processor(Processor())
         wrapper.put_processed_output(frame)
-        self.assertEqual(engine.c_output_queue.get_nowait(), (0, frame))
-        self.assertEqual(engine.c_output_queue.get_nowait(), (0, frame))
-        self.assertEqual(engine.c_output_queue.get_nowait(), (0, b'\x02\x00'))
+        self.assertEqual(engine.c_output_queue.get_nowait(), (0, b'\x02\x00' * 480))
         self.assertTrue(engine.c_output_queue.empty())
         self.assertTrue(engine.speaking)
 

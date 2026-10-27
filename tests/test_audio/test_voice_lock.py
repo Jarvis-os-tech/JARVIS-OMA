@@ -106,29 +106,29 @@ class AudioExtensionArchitectureTests(unittest.IsolatedAsyncioTestCase):
 
         class LowPriorityProcessor:
             def process_input_frame(self, frame: bytes) -> bytes | None:
-                return frame + b"_low"
+                return bytes(value + 1 for value in frame)
             def process_output_frame(self, frame: bytes) -> bytes | None:
-                return frame + b"_low"
+                return self.process_input_frame(frame)
 
         class HighPriorityProcessor:
             def process_input_frame(self, frame: bytes) -> bytes | None:
-                return frame + b"_high"
+                return bytes(value * 2 for value in frame)
             def process_output_frame(self, frame: bytes) -> bytes | None:
-                return frame + b"_high"
+                return self.process_input_frame(frame)
 
         low = LowPriorityProcessor()
         high = HighPriorityProcessor()
         registry.register_processor(low, priority=200)
         registry.register_processor(high, priority=10)
 
-        out_input = registry.apply_input_frame(b"pcm")
-        self.assertEqual(out_input, b"pcm_high_low")
+        out_input = registry.apply_input_frame(b"\x01\x00")
+        self.assertEqual(out_input, b"\x03\x01")
 
-        out_output = registry.apply_output_frame(b"pcm")
-        self.assertEqual(out_output, b"pcm_high_low")
+        out_output = registry.apply_output_frame(b"\x01\x00")
+        self.assertEqual(out_output, b"\x03\x01")
 
         self.assertTrue(registry.unregister_processor(high))
-        self.assertEqual(registry.apply_input_frame(b"pcm"), b"pcm_low")
+        self.assertEqual(registry.apply_input_frame(b"\x01\x00"), b"\x02\x01")
 
     def test_hook_event_dispatch(self):
         registry = AudioExtensionRegistry()
@@ -158,24 +158,30 @@ class AudioExtensionArchitectureTests(unittest.IsolatedAsyncioTestCase):
         fake_base = MagicMock()
         fake_base.async_input_queue = asyncio.Queue()
         fake_base.c_output_queue = MagicMock()
+        fake_base.active_generation = 7
+        fake_base.muted = False
+        fake_base.input_rate = 16000
+        fake_base.input_frame_ms = 20
+        fake_base.output_frame_bytes = 960
 
         extended = ExtendedAudioEngine(base_engine=fake_base)
 
-        # Register a processor that adds header bytes
+        # Frame processors preserve the PCM length and sample clock.
         class HeaderProcessor:
             def process_input_frame(self, frame: bytes) -> bytes | None:
-                return b"EXT_" + frame
+                return b"\x01\x00" * (len(frame) // 2)
             def process_output_frame(self, frame: bytes) -> bytes | None:
-                return b"OUT_" + frame
+                return b"\x02\x00" * (len(frame) // 2)
 
         extended.register_processor(HeaderProcessor())
 
-        await fake_base.async_input_queue.put(b"raw_frame")
+        await fake_base.async_input_queue.put(b"\0" * 640)
         result = await extended.get_processed_input()
-        self.assertEqual(result, b"EXT_raw_frame")
+        self.assertEqual(result, b"\x01\x00" * 320)
 
-        extended.put_processed_output(b"play_frame")
-        fake_base.c_output_queue.put_nowait.assert_called_once_with(b"OUT_play_frame")
+        extended.put_processed_output(b"\0" * 960)
+        fake_base.enqueue_output.assert_called_once_with(7, b"\x02\x00" * 480)
+        fake_base.c_output_queue.put_nowait.assert_not_called()
 
 
 if __name__ == "__main__":

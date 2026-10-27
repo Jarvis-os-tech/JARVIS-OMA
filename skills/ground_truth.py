@@ -6,6 +6,8 @@ changes (filesystem, processes, Hyprland windows, clipboard) before declaring st
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
+import hashlib
 import json
 import logging
 import os
@@ -14,9 +16,110 @@ import re
 import shutil
 import time
 from typing import Any
+from core.secret_env import sanitized_subprocess_env
 
 log = logging.getLogger(__name__)
 MAX_FILE_CONTENT_SCAN_BYTES = 1024 * 1024
+ACTION_TARGET = ContextVar('jarvis_verified_action_target', default=None)
+
+
+def window_identity(window: Any) -> tuple[str, int | None] | None:
+    """Use a compositor address, plus PID when known, never class/title equality."""
+    if not isinstance(window, dict):
+        return None
+    address = window.get('address')
+    if not isinstance(address, str) or not re.fullmatch(r'0x[0-9a-fA-F]+', address):
+        return None
+    number = int(address, 16)
+    if number <= 0:
+        return None
+    pid = window.get('pid')
+    return f'0x{number:x}', pid if type(pid) is int and pid > 0 else None
+
+
+def same_window(expected: Any, actual: Any) -> bool:
+    first, second = window_identity(expected), window_identity(actual)
+    return bool(first and second and first[0] == second[0] and
+                (first[1] is None or second[1] is None or first[1] == second[1]))
+
+
+def accessibility_fingerprint(state: Any) -> str | None:
+    """Hash meaningful bounded AX state; ephemeral tokens/snapshot IDs do not count."""
+    if not isinstance(state, dict) or state.get('degraded') or not isinstance(state.get('elements'), list):
+        return None
+    keys = ('role', 'label', 'name', 'value', 'text', 'description', 'enabled',
+            'selected', 'checked', 'focused', 'bounds', 'states')
+    elements = [{key: item[key] for key in keys if key in item}
+                for item in state['elements'][:100] if isinstance(item, dict)]
+    elements = [item for item in elements if item]
+    if not elements:
+        return None
+    raw = json.dumps(elements, sort_keys=True, ensure_ascii=False, default=str)[:131072]
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+async def prepare_action_target(arguments: dict, gui=None) -> dict[str, Any]:
+    """Bind one foreground target and heal focus once before any mutation."""
+    from skills import system_control, modal_healing
+    active = await system_control._query_active_window()
+    dialog = modal_healing.classify_dialog(active) if active else None
+    if dialog and dialog.requires_user_auth:
+        return {'verified': False, 'reason': 'authentication prompt requires the user'}
+    target = None
+    healed = False
+    named = arguments.get('target_window')
+    if named:
+        ok, reason, target = await system_control._focus_window_target(named)
+        if not ok:
+            return {'verified': False, 'reason': reason}
+        healed = reason == 'verified_active_healed'
+    elif gui is not None and arguments.get('target_window_id', arguments.get('window_id')) is not None:
+        requested = arguments.get('target_window_id', arguments.get('window_id'))
+        windows = (await gui.list_windows()).get('windows', [])
+        target = next((item for item in windows if item.get('window_id') == requested
+                       and (arguments.get('pid') is None or item.get('pid') == arguments['pid'])), None)
+        if target is None or window_identity(target) is None:
+            return {'verified': False, 'reason': 'exact target window could not be resolved'}
+    elif gui is not None and 'x' in arguments and 'y' in arguments:
+        windows = (await gui.list_windows()).get('windows', [])
+        target = next((item for item in windows if same_window(active, item)), None)
+        if target is None:
+            return {'verified': False, 'reason': 'choose an exact observable target window before coordinate input'}
+    active = await system_control._query_active_window()
+    dialog = modal_healing.classify_dialog(active) if active else None
+    if dialog and dialog.requires_user_auth:
+        return {'verified': False, 'reason': 'authentication prompt requires the user'}
+    if target is None:
+        target = active
+    if window_identity(target) is None:
+        return {'verified': False, 'reason': 'foreground window identity unavailable'}
+    if not same_window(target, active):
+        await modal_healing.heal_window_focus(window_identity(target)[0])
+        healed = True
+        active = await system_control._query_active_window()
+    if not same_window(target, active):
+        return {'verified': False, 'reason': 'focus recovery did not restore the exact target'}
+    return {'verified': True, 'window': target, 'healed': healed}
+
+
+async def ensure_dispatch_focus() -> tuple[bool, str]:
+    """Recheck the bound identity immediately before the input subprocess starts."""
+    from skills import system_control, modal_healing
+    context = ACTION_TARGET.get()
+    if context is None:
+        return True, 'no registry verification context'
+    active = await system_control._query_active_window()
+    dialog = modal_healing.classify_dialog(active) if active else None
+    if dialog and dialog.requires_user_auth:
+        return False, 'authentication prompt requires the user'
+    if same_window(context['window'], active):
+        return True, 'exact target is focused'
+    if not context.get('healed'):
+        context['healed'] = True
+        await modal_healing.heal_window_focus(window_identity(context['window'])[0])
+        active = await system_control._query_active_window()
+    return (True, 'exact target restored') if same_window(context['window'], active) else (
+        False, 'focus changed before input dispatch; no input was sent')
 
 
 def _inspect_file_state(
@@ -54,7 +157,7 @@ def _inspect_file_state(
 
 
 def _desktop_env() -> dict[str, str]:
-    env = os.environ.copy()
+    env = sanitized_subprocess_env()
     if "XDG_RUNTIME_DIR" not in env:
         env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
     if "WAYLAND_DISPLAY" not in env:
@@ -63,6 +166,7 @@ def _desktop_env() -> dict[str, str]:
 
 
 async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]:
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -72,8 +176,20 @@ async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode("utf-8", errors="replace").strip(), stderr.decode("utf-8", errors="replace").strip()
-    except (OSError, asyncio.TimeoutError) as exc:
-        return 1, "", str(exc)
+    except BaseException as exc:
+        if proc is not None:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.wait_for(proc.communicate(), 1)
+            except (TimeoutError, OSError):
+                pass
+        if isinstance(exc, (OSError, TimeoutError)):
+            return 1, "", str(exc)
+        raise
 
 
 async def verify_file_state(

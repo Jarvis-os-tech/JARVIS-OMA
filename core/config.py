@@ -42,18 +42,21 @@ class AgentConfig:
     tool_router: str = 'gemini'
     groq_tool_model: str = 'openai/gpt-oss-20b'
     tool_router_timeout_seconds: int = 8
+    connect_timeout_seconds: int = 10
 
 
 @dataclass
 class AudioConfig:
     """Audio capture and playback parameters."""
-    backend: str = 'legacy'
+    backend: str = 'native'
     native_cushion_s: float = 0.08
+    native_webrtc_gain: bool = False
+    start_muted: bool = False
     input_sample_rate: int = 16000
     output_sample_rate: int = 24000
     input_frame_ms: int = 20
     output_frame_ms: int = 20
-    queue_max_seconds: int = 10
+    queue_max_seconds: int = 60
     playback_latency_ms: int = 100
     capture_latency_ms: int = 30
     command_timeout: int = 8
@@ -73,6 +76,11 @@ class AudioConfig:
     def validate(self):
         if self.backend not in ('legacy', 'native'):
             raise ValueError('audio.backend must be legacy or native')
+        for name in ('native_webrtc_gain', 'start_muted'):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f'audio.{name} must be a boolean')
+        if self.native_webrtc_gain and self.backend != 'native':
+            raise ValueError('audio.native_webrtc_gain requires the native backend')
         if (type(self.native_cushion_s) not in (int, float) or
                 not math.isfinite(self.native_cushion_s) or not 0 <= self.native_cushion_s <= 1):
             raise ValueError('audio.native_cushion_s must be between 0 and 1')
@@ -94,8 +102,8 @@ class AudioConfig:
                 raise ValueError(f'audio.{direction}_frame_ms must produce an integral number of samples')
         if self.backend == 'native' and (
                 (self.input_sample_rate, self.output_sample_rate, self.input_frame_ms, self.output_frame_ms)
-                != (16000, 24000, 20, 20) or self.queue_max_seconds > 10):
-            raise ValueError('native audio requires 16/24 kHz, 20 ms frames and at most 10 s backlog')
+                != (16000, 24000, 20, 20) or self.queue_max_seconds > 120):
+            raise ValueError('native audio requires 16/24 kHz, 20 ms frames and at most 120 s backlog')
         if self.barge_in_after_ms <= self.duck_after_ms:
             raise ValueError('audio.barge_in_after_ms must be greater than audio.duck_after_ms')
         if type(self.fade_ms) is not int or self.fade_ms < 0:
@@ -252,6 +260,32 @@ class MemoryConfig:
 
 
 @dataclass
+class ProactiveConfig:
+    """Useful observations and polite delivery; never authorization for actions."""
+    enabled: bool = True
+    calendar: bool = True
+    system_alerts: bool = True
+    daily_focus: bool = False
+    poll_interval_seconds: int = 30
+    calendar_refresh_seconds: int = 120
+    quiet_seconds: float = 2.0
+    notice_cooldown_seconds: float = 30.0
+
+    def validate(self):
+        for name in ('enabled', 'calendar', 'system_alerts', 'daily_focus'):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f'proactive.{name} must be a boolean')
+        for name in ('poll_interval_seconds', 'calendar_refresh_seconds'):
+            value = getattr(self, name)
+            if type(value) is not int or not 5 <= value <= 3600:
+                raise ValueError(f'proactive.{name} must be between 5 and 3600 seconds')
+        for name in ('quiet_seconds', 'notice_cooldown_seconds'):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 3600:
+                raise ValueError(f'proactive.{name} must be between 0 and 3600 seconds')
+
+
+@dataclass
 class Config:
     """Root configuration container."""
     agent: AgentConfig = field(default_factory=AgentConfig)
@@ -262,6 +296,7 @@ class Config:
     filesystem: FilesystemConfig = field(default_factory=FilesystemConfig)
     commands: dict[str, str] = field(default_factory=dict)  # command overrides
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    proactive: ProactiveConfig = field(default_factory=ProactiveConfig)
 
     def validate(self):
         for name in ('model', 'voice'):
@@ -275,12 +310,16 @@ class Config:
         if (type(self.agent.tool_router_timeout_seconds) is not int or
                 not 1 <= self.agent.tool_router_timeout_seconds <= 30):
             raise ValueError('agent.tool_router_timeout_seconds must be between 1 and 30')
+        if (type(self.agent.connect_timeout_seconds) is not int or
+                not 1 <= self.agent.connect_timeout_seconds <= 60):
+            raise ValueError('agent.connect_timeout_seconds must be between 1 and 60')
         if type(self.skills.enabled) is not bool:
             raise ValueError('skills.enabled must be a boolean')
         self.audio.validate()
         self.vad.validate()
         self.standby.validate()
         self.memory.validate()
+        self.proactive.validate()
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +405,8 @@ def _apply_env_overrides(config: Config):
         'JARVIS_NOISE_SUPPRESSION': ('audio', 'noise_suppression'),
         'JARVIS_AUDIO_BACKEND': ('audio', 'backend'),
         'JARVIS_NATIVE_CUSHION_S': ('audio', 'native_cushion_s'),
+        'JARVIS_NATIVE_WEBRTC_GAIN': ('audio', 'native_webrtc_gain'),
+        'JARVIS_START_MUTED': ('audio', 'start_muted'),
         'JARVIS_LOCAL_BARGE_IN': ('audio', 'local_barge_in'),
         'JARVIS_MIC_VOLUME_PERCENT': ('audio', 'mic_volume_percent'),
         'JARVIS_PLAYBACK_CUSHION_S': ('audio', 'playback_cushion_s'),
@@ -434,7 +475,7 @@ def load_config(path: str | Path | None = None, **overrides: Any) -> Config:
             raise ValueError(f'Config file must be a mapping, got {type(data).__name__}')
 
         # Merge sections
-        for section_name in ('agent', 'audio', 'vad', 'skills', 'standby', 'filesystem', 'memory'):
+        for section_name in ('agent', 'audio', 'vad', 'skills', 'standby', 'filesystem', 'memory', 'proactive'):
             section_data = data.get(section_name)
             if section_name in data and not isinstance(section_data, dict):
                 raise ValueError(f'{section_name} section must be a mapping')

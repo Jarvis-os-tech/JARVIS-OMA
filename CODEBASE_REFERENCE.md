@@ -2,8 +2,8 @@
 
 > **Definitive Codebase & Architectural Specification**  
 > **System**: J.A.R.V.I.S. OMA — Full-Duplex Voice Agent for Omarchy OS (Python 3.12+ + PipeWire + Gemini Live + Sovereign 4-Tier Memory + External Service Connectors + Proactive Autonomy)  
-> **Last Verified & Synchronized**: `2026-10-24 18:44:43 IST`
-> **Active Working Branch**: `main` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
+> **Last Verified & Synchronized**: `2026-10-27 18:09:15 IST`
+> **Active Working Branch**: `feature/audio-stack` | **Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`  
 
 ---
 
@@ -17,7 +17,7 @@
     *   **Google Gemini Live Bidirectional API**: Direct full-duplex audio session over WebSockets via official Google GenAI SDK (`google-genai==2.24.0`). Streams 16 kHz PCM16 audio upstream and receives 24 kHz PCM16 audio chunks downstream with realtime interruption handling.
     *   **Sub-10ms Native PipeWire AEC Audio Pipeline**: Real-time WebRTC acoustic echo cancellation using `module-echo-cancel` managed via `pactl` ([`echo_cancel.py`](file:///home/g0pi/Projects/JARVIS-OMA/echo_cancel.py)). Employs private virtual audio nodes (`omachy_aec_*`) with low session priority to avoid disrupting system defaults, physical microphone volume capping (default 80%), and safe pre-conversation gain restoration.
     *   **Generation-Fenced Playback Engine**: Bounded playback queue ([`agent.py:Playback`](file:///home/g0pi/Projects/JARVIS-OMA/agent.py#L62)) running `pw-play` with cushion timing (`0.35s`), eliminating PipeWire audio pipeline bloat. Monotonically increasing generation counters instantly discard queued chunks upon speech interruption.
-    *   **Dynamic Desktop Skills Matrix**: 185 dynamically discovered desktop tools declared across 22 JSON manifests in [`skill_manifests/`](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests) mapped to audited Python adapters in [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py). Validates strict schemas and excludes tools with missing system binaries via graceful degradation.
+    *   **Dynamic Desktop Skills Matrix**: 188 dynamically discovered desktop tools declared across 23 JSON manifests in [`skill_manifests/`](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests) mapped to audited Python adapters in [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py). Validates strict schemas and excludes tools with missing system binaries via graceful degradation.
     *   **External Service Connectors**: Voice-authorized GitHub and Google Workspace (Gmail, Calendar, Tasks) integrations with token storage in `connectors/.secrets/`, OAuth web flows, and automated browser dispatch ([`connectors/`](file:///home/g0pi/Projects/JARVIS-OMA/connectors)).
     *   **Visible Desktop Execution & Task Verification**: Interactive agent delegation inside isolated, visible tmux sessions on Omarchy Wayland desktop ([`orchestration/desktop_execution.py`](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/desktop_execution.py)) with pre-dispatch cryptographic file hash checks ([`proactive/verification.py`](file:///home/g0pi/Projects/JARVIS-OMA/proactive/verification.py)).
     *   **Dynamic Contextual Greetings**: Persistent, state-aware greeting engine ([`core/greeting.py`](file:///home/g0pi/Projects/JARVIS-OMA/core/greeting.py)) that suppresses redundant welcomes, tracks return cooldowns, and generates natural single-sentence prompts focused on unfinished tasks.
@@ -36,12 +36,15 @@
 ## 2. Real-Time Git Branch & Commit Telemetry
 
 ### Branch & Remote Status
-*   **Active Working Branch**: `main`
+*   **Active Working Branch**: `feature/audio-stack`
 *   **Tracking Remote**: `https://github.com/Jarvis-os-tech/JARVIS-OMA.git`
-*   **Latest Commit SHA**: `ae5938e01eaceab8842c64cdbd384c094a27d514` (`ae5938e`)
-*   **Latest Commit Subject**: `feat: integrate CLI-Anything hub skills, universal memory MCP service, and voice lock enforcement`
+*   **Latest Commit SHA**: `b799bb7bcd078778577fc9cceab6a01d1ef5112e` (`b799bb7`)
+*   **Latest Commit Subject**: `feat(desktop): add Wayland socket recovery, Groq tool router, and Aura Orbit UI`
 
 ### Commit History (Recent Log)
+*   `b799bb7` (2026-10-24): **feat(desktop): add Wayland socket recovery, Groq tool router, and Aura Orbit UI**
+*   `5d15f3b` (2026-10-24): **feat(calendar): add IST normalization and full calendar management tools**
+*   `0305377` (2026-10-24): **fix: apply verified security and runtime repairs (S04-S09, E01-E10)**
 *   `ae5938e` (2026-10-21): **feat: integrate CLI-Anything hub skills, universal memory MCP service, and voice lock enforcement**
 *   `bd43684` (2026-10-20): **feat(orchestration): integrate harness2 adapter for agent context and outcome tracking**
 *   `78c07cb` (2026-10-20): **feat(orchestration): decouple ao integration and enable native tmux multi-agent launching**
@@ -54,90 +57,66 @@
 *   `7789b95` (2026-10-15): **docs: complete all tasks in full-duplex voice OS implementation plan**
 *   `801db04` (2026-10-15): **fix(audio): support mock/null audio engines in DownstreamRouter and preserve playback_cushion_s in AudioConfig**
 *   `ff5d6f6` (2026-10-15): **feat(cli): add jarvisctl and voicectl CLI for daemon state and quickshell integration**
-*   `b0e7afb` (2026-10-15): **feat(ipc): add mode-0600 UNIX domain socket server for state and controls**
-*   `4d34d4f` (2026-10-15): **feat(core): implement 150ms shielded hybrid latency tool gate and GoAway session resumption buffering**
-*   `57172e8` (2026-10-14): **feat(audio): implement isochronous engine with 40ms ducking and 300ms barge-in**
 
 ### Working Tree Telemetry
 ```text
-M .env.example
- M CODEBASE_REFERENCE.md
- M audio/extension.py
- M audio/plugins/standby.py
- M config.toml.example
- M connectors/google_workspace.py
- M connectors/internet_search.py
- M core/agent.py
- M core/config.py
- M core/desktop_session.py
- M core/greeting.py
- M core/ipc.py
- M docs/autonomous-orchestration.md
- M filesystem/filesystem.py
- M filesystem/task_runner.py
- M proactive/monitor.py
- M proactive/policy.py
- M requirements.txt
- M run.sh
- M scripts/install-service.sh
- M scripts/update_codebase_reference.py
- M skill_manifests/agent-orchestration.json
- M skill_manifests/google-workspace.json
- M skills/manifests/agent-orchestration.json
- M skills/skills.py
- M skills/system_control.py
- M systemd/jarvis-oma.service
- M systemd/jarvis.service
- M tests/test_audio/test_standby.py
- M tests/test_audio/test_voice_lock.py
- M tests/test_core/test_agent.py
- M tests/test_core/test_config.py
- M tests/test_core/test_desktop_session.py
- M tests/test_core/test_greeting.py
- M tests/test_core/test_ipc.py
- M tests/test_core/test_phone_monitor.py
- M tests/test_core/test_startup.py
- M tests/test_filesystem/test_filesystem.py
- M tests/test_filesystem/test_task_runner.py
- M tests/test_orchestration/test_agent_orchestrator.py
- M tests/test_proactive/test_proactive_monitor.py
- M tests/test_proactive/test_proactive_policy.py
- M tests/test_skills/test_cli_anything.py
- M tests/test_skills/test_development.py
- M tests/test_skills/test_skills.py
-?? .genkit/
-?? audio/plugins/native/
-?? audio/plugins/native_backend.py
-?? audio/plugins/native_probe.py
-?? connectors/calendar_time.py
-?? docs/browser-parity-audio-research-2026-10-21.md
-?? docs/harness-learning.md
-?? docs/model-routing.md
-?? error
-?? learning/
-?? orchestration/groq_tool_router.py
-?? orchestration/model_routes.py
-?? report/
-?? requirements-harness2.txt
-?? scripts/check_model_access.py
-?? scripts/orbit_status.py
-?? scripts/voice_diagnostics.py
-?? skill_manifests/model-processing.json
-?? systemd/native-audio.conf.example
-?? tests/test_audio/test_extension_playback.py
-?? tests/test_audio/test_native_backend.py
-?? tests/test_core/test_voice_orbit.py
-?? tests/test_learning/
-?? tests/test_orchestration/test_groq_tool_router.py
-?? tests/test_orchestration/test_model_routes.py
-?? tests/test_skills/test_adjustment_routing.py
-?? tests/test_skills/test_agent_cost_policy.py
-?? tests/test_skills/test_calendar_management.py
-?? tests/test_skills/test_calendar_timezones.py
-?? tests/test_skills/test_cli_anything_integration.py
-?? tests/test_skills/test_search_result_urls.py
-?? tests/test_skills/test_subprocess_environment.py
-?? ui/
+M  .github/workflows/ci.yml
+M  audio/extension.py
+A  audio/plugins/native/.gitignore
+A  audio/plugins/native/Makefile
+A  audio/plugins/native/README.md
+A  audio/plugins/native/companion.c
+A  audio/plugins/native/webrtc_gain.cpp
+A  audio/plugins/native/webrtc_gain.h
+A  audio/plugins/native/webrtc_gain_test.c
+A  audio/plugins/native_acceptance.py
+A  audio/plugins/native_backend.py
+A  audio/plugins/native_probe.py
+M  audio/plugins/standby.py
+M  core/agent.py
+A  core/audio_scheduler.py
+M  core/config.py
+A  core/connection.py
+A  core/harness_config.py
+A  core/response_metrics.py
+A  core/tool_dispatch.py
+A  core/vision_stream.py
+A  docs/browser-parity-audio-research-2026-10-21.md
+M  orchestration/groq_tool_router.py
+A  orchestration/tool_tiers.py
+A  proactive/attention.py
+A  proactive/system_watch.py
+A  report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md
+A  scripts/jarvis
+A  scripts/jarvis_mode.py
+M  scripts/jarvisctl.py
+A  skill_manifests/jarvis-mode.json
+A  skills/action_verification.py
+A  skills/domains/__init__.py
+A  skills/domains/github.py
+A  skills/domains/orchestration.py
+A  skills/domains/workspace.py
+A  skills/errors.py
+M  skills/ground_truth.py
+M  skills/manifests/google-workspace.json
+A  skills/manifests/jarvis-mode.json
+A  skills/manifests/model-processing.json
+M  skills/skills.py
+M  skills/system_control.py
+A  systemd/native-audio.conf.example
+A  tests/test_audio/test_extension_pipeline.py
+M  tests/test_audio/test_extension_playback.py
+A  tests/test_audio/test_native_backend.py
+M  tests/test_audio/test_standby.py
+M  tests/test_audio/test_voice_lock.py
+M  tests/test_core/test_agent.py
+A  tests/test_core/test_audio_scheduler.py
+M  tests/test_core/test_config.py
+A  tests/test_core/test_connection.py
+M  tests/test_core/test_ipc.py
+A  tests/test_core/test_response_metrics.py
+A  tests/test_skills/test_jarvis_mode.py
+M  tests/test_skills/test_system_control.py
 ```
 
 ---
@@ -200,7 +179,7 @@ sequenceDiagram
     Agent->>Skills: DesktopSkills(scan manifests, check commands)
     Skills->>Connectors: initialize GitHub & Google Workspace bridges
     Skills->>Memory: MemoryBridge.start() (load knowledge.db, FTS5)
-    Agent->>GenAI: client.live.connect(model, voice, tools=185)
+    Agent->>GenAI: client.live.connect(model, voice, tools=188)
     GenAI-->>Agent: Session Established
     Agent->>Mic: spawn pw-record --target echo.source
     Agent->>Greeting: prepare(conversation_history, cooldown=4h)
@@ -240,10 +219,10 @@ sequenceDiagram
 1.  **Configuration Resolution**: [`config.py`](file:///home/g0pi/Projects/JARVIS-OMA/config.py) evaluates settings using a strict priority ladder: CLI flags override `JARVIS_*` environment variables, which override `config.toml` / `config.json`, which fall back to built-in defaults.
 2.  **Audio Infrastructure Warmup**: [`echo_cancel.py`](file:///home/g0pi/Projects/JARVIS-OMA/echo_cancel.py) queries default PipeWire sources and sinks via `pactl`. It caps physical microphone gain at 80% to prevent clipping, then loads `module-echo-cancel` with WebRTC acoustic echo cancellation (`rate=48000`, `high_pass_filter=1`, `noise_suppression=1`).
 3.  **Playback Queue Initialization**: A bounded `Playback` instance is instantiated targeting the virtual echo cancellation sink with a 10-second maximum backlog buffer and cushion timing (`0.35s`).
-4.  **Skills Registry Scanning & Tool Validation**: [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py) parses all 22 JSON manifests in `skill_manifests/`. It validates all tool declarations, verifies required system commands (`ADAPTER_COMMANDS`), and prepares 185 function schemas for Gemini Live.
+4.  **Skills Registry Scanning & Tool Validation**: [`skills.py`](file:///home/g0pi/Projects/JARVIS-OMA/skills.py) parses all 23 JSON manifests in `skill_manifests/`. It validates all tool declarations, verifies required system commands (`ADAPTER_COMMANDS`), and prepares 188 function schemas for Gemini Live.
 5.  **External Service Connectors Initialization**: External adapters for Google Workspace (Gmail, Calendar, Tasks) and GitHub are loaded with credentials retrieved securely from the process environment or `connectors/.secrets/credentials.env`.
 6.  **Memory Subsystem Engagement**: [`memory/codes-dev/jarvis_memory/bridge.py`](file:///home/g0pi/Projects/JARVIS-OMA/memory/codes-dev/jarvis_memory/bridge.py) (via [`jarvis_memory/`](file:///home/g0pi/Projects/JARVIS-OMA/jarvis_memory)) opens `memory_facts.jsonl`, connects to SQLite `knowledge.db`, initializes FTS5 document indexing, verifies the vector cache `semantic_vectors.db`, and compiles initial prompt context.
-7.  **Gemini Live WebSocket Connection**: Connects to Google Gemini Live API via `client.live.connect()`, passing the system instruction (enforcing concise single-sentence responses), selected voice model (`Aoede`), VAD sensitivity parameters, and the 185 tool declarations.
+7.  **Gemini Live WebSocket Connection**: Connects to Google Gemini Live API via `client.live.connect()`, passing the system instruction (enforcing concise single-sentence responses), selected voice model (`Aoede`), VAD sensitivity parameters, and the 188 tool declarations.
 8.  **Microphone Process Spawn**: Starts `pw-record` as an asynchronous child process streaming 16 kHz signed 16-bit mono PCM audio from the private echo-cancelled source.
 9.  **Dynamic Contextual Greeting**: [`core/greeting.py`](file:///home/g0pi/Projects/JARVIS-OMA/core/greeting.py) evaluates recent greeting timestamps and cooldowns. If unsuppressed, it generates a single-sentence conversational greeting tailored to the user's latest unfinished task.
 10. **Supervised Concurrent Workers**: The main loop launches `supervise()` across concurrent background tasks:
@@ -258,25 +237,31 @@ sequenceDiagram
 
 ---
 
-## 5. Complete Module Map (All 501 Files)
+## 5. Complete Module Map (All 511 Files)
 
-Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (501 files cataloged across modular subsections with zero omissions):
+Below is an exhaustive, 100% complete accounting of every single source file, test suite, manifest, and script in the repository (511 files cataloged across modular subsections with zero omissions):
 
-### 5.1 Modular Core Runtime (`core/`) (9 files)
+### 5.1 Modular Core Runtime (`core/`) (15 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [core/README.md](file:///home/g0pi/Projects/JARVIS-OMA/core/README.md) | 31 | 1356 | Core Subsystem Documentation | Architecture documentation for core voice agent and configuration subsystem. |
 | [core/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/core/__init__.py) | 12 | 416 | Modular Core Package Marker | Package initialization marker for core voice agent runtime and dynamic configuration. |
-| [core/agent.py](file:///home/g0pi/Projects/JARVIS-OMA/core/agent.py) | 2332 | 131197 | Core Voice Agent Runtime | Full-duplex Gemini Live voice agent over PipeWire with concurrent capture, playback, interruption generation fences, proactive greetings, tool execution, and SIGUSR1/SIGUSR2 mute/interrupt signal handling. |
-| [core/config.py](file:///home/g0pi/Projects/JARVIS-OMA/core/config.py) | 490 | 22337 | Dynamic Configuration Engine | Multi-tier settings loader with priority chain: CLI flags > environment variables > TOML/JSON config files > built-in defaults. |
+| [core/agent.py](file:///home/g0pi/Projects/JARVIS-OMA/core/agent.py) | 2275 | 120531 | Core Voice Agent Runtime | Full-duplex Gemini Live voice agent over PipeWire with concurrent capture, playback, interruption generation fences, proactive greetings, tool execution, and SIGUSR1/SIGUSR2 mute/interrupt signal handling. |
+| [core/audio_scheduler.py](file:///home/g0pi/Projects/JARVIS-OMA/core/audio_scheduler.py) | 209 | 8349 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [core/config.py](file:///home/g0pi/Projects/JARVIS-OMA/core/config.py) | 531 | 24417 | Dynamic Configuration Engine | Multi-tier settings loader with priority chain: CLI flags > environment variables > TOML/JSON config files > built-in defaults. |
+| [core/connection.py](file:///home/g0pi/Projects/JARVIS-OMA/core/connection.py) | 147 | 5446 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [core/desktop_session.py](file:///home/g0pi/Projects/JARVIS-OMA/core/desktop_session.py) | 101 | 3538 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [core/greeting.py](file:///home/g0pi/Projects/JARVIS-OMA/core/greeting.py) | 73 | 4102 | Dynamic Greeting Memory | Persistent, state-aware greeting engine suppressing redundant welcomes, tracking return cooldowns, and generating fresh, single-sentence prompts focused on unfinished user tasks. |
+| [core/greeting.py](file:///home/g0pi/Projects/JARVIS-OMA/core/greeting.py) | 67 | 3714 | Dynamic Greeting Memory | Persistent, state-aware greeting engine suppressing redundant welcomes, tracking return cooldowns, and generating fresh, single-sentence prompts focused on unfinished user tasks. |
+| [core/harness_config.py](file:///home/g0pi/Projects/JARVIS-OMA/core/harness_config.py) | 366 | 30788 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [core/ipc.py](file:///home/g0pi/Projects/JARVIS-OMA/core/ipc.py) | 141 | 5884 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [core/response_metrics.py](file:///home/g0pi/Projects/JARVIS-OMA/core/response_metrics.py) | 73 | 2766 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [core/secret_env.py](file:///home/g0pi/Projects/JARVIS-OMA/core/secret_env.py) | 22 | 743 | Credential Sanitizer | Filters process environment dictionaries to prevent token and API key leakage into child processes. |
+| [core/tool_dispatch.py](file:///home/g0pi/Projects/JARVIS-OMA/core/tool_dispatch.py) | 43 | 1818 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [core/vision_stream.py](file:///home/g0pi/Projects/JARVIS-OMA/core/vision_stream.py) | 46 | 1872 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [core/workers.py](file:///home/g0pi/Projects/JARVIS-OMA/core/workers.py) | 132 | 5418 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.2 Modular Audio Subsystem (`audio/`) (15 files)
+### 5.2 Modular Audio Subsystem (`audio/`) (19 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -286,14 +271,18 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [audio/downstream.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/downstream.py) | 76 | 3666 | Downstream Audio Router | Accumulates variable-length Gemini audio chunks into fixed output frames with generation-tagged barge-in fencing. |
 | [audio/echo_cancel.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/echo_cancel.py) | 102 | 4726 | PipeWire AEC Audio Router | Session-owned WebRTC echo cancellation via pactl load-module module-echo-cancel, source volume capping, and automatic cleanup. |
 | [audio/engine.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/engine.py) | 945 | 43694 | Native Low-Latency Audio Engine | Real-time PortAudio/sounddevice full-duplex audio streaming engine with lock-free C queues, echo cancellation, and Barge-In detection. |
-| [audio/extension.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/extension.py) | 233 | 8109 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/extension.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/extension.py) | 332 | 12349 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [audio/plugins/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/__init__.py) | 1 | 74 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native/.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/.gitignore) | 1 | 14 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native/Makefile](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/Makefile) | 12 | 323 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native/README.md](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/README.md) | 102 | 5538 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native/companion.c](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/companion.c) | 294 | 15834 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native_backend.py) | 380 | 16152 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [audio/plugins/native_probe.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native_probe.py) | 66 | 2948 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/.gitignore) | 3 | 42 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/Makefile](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/Makefile) | 50 | 2167 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/README.md](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/README.md) | 170 | 9983 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/companion.c](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/companion.c) | 466 | 25583 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/webrtc_gain.cpp](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/webrtc_gain.cpp) | 108 | 4086 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/webrtc_gain.h](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/webrtc_gain.h) | 43 | 1595 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native/webrtc_gain_test.c](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native/webrtc_gain_test.c) | 112 | 5029 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native_acceptance.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native_acceptance.py) | 151 | 6538 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native_backend.py) | 448 | 19632 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [audio/plugins/native_probe.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/native_probe.py) | 68 | 3223 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [audio/plugins/standby.py](file:///home/g0pi/Projects/JARVIS-OMA/audio/plugins/standby.py) | 152 | 6235 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
 ### 5.3 External Service Connectors (`connectors/`) (8 files)
@@ -318,7 +307,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [filesystem/filesystem.py](file:///home/g0pi/Projects/JARVIS-OMA/filesystem/filesystem.py) | 350 | 14403 | Autonomous Filesystem Engine | Full autonomy file and directory operations (list, read, write, append, edit, mkdir, move, copy, trash, delete, inspect, search, grep) with root path safety guards. |
 | [filesystem/task_runner.py](file:///home/g0pi/Projects/JARVIS-OMA/filesystem/task_runner.py) | 201 | 9232 | In-Process Bounded Task Runner | Executes multi-step filesystem plans (up to 30 steps) in background workers with per-step tracking and cooperative cancellation. |
 
-### 5.5 Orchestration & Evolution Engine (`orchestration/`) (11 files)
+### 5.5 Orchestration & Evolution Engine (`orchestration/`) (12 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -328,33 +317,42 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [orchestration/desktop_execution.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/desktop_execution.py) | 615 | 30543 | Visible Desktop Execution Engine | Supervises coding agents (Codex, Claude) inside dedicated visible tmux terminal panes on Omarchy Wayland desktop. |
 | [orchestration/evolution.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/evolution.py) | 510 | 24704 | Autonomous Evolution Engine | Self-improvement pipeline analyzing tool failures, system diagnostics, and synthesizing code optimizations with rollback gates. |
 | [orchestration/execution_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/execution_backend.py) | 94 | 2713 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [orchestration/groq_tool_router.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/groq_tool_router.py) | 137 | 6184 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [orchestration/groq_tool_router.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/groq_tool_router.py) | 218 | 9388 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/harness2_adapter.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/harness2_adapter.py) | 97 | 4024 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/model_policy.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/model_policy.py) | 30 | 1496 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/model_routes.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/model_routes.py) | 87 | 3671 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [orchestration/personas.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/personas.py) | 40 | 2661 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [orchestration/tool_tiers.py](file:///home/g0pi/Projects/JARVIS-OMA/orchestration/tool_tiers.py) | 149 | 8013 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.6 Dynamic Skills Engine & Overlays (`skills/`) (34 files)
+### 5.6 Dynamic Skills Engine & Overlays (`skills/`) (42 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [skills/README.md](file:///home/g0pi/Projects/JARVIS-OMA/skills/README.md) | 46 | 2183 | Skills Subsystem Documentation | Architecture documentation for desktop skills engine and input overlay. |
 | [skills/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/__init__.py) | 4 | 184 | Modular Skills Package Marker | Package initialization marker for desktop skills registry, input bar, and overlay clients. |
-| [skills/ground_truth.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/ground_truth.py) | 366 | 14010 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/action_verification.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/action_verification.py) | 55 | 2714 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/domains/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/domains/__init__.py) | 1 | 79 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/domains/github.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/domains/github.py) | 83 | 3914 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/domains/orchestration.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/domains/orchestration.py) | 322 | 14647 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/domains/workspace.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/domains/workspace.py) | 173 | 9069 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/errors.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/errors.py) | 5 | 149 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/ground_truth.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/ground_truth.py) | 482 | 19780 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/gui_control.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/gui_control.py) | 465 | 23942 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/input_bar.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/input_bar.py) | 397 | 12465 | Multimodal Input Bar HUD | Compact single-row 44px HUD input bar with full transparency, inline attachment indicator, Enter-to-send, and dark glass styling. |
-| [skills/manifests/agent-orchestration.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/agent-orchestration.json) | 197 | 7341 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/manifests/agent-orchestration.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/agent-orchestration.json) | 192 | 7029 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/capabilities.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/capabilities.json) | 17 | 699 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/cli-anything.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/cli-anything.json) | 129 | 5102 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/desktop-awareness.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/desktop-awareness.json) | 87 | 2942 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/development.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/development.json) | 53 | 2984 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/filesystem.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/filesystem.json) | 18 | 4479 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/github.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/github.json) | 262 | 7999 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [skills/manifests/google-workspace.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/google-workspace.json) | 26 | 7127 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/manifests/google-workspace.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/google-workspace.json) | 33 | 13089 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/gui-control.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/gui-control.json) | 211 | 9525 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/input-bar.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/input-bar.json) | 4 | 627 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/internet-search.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/internet-search.json) | 18 | 720 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/manifests/jarvis-mode.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/jarvis-mode.json) | 53 | 2016 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/memory.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/memory.json) | 15 | 3179 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skills/manifests/model-processing.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/model-processing.json) | 1 | 951 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/omarchy-defaults.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/omarchy-defaults.json) | 179 | 6696 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/phone.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/phone.json) | 192 | 5656 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/manifests/proactive.json](file:///home/g0pi/Projects/JARVIS-OMA/skills/manifests/proactive.json) | 100 | 2934 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -368,16 +366,16 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [skills/native/Makefile](file:///home/g0pi/Projects/JARVIS-OMA/skills/native/Makefile) | 20 | 300 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/native/src/vision_ctrl.cpp](file:///home/g0pi/Projects/JARVIS-OMA/skills/native/src/vision_ctrl.cpp) | 316 | 12114 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/overlay_client.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/overlay_client.py) | 74 | 2118 | Native Wayland Overlay Client | Standalone WebKitGTK / GTK3 transparent window client launching JarvisInputBar strictly at 600x50 with RGBA transparency and zero compositor framing. |
-| [skills/skills.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/skills.py) | 2797 | 136161 | Desktop Skills Registry & Dispatcher | Discovers JSON manifests, validates strict argument schemas, maps 110 tools to safe adapters, enforces command dependencies, and degrades gracefully. |
-| [skills/system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_control.py) | 1389 | 64311 | System Control Adapters | Desktop system control adapters for volume, brightness, power state, and workspace navigation. |
+| [skills/skills.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/skills.py) | 2637 | 123883 | Desktop Skills Registry & Dispatcher | Discovers JSON manifests, validates strict argument schemas, maps 110 tools to safe adapters, enforces command dependencies, and degrades gracefully. |
+| [skills/system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_control.py) | 1629 | 78353 | System Control Adapters | Desktop system control adapters for volume, brightness, power state, and workspace navigation. |
 | [skills/system_extensions.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_extensions.py) | 177 | 9316 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skills/system_information.py](file:///home/g0pi/Projects/JARVIS-OMA/skills/system_information.py) | 301 | 17458 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.7 Dynamic Skill Manifests (`skill_manifests/`) (22 files)
+### 5.7 Dynamic Skill Manifests (`skill_manifests/`) (23 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
-| [skill_manifests/agent-orchestration.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/agent-orchestration.json) | 197 | 7409 | Agent Orchestration Manifest | Manifest declaring agent discovery, delegation, job status, and job cancellation tools. |
+| [skill_manifests/agent-orchestration.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/agent-orchestration.json) | 192 | 7029 | Agent Orchestration Manifest | Manifest declaring agent discovery, delegation, job status, and job cancellation tools. |
 | [skill_manifests/capabilities.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/capabilities.json) | 17 | 699 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skill_manifests/cli-anything.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/cli-anything.json) | 129 | 5102 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skill_manifests/desktop-awareness.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/desktop-awareness.json) | 87 | 2942 | Desktop Awareness Manifest | Manifest declaring inspect_screen OCR, window topography, and system resource monitoring tools. |
@@ -388,6 +386,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [skill_manifests/gui-control.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/gui-control.json) | 211 | 9525 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skill_manifests/input-bar.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/input-bar.json) | 4 | 627 | Input Bar Skills Manifest | Manifest declaring multimodal loopback input bar activation and query tools. |
 | [skill_manifests/internet-search.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/internet-search.json) | 18 | 720 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [skill_manifests/jarvis-mode.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/jarvis-mode.json) | 53 | 2016 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skill_manifests/memory.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/memory.json) | 15 | 3179 | Memory Skills Manifest | Manifest declaring 10 memory storage, fact recall, profile update, and search tools. |
 | [skill_manifests/model-processing.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/model-processing.json) | 1 | 951 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [skill_manifests/omarchy-defaults.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/omarchy-defaults.json) | 179 | 6696 | Omarchy Defaults Manifest | Manifest declaring 19 desktop application, notification, clipboard, and browser control tools. |
@@ -400,11 +399,12 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [skill_manifests/task-runner.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/task-runner.json) | 52 | 2031 | Task Runner Skills Manifest | Manifest declaring background filesystem task runner plan submission, status, and cancellation tools. |
 | [skill_manifests/vision.json](file:///home/g0pi/Projects/JARVIS-OMA/skill_manifests/vision.json) | 54 | 1850 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.8 Proactive Autonomy Subsystem (`proactive/`) (10 files)
+### 5.8 Proactive Autonomy Subsystem (`proactive/`) (12 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [proactive/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/__init__.py) | 13 | 303 | Proactive Module Exports | Exports AutonomyControl, EventBus, ActivityLedger, AutonomousPlanner, ProactivePolicy, ProactiveMonitor, and ProactiveRuntime. |
+| [proactive/attention.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/attention.py) | 84 | 3502 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [proactive/calendar.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/calendar.py) | 41 | 1940 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [proactive/control.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/control.py) | 136 | 5174 | Autonomy Control Matrix | SQLite-backed state governor enforcing global pause_jarvis, resume_jarvis, and stop_all_jarvis_work controls. |
 | [proactive/events.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/events.py) | 223 | 9825 | Durable Event Bus | SQLite-backed transactional queue for publishing, claiming, acknowledging, and failing proactive background events. |
@@ -413,6 +413,7 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [proactive/planner.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/planner.py) | 247 | 10564 | Autonomous Bounded Planner | Translates inbound events (tasks, todos, reminders) into deterministic agent routes and multi-step plans under safety ceilings. |
 | [proactive/policy.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/policy.py) | 184 | 6828 | Autonomy Policy Governor | Evaluates actions against rate limits, cooldown periods, duplicate suppression, and required authorization levels. |
 | [proactive/runtime.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/runtime.py) | 319 | 17702 | Proactive Autonomy Runtime | Master coordinator integrating events, ledger, control, policy, planner, and monitor with background observation loops for Omarchy todos and reminders. |
+| [proactive/system_watch.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/system_watch.py) | 152 | 6460 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [proactive/verification.py](file:///home/g0pi/Projects/JARVIS-OMA/proactive/verification.py) | 80 | 3607 | Artifact Verification Engine | Cryptographic pre-dispatch artifact verification validating exact sha256 byte digests, traversal guards, and size bounds outside worker permissions. |
 
 ### 5.9 Backward Compatibility Shims (`jarvis_memory/`) (2 files)
@@ -565,11 +566,11 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
-| [systemd/jarvis-oma.service](file:///home/g0pi/Projects/JARVIS-OMA/systemd/jarvis-oma.service) | 34 | 952 | Systemd User Service Unit | Runs JARVIS-OMA as an unprivileged user daemon under systemd with auto-restart, clean shutdown, and signal management. |
-| [systemd/jarvis.service](file:///home/g0pi/Projects/JARVIS-OMA/systemd/jarvis.service) | 34 | 1015 | Systemd Desktop Service Unit | Alternative systemd user service unit with full desktop environment bindings. |
-| [systemd/native-audio.conf.example](file:///home/g0pi/Projects/JARVIS-OMA/systemd/native-audio.conf.example) | 5 | 259 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [systemd/jarvis-oma.service](file:///home/g0pi/Projects/JARVIS-OMA/systemd/jarvis-oma.service) | 33 | 957 | Systemd User Service Unit | Runs JARVIS-OMA as an unprivileged user daemon under systemd with auto-restart, clean shutdown, and signal management. |
+| [systemd/jarvis.service](file:///home/g0pi/Projects/JARVIS-OMA/systemd/jarvis.service) | 33 | 1020 | Systemd Desktop Service Unit | Alternative systemd user service unit with full desktop environment bindings. |
+| [systemd/native-audio.conf.example](file:///home/g0pi/Projects/JARVIS-OMA/systemd/native-audio.conf.example) | 8 | 415 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.15 Support & Automation Scripts (`scripts/`) (17 files)
+### 5.15 Support & Automation Scripts (`scripts/`) (19 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -580,18 +581,20 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [scripts/connect_google.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/connect_google.py) | 114 | 5037 | Google Workspace OAuth CLI | Interactive loopback OAuth flow acquiring Google Workspace user credentials. |
 | [scripts/develop.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/develop.py) | 71 | 2920 | Capability Development CLI Harness | Inspects and drives capability-development proposals, sandboxed code synthesis, and test suites headlessly. |
 | [scripts/import_connector_credentials.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/import_connector_credentials.py) | 69 | 3492 | Connector Credential Importer | Securely imports and validates connector credentials into local storage. |
-| [scripts/install-service.sh](file:///home/g0pi/Projects/JARVIS-OMA/scripts/install-service.sh) | 13 | 675 | Systemd Service Installer | Automates installation, enablement, and user daemon management for jarvis-oma.service. |
-| [scripts/jarvisctl](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl) | 167 | 5887 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [scripts/jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py) | 167 | 5887 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/install-service.sh](file:///home/g0pi/Projects/JARVIS-OMA/scripts/install-service.sh) | 13 | 673 | Systemd Service Installer | Automates installation, enablement, and user daemon management for jarvis-oma.service. |
+| [scripts/jarvis](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvis) | 78 | 2392 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvis_mode.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvis_mode.py) | 272 | 9802 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvisctl](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl) | 312 | 12985 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [scripts/jarvisctl.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py) | 312 | 12985 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/orbit_status.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/orbit_status.py) | 100 | 4056 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/register_obsidian_vault.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/register_obsidian_vault.py) | 34 | 1481 | Obsidian Vault Registration Script | Safely registers the JARVIS-OMA memory vault into Obsidian desktop settings (~/.config/obsidian/obsidian.json) with backup. |
 | [scripts/sync_obsidian_memory.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/sync_obsidian_memory.py) | 14 | 398 | Headless Memory Sync Utility | Executes an immediate one-shot synchronization of sovereign memory facts and history into the Obsidian vault. |
 | [scripts/test_agent_delegation.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/test_agent_delegation.py) | 71 | 3370 | Live Agent Delegation Smoke Harness | End-to-end integration test creating temporary Git workspaces and verifying autonomous delegation to installed agents. |
-| [scripts/update_codebase_reference.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/update_codebase_reference.py) | 819 | 96432 | Codebase Reference Generator | Generates and synchronizes CODEBASE_REFERENCE.md with 100% precision from real-time Git and code telemetry. |
+| [scripts/update_codebase_reference.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/update_codebase_reference.py) | 809 | 94583 | Codebase Reference Generator | Generates and synchronizes CODEBASE_REFERENCE.md with 100% precision from real-time Git and code telemetry. |
 | [scripts/verify_voice_lock.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/verify_voice_lock.py) | 130 | 4925 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [scripts/voice_diagnostics.py](file:///home/g0pi/Projects/JARVIS-OMA/scripts/voice_diagnostics.py) | 104 | 4500 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.16 Automated Test Suites (`tests/`) (101 files)
+### 5.16 Automated Test Suites (`tests/`) (100 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -601,20 +604,24 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_audio/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/__init__.py) | 0 | 0 | Audio Test Package Marker | Package initialization marker for audio tests. |
 | [tests/test_audio/test_echo_cancel.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_echo_cancel.py) | 111 | 5467 | Echo Cancellation Tests | Tests pactl module loading, source volume calculation and restoration, and error cleanup. |
 | [tests/test_audio/test_engine.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_engine.py) | 1102 | 48976 | Native Audio Engine Tests | Tests PortAudio streaming, C queue frame sizing, and buffer overrun handling. |
-| [tests/test_audio/test_extension_playback.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_extension_playback.py) | 54 | 2355 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_audio/test_native_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_native_backend.py) | 84 | 4041 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_audio/test_extension_pipeline.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_extension_pipeline.py) | 361 | 15530 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_audio/test_extension_playback.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_extension_playback.py) | 52 | 2216 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_audio/test_native_backend.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_native_backend.py) | 175 | 8781 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_audio/test_standby.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_standby.py) | 130 | 5175 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_audio/test_voice_lock.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_voice_lock.py) | 184 | 7032 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_audio/test_voice_lock.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_audio/test_voice_lock.py) | 188 | 7292 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_connectors/test_browser.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_connectors/test_browser.py) | 25 | 1152 | Browser OAuth Launcher Tests | Tests sanitized environment browser spawning and URL allowlisting. |
 | [tests/test_core/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/__init__.py) | 0 | 0 | Core Test Package Marker | Package initialization marker for core tests. |
-| [tests/test_core/test_agent.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_agent.py) | 1341 | 58607 | Voice Agent Unit Tests | Tests full-duplex streaming, live config generation, greeting triggers, playback queueing, interruption fences, and signal handling. |
-| [tests/test_core/test_config.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_config.py) | 284 | 12947 | Configuration Engine Tests | Tests TOML/JSON parsing, environment variable overrides, CLI keyword overrides, and priority resolution. |
+| [tests/test_core/test_agent.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_agent.py) | 1341 | 58689 | Voice Agent Unit Tests | Tests full-duplex streaming, live config generation, greeting triggers, playback queueing, interruption fences, and signal handling. |
+| [tests/test_core/test_audio_scheduler.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_audio_scheduler.py) | 249 | 10880 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_core/test_config.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_config.py) | 324 | 14937 | Configuration Engine Tests | Tests TOML/JSON parsing, environment variable overrides, CLI keyword overrides, and priority resolution. |
+| [tests/test_core/test_connection.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_connection.py) | 178 | 9151 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_desktop_session.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_desktop_session.py) | 87 | 3554 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_core/test_greeting.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_greeting.py) | 67 | 3781 | Greeting Context Engine Tests | Tests greeting history persistence, daily suppression cooldowns, and prompt synthesis. |
-| [tests/test_core/test_ipc.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_ipc.py) | 238 | 8651 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_core/test_greeting.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_greeting.py) | 64 | 3591 | Greeting Context Engine Tests | Tests greeting history persistence, daily suppression cooldowns, and prompt synthesis. |
+| [tests/test_core/test_ipc.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_ipc.py) | 239 | 8746 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_phone_monitor.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_phone_monitor.py) | 198 | 7967 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_core/test_response_metrics.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_response_metrics.py) | 72 | 3165 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_secret_env.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_secret_env.py) | 23 | 962 | Secret Environment Tests | Tests regex-based credential filtering and sanitized subprocess environments. |
-| [tests/test_core/test_startup.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_startup.py) | 260 | 13745 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_core/test_startup.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_startup.py) | 213 | 11161 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_vision_pip.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_vision_pip.py) | 89 | 3799 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_vision_stream.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_vision_stream.py) | 271 | 11156 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_core/test_voice_orbit.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_core/test_voice_orbit.py) | 50 | 2064 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -622,11 +629,6 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_filesystem/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_filesystem/__init__.py) | 0 | 0 | Filesystem Test Package Marker | Package initialization marker for filesystem tests. |
 | [tests/test_filesystem/test_filesystem.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_filesystem/test_filesystem.py) | 188 | 10237 | Filesystem Skill Tests | Tests full autonomy file operations, offset reading, path traversal guards, and critical path protection. |
 | [tests/test_filesystem/test_task_runner.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_filesystem/test_task_runner.py) | 187 | 8720 | Task Runner Unit Tests | Tests bounded filesystem task plan validation, execution, and cancellation. |
-| [tests/test_learning/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_learning/__init__.py) | 1 | 40 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_learning/test_foundation.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_learning/test_foundation.py) | 258 | 12076 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_learning/test_refinement.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_learning/test_refinement.py) | 181 | 8305 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_learning/test_trials.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_learning/test_trials.py) | 131 | 7023 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_learning/test_voice_tests.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_learning/test_voice_tests.py) | 58 | 3233 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_memory/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_memory/__init__.py) | 0 | 0 | Memory Test Package Marker | Package initialization marker for memory tests. |
 | [tests/test_memory/test_memory_capture.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_memory/test_memory_capture.py) | 62 | 3259 | Memory Capture Tests | Tests extraction of explicit user facts without hallucinating assistant claims. |
 | [tests/test_memory/test_memory_config.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_memory/test_memory_config.py) | 120 | 6194 | Memory Configuration Tests | Tests validation of memory paths, providers, dimensions, timezones, and score thresholds. |
@@ -676,49 +678,47 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [tests/test_skills/test_calendar_management.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_calendar_management.py) | 128 | 7921 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_calendar_timezones.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_calendar_timezones.py) | 41 | 2221 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_capabilities.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_capabilities.py) | 51 | 2678 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_skills/test_cli_anything.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_cli_anything.py) | 410 | 22639 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_skills/test_cli_anything_integration.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_cli_anything_integration.py) | 124 | 5553 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [tests/test_skills/test_cli_anything.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_cli_anything.py) | 137 | 7641 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_connectors.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_connectors.py) | 53 | 2755 | Connector Skills Integration Tests | Tests connector skill dispatching and error handling. |
-| [tests/test_skills/test_development.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_development.py) | 119 | 6206 | Capability Development Skills Tests | Unit tests for start_development, get_development_status, cancel_development, and list_development_jobs adapters. |
+| [tests/test_skills/test_development.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_development.py) | 113 | 5771 | Capability Development Skills Tests | Unit tests for start_development, get_development_status, cancel_development, and list_development_jobs adapters. |
 | [tests/test_skills/test_github_connector.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_github_connector.py) | 307 | 16766 | GitHub Connector Tests | Tests GitHub API client methods, headers, and pagination. |
 | [tests/test_skills/test_google_connector.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_google_connector.py) | 259 | 15543 | Google Workspace Connector Tests | Tests Google Workspace OAuth client, token refresh, and API request handling. |
 | [tests/test_skills/test_ground_truth.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_ground_truth.py) | 241 | 11270 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_gui_control.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_gui_control.py) | 283 | 14625 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_input_bar.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_input_bar.py) | 47 | 1984 | Input Bar Integration Tests | Tests compact HUD input bar skill activation, loopback HTTP server, token authentication, and voice-session queue integration. |
+| [tests/test_skills/test_jarvis_mode.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_jarvis_mode.py) | 108 | 4453 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_modal_healing.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_modal_healing.py) | 221 | 9490 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_phone.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_phone.py) | 412 | 17890 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_plugin_control_reliability.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_plugin_control_reliability.py) | 282 | 11766 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_search_result_urls.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_search_result_urls.py) | 32 | 1678 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_skills/test_skills.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_skills.py) | 723 | 38075 | Dynamic Skills Engine Tests | Tests manifest discovery, adapter routing, command verification, argument schema enforcement, and graceful degradation. |
+| [tests/test_skills/test_skills.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_skills.py) | 654 | 33748 | Dynamic Skills Engine Tests | Tests manifest discovery, adapter routing, command verification, argument schema enforcement, and graceful degradation. |
 | [tests/test_skills/test_subprocess_environment.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_subprocess_environment.py) | 31 | 1510 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [tests/test_skills/test_system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_system_control.py) | 545 | 28830 | System Control Tests | Tests volume, brightness, power state, and workspace navigation adapters. |
+| [tests/test_skills/test_system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_system_control.py) | 573 | 30756 | System Control Tests | Tests volume, brightness, power state, and workspace navigation adapters. |
 | [tests/test_skills/test_system_extensions.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_system_extensions.py) | 137 | 7471 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_system_information.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_system_information.py) | 173 | 7129 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_system_information_wiring.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_system_information_wiring.py) | 79 | 4631 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [tests/test_skills/test_vision.py](file:///home/g0pi/Projects/JARVIS-OMA/tests/test_skills/test_vision.py) | 105 | 4173 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 
-### 5.17 Root Entry Points & Operational Scripts (21 files)
+### 5.17 Root Entry Points & Operational Scripts (19 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
 | [AGENTS.md](file:///home/g0pi/Projects/JARVIS-OMA/AGENTS.md) | 45 | 2643 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [CLAUDE.md](file:///home/g0pi/Projects/JARVIS-OMA/CLAUDE.md) | 17 | 1110 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1350 | 191597 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
+| [CODEBASE_REFERENCE.md](file:///home/g0pi/Projects/JARVIS-OMA/CODEBASE_REFERENCE.md) | 1352 | 192093 | Codebase Technical Reference Manual | Definitive 100% precision technical specification and module map for JARVIS-OMA. |
 | [CONTRIBUTING.md](file:///home/g0pi/Projects/JARVIS-OMA/CONTRIBUTING.md) | 43 | 1304 | Contribution Guidelines | Guidelines for contributing safe, auditable desktop controls, running unit tests, and adhering to architectural boundaries. |
 | [LICENSE](file:///home/g0pi/Projects/JARVIS-OMA/LICENSE) | 21 | 1069 | MIT License | Open-source software license for JARVIS-OMA. |
 | [README.md](file:///home/g0pi/Projects/JARVIS-OMA/README.md) | 446 | 30921 | Project Documentation | Master repository guide detailing requirements, installation, run commands, system service, dynamic skills, connectors, and memory matrix. |
 | [agent.py](file:///home/g0pi/Projects/JARVIS-OMA/agent.py) | 14 | 330 | Core Voice Agent Entry Stub | Backward-compatibility entry point importing and delegating to core.agent:main. |
 | [agent_orchestrator.py](file:///home/g0pi/Projects/JARVIS-OMA/agent_orchestrator.py) | 9 | 253 | Agent Orchestrator Entry Stub | Backward-compatibility entry point importing and delegating to orchestration.agent_orchestrator:AgentOrchestrator. |
 | [config.py](file:///home/g0pi/Projects/JARVIS-OMA/config.py) | 9 | 211 | Configuration Engine Entry Stub | Backward-compatibility entry point importing and delegating to core.config:load_config. |
-| [config.toml.example](file:///home/g0pi/Projects/JARVIS-OMA/config.toml.example) | 90 | 5893 | Configuration Reference Template | Documented configuration template illustrating all available options across agent, audio, vad, skills, filesystem, and memory sections. |
+| [config.toml.example](file:///home/g0pi/Projects/JARVIS-OMA/config.toml.example) | 85 | 5479 | Configuration Reference Template | Documented configuration template illustrating all available options across agent, audio, vad, skills, filesystem, and memory sections. |
 | [echo_cancel.py](file:///home/g0pi/Projects/JARVIS-OMA/echo_cancel.py) | 9 | 223 | Echo Cancellation Entry Stub | Backward-compatibility entry point importing and delegating to audio.echo_cancel:EchoCancellation. |
-| [error](file:///home/g0pi/Projects/JARVIS-OMA/error) | 0 | 0 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [install-service.sh](file:///home/g0pi/Projects/JARVIS-OMA/install-service.sh) | 66 | 2194 | Systemd Service Installer Script | Root deployment script automating jarvis-oma.service setup in systemd user space. |
 | [pyproject.toml](file:///home/g0pi/Projects/JARVIS-OMA/pyproject.toml) | 25 | 707 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [requirements-dev.txt](file:///home/g0pi/Projects/JARVIS-OMA/requirements-dev.txt) | 4 | 117 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [requirements-harness2.txt](file:///home/g0pi/Projects/JARVIS-OMA/requirements-harness2.txt) | 2 | 175 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [requirements.txt](file:///home/g0pi/Projects/JARVIS-OMA/requirements.txt) | 9 | 330 | Python Dependencies Manifest | Specifies google-genai, sounddevice, and numpy dependencies. |
-| [run.sh](file:///home/g0pi/Projects/JARVIS-OMA/run.sh) | 33 | 1331 | Shell Activation Wrapper | Launches agent.py within the local Python virtual environment, supporting flags like --check and --list-skills. |
+| [requirements.txt](file:///home/g0pi/Projects/JARVIS-OMA/requirements.txt) | 7 | 182 | Python Dependencies Manifest | Specifies google-genai, sounddevice, and numpy dependencies. |
+| [run.sh](file:///home/g0pi/Projects/JARVIS-OMA/run.sh) | 33 | 1290 | Shell Activation Wrapper | Launches agent.py within the local Python virtual environment, supporting flags like --check and --list-skills. |
 | [system_control.py](file:///home/g0pi/Projects/JARVIS-OMA/system_control.py) | 9 | 231 | System Control Entry Stub | Backward-compatibility entry point importing and delegating to skills.system_control. |
 | [task_runner.py](file:///home/g0pi/Projects/JARVIS-OMA/task_runner.py) | 9 | 233 | Task Runner Entry Stub | Backward-compatibility entry point importing and delegating to filesystem.task_runner:TaskRunner. |
 | [test_bar.py](file:///home/g0pi/Projects/JARVIS-OMA/test_bar.py) | 4 | 152 | Multimodal Input Bar Entry Stub | Backward-compatibility stub importing and exporting MAX_BODY, PAGE, TestBar from skills.input_bar. |
@@ -727,10 +727,10 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
-| [.env.example](file:///home/g0pi/Projects/JARVIS-OMA/.env.example) | 32 | 1332 | Environment Secrets Template | Example template for setting GEMINI_API_KEY and connector keys. |
-| [.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/.gitignore) | 24 | 272 | Git Ignore Specification | Ignores .venv, __pycache__, .env, private tokens, and local SQLite state databases. |
+| [.env.example](file:///home/g0pi/Projects/JARVIS-OMA/.env.example) | 28 | 1154 | Environment Secrets Template | Example template for setting GEMINI_API_KEY and connector keys. |
+| [.gitignore](file:///home/g0pi/Projects/JARVIS-OMA/.gitignore) | 25 | 281 | Git Ignore Specification | Ignores .venv, __pycache__, .env, private tokens, and local SQLite state databases. |
 
-### 5.19 Architectural Documentation & Research Reports (`docs/`) (41 files)
+### 5.19 Architectural Documentation & Research Reports (`docs/`) (40 files)
 
 | File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
 | :--- | :---: | :---: | :--- | :--- |
@@ -739,12 +739,11 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | [docs/TEST_RESULTS.txt](file:///home/g0pi/Projects/JARVIS-OMA/docs/TEST_RESULTS.txt) | 38 | 1931 | Test Results Baseline | Recorded test execution baseline and verification logs. |
 | [docs/architecture.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/architecture.md) | 48 | 2760 | Architecture Specification | Overview of full-duplex voice pipeline, PipeWire AEC, and asynchronous concurrent workers. |
 | [docs/artemis-desktop-mobile-architecture.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/artemis-desktop-mobile-architecture.md) | 140 | 8948 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [docs/autonomous-orchestration.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/autonomous-orchestration.md) | 57 | 3871 | Project Asset | Component of the JARVIS-OMA autonomous system. |
+| [docs/autonomous-orchestration.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/autonomous-orchestration.md) | 54 | 3698 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/browser-parity-audio-research-2026-10-21.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/browser-parity-audio-research-2026-10-21.md) | 313 | 36755 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/capability-development.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/capability-development.md) | 137 | 7935 | Capability Development Specification | Architectural specification for autonomous self-improvement, isolated proposal git worktrees, bubblewrap sandbox, and rollback gates. |
 | [docs/desktop-execution.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/desktop-execution.md) | 38 | 2402 | Desktop Execution Specification | Design specification for visible agent execution in dedicated tmux sessions. |
 | [docs/dynamic-greetings.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/dynamic-greetings.md) | 31 | 2047 | Dynamic Greetings Specification | Architecture specification for state-aware activation greetings and suppression. |
-| [docs/harness-learning.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/harness-learning.md) | 283 | 15643 | Harness Learning Foundation Guide | Opt-in usage, bundle administration, evidence privacy/limits, offline validation, and future Harness² boundary. |
 | [docs/jarvis-munder-function-inventory.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-munder-function-inventory.md) | 2624 | 240109 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/jarvis-munder-integration-blueprint.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-munder-integration-blueprint.md) | 736 | 57567 | Project Asset | Component of the JARVIS-OMA autonomous system. |
 | [docs/jarvis-os/README.md](file:///home/g0pi/Projects/JARVIS-OMA/docs/jarvis-os/README.md) | 25 | 1189 | Project Asset | Component of the JARVIS-OMA autonomous system. |
@@ -782,28 +781,13 @@ Below is an exhaustive, 100% complete accounting of every single source file, te
 | :--- | :---: | :---: | :--- | :--- |
 | [.github/ISSUE_TEMPLATE/bug_report.md](file:///home/g0pi/Projects/JARVIS-OMA/.github/ISSUE_TEMPLATE/bug_report.md) | 28 | 635 | Bug Report Template | Structured issue template for filing desktop control and voice pipeline bugs. |
 | [.github/ISSUE_TEMPLATE/feature_request.md](file:///home/g0pi/Projects/JARVIS-OMA/.github/ISSUE_TEMPLATE/feature_request.md) | 16 | 493 | Feature Request Template | Structured issue template for requesting new desktop skills and capabilities. |
-| [.github/workflows/ci.yml](file:///home/g0pi/Projects/JARVIS-OMA/.github/workflows/ci.yml) | 32 | 709 | GitHub Actions CI Pipeline | Automated continuous integration workflow running unit and regression tests on Python 3.12 and 3.13. |
-
-### 5.21 Opt-in Harness Learning Foundation (`learning/`) (10 files)
-
-| File Path | Lines | Size (Bytes) | Role | Verified Responsibilities |
-| :--- | :---: | :---: | :--- | :--- |
-| [learning/__init__.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/__init__.py) | 2 | 82 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [learning/__main__.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/__main__.py) | 108 | 6024 | Learning Administration CLI | Explicit bundle initialization, activation, restoration, evidence inspection, feedback, and cloud-free demo. |
-| [learning/bundles.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/bundles.py) | 137 | 5099 | Versioned Research Harness Bundles | Content-addressed instruction bundles, explicit activation, integrity checks, and previous-version restoration. |
-| [learning/evidence.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/evidence.py) | 216 | 9039 | Opt-in Task Evidence | Bounded background capture of observed requests, tool results, outputs, corrections, and capture health; no automatic diagnosis or optimization. |
-| [learning/profiles/research.json](file:///home/g0pi/Projects/JARVIS-OMA/learning/profiles/research.json) | 7 | 800 | Project Asset | Component of the JARVIS-OMA autonomous system. |
-| [learning/refinement.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/refinement.py) | 328 | 18298 | Real Harness² Research Integration | Pinned upstream recursion, isolated Git worktrees, instruction-only proposals, baseline and held-out checks, audit artifacts, and review-only candidates. |
-| [learning/research.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/research.py) | 120 | 6199 | Offline Research Fixture | Corpus-only search/read dispatcher, narrow deterministic citation checks, and scripted native-runtime fixture. |
-| [learning/research_runtime.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/research_runtime.py) | 167 | 8001 | Bounded Native Research Runtime | Explicit Gemini text transport, call/time budgets, fixed-corpus tools through JARVIS dispatch, and offline scripted transport. |
-| [learning/trials.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/trials.py) | 152 | 9048 | Controlled Research Trial Gate | Artifact integrity and provenance checks, independent reassessment, strict improvement eligibility, explicit trial selection, rollback, and bundle-aware voice checklist. |
-| [learning/voice_tests.py](file:///home/g0pi/Projects/JARVIS-OMA/learning/voice_tests.py) | 74 | 4619 | Manual Voice Acceptance | Six spoken acceptance requests and latest-episode capture matching; quality verdicts remain manual. |
+| [.github/workflows/ci.yml](file:///home/g0pi/Projects/JARVIS-OMA/.github/workflows/ci.yml) | 41 | 1031 | GitHub Actions CI Pipeline | Automated continuous integration workflow running unit and regression tests on Python 3.12 and 3.13. |
 
 ---
 
 ## 6. Architecture — Actual Shape
 
-The verified architecture operates as a low-latency, full-duplex asynchronous reactive loop integrating local hardware PipeWire audio with Gemini Live WebSockets, 185 dynamically discovered desktop skills across 22 manifests, external service connectors, a sovereign 4-tier memory matrix, proactive autonomy, and local coding agent orchestration.
+The verified architecture operates as a low-latency, full-duplex asynchronous reactive loop integrating local hardware PipeWire audio with Gemini Live WebSockets, 188 dynamically discovered desktop skills across 23 manifests, external service connectors, a sovereign 4-tier memory matrix, proactive autonomy, and local coding agent orchestration.
 
 ```text
   ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -834,8 +818,8 @@ The verified architecture operates as a low-latency, full-duplex asynchronous re
                              │ Tool Call Event                                 │ Tool Response
                              ▼                                                 │
   ┌────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┐
-  │                     DYNAMIC DESKTOP SKILLS ENGINE (skills.py — 185 Tools across 22 Manifests)               │
-  │    22 JSON Manifests  │  Strict Schema Validation  │  ADAPTER_COMMANDS Dependency Verification Checks    │
+  │                     DYNAMIC DESKTOP SKILLS ENGINE (skills.py — 188 Tools across 23 Manifests)               │
+  │    23 JSON Manifests  │  Strict Schema Validation  │  ADAPTER_COMMANDS Dependency Verification Checks    │
   └────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┬──────────────────┬────────┘
            │                  │                  │                  │                  │                  │
            ▼                  ▼                  ▼                  ▼                  ▼                  ▼
@@ -854,9 +838,9 @@ The verified architecture operates as a low-latency, full-duplex asynchronous re
 
 ---
 
-## 7. Complete 185-Tool Registry
+## 7. Complete 188-Tool Registry
 
-The system dynamically exposes and routes **185 tools** across 22 specialized manifests with strict argument validation and zero collisions:
+The system dynamically exposes and routes **188 tools** across 23 specialized manifests with strict argument validation and zero collisions:
 
 ### agent-orchestration.json (9 Tools)
 
@@ -864,7 +848,7 @@ The system dynamically exposes and routes **185 tools** across 22 specialized ma
 | :--- | :--- | :--- | :--- |
 | `start_agent_goal` | `agents.start_goal` | `skills.py` | Start an authorized software goal autonomously in the background: Hermes research and planning, development, OpenCode QA, Claude review and final testing. Returns a team ID immediately; keep talking to the user. Missing required agents are reported before launch. |
 | `list_system_agents` | `agents.list` | `skills.py` | Discover installed delegate agents and their readiness. Readiness does not guarantee a successful model task. |
-| `delegate_agent` | `agents.delegate` | `skills.py` | Delegate a task to a local coding agent running in an isolated tmux terminal session or background supervisor. Check the job ID for results. Budget routing is the default; an explicit model overrides it. |
+| `delegate_agent` | `agents.delegate` | `skills.py` | Delegate a task to a local coding agent running in an isolated tmux terminal session or background supervisor. Check the job ID for results. Task type selects preset routing; model overrides it. |
 | `delegate_team` | `agents.delegate_team` | `skills.py` | CEO-style delegation for one larger goal. JARVIS chooses a bounded sequence of specialist assignments and launches them with one call. Assignments run in order in the shared workspace through JARVIS-owned tmux sessions, so later specialists can inspect earlier work without concurrent edits. |
 | `check_agent_team` | `agents.team_status` | `skills.py` | Check a CEO-style delegated team's overall state, current assignment, and member job IDs. |
 | `cancel_agent_team` | `agents.cancel_team` | `skills.py` | Cancel the active member and remaining assignments of a JARVIS-managed team. |
@@ -1014,6 +998,14 @@ The system dynamically exposes and routes **185 tools** across 22 specialized ma
 | Tool Name | Adapter | Direct Method | Description |
 | :--- | :--- | :--- | :--- |
 | `internet_search` | `web.search` | `skills.py` | Search the public internet and return source links. Uses Brave Search when BRAVE_SEARCH_API_KEY is configured, otherwise Gemini grounded Search. Stable background questions can fall back to Wikipedia. Never treat Wikipedia background as verification of current news, prices, weather, or schedules. |
+
+### jarvis-mode.json (3 Tools)
+
+| Tool Name | Adapter | Direct Method | Description |
+| :--- | :--- | :--- | :--- |
+| `switch_jarvis_mode` | `jarvis.switch_mode` | `skills.py` | Switch JARVIS operating mode between production mode (stable main branch) and test mode (experimental dev branch). Use when the user says 'switch to test mode', 'test mood', 'switch to dev mode', 'switch to dev branch', 'switch to production mode', 'switch to main branch', or asks to test changes. |
+| `get_jarvis_mode` | `jarvis.get_mode` | `skills.py` | Check whether JARVIS is currently running in production mode (main branch) or test mode (dev branch), and inspect active worktree path and service state. Use when the user asks 'what mode are you in?', 'which branch are you running?', or 'check jarvis mode'. |
+| `sync_jarvis_branch` | `jarvis.sync_branch` | `skills.py` | Sync the active branch with latest git commits and reload JARVIS service. Use when the user asks to 'sync branch', 'sync dev', 'pull updates', or 'reload jarvis'. |
 
 ### memory.json (10 Tools)
 
@@ -1274,7 +1266,7 @@ All memory code, reference implementations, data, and tests are consolidated und
 | `--no-greet` | `False` | Disables proactive greeting on startup |
 | `--no-interrupt` | `False` | Sets VAD handling to `NO_INTERRUPTION` |
 | `--transcripts` | `False` | Prints real-time token transcription stream to terminal |
-| `--no-skills` | `False` | Disables all 185 desktop tools for conversation-only mode |
+| `--no-skills` | `False` | Disables all 188 desktop tools for conversation-only mode |
 | `--list-skills` | `False` | Lists discovered skills and reports binary availability |
 | `--skill-dir` | Bundled | Custom directory containing JSON skill manifests |
 | `--check` | `False` | Validates dependencies without opening audio or network |
@@ -1349,4 +1341,4 @@ To refresh this document at any moment with real-time Git commits, branch teleme
 python3 scripts/update_codebase_reference.py
 ```
 
-*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-24 18:44:43 IST`.*
+*Manual automatically compiled and verified by Antigravity AI Engine at `2026-10-27 18:09:15 IST`.*

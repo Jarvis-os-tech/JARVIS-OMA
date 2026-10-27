@@ -8,9 +8,46 @@ from config import Config, load_config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_native_backlog_is_bounded_but_allows_burst_generated_long_replies(self):
+        cfg = Config()
+        cfg.audio.backend = 'native'
+        self.assertEqual(cfg.audio.queue_max_seconds, 60)
+        cfg.audio.queue_max_seconds = 120
+        cfg.validate()
+        cfg.audio.queue_max_seconds = 121
+        with self.assertRaisesRegex(ValueError, '120 s backlog'):
+            cfg.validate()
+
+    def test_native_webrtc_gain_requires_native_backend_and_boolean_settings(self):
+        cfg = Config()
+        cfg.audio.backend = 'legacy'
+        cfg.audio.native_webrtc_gain = True
+        with self.assertRaisesRegex(ValueError, 'requires the native backend'):
+            cfg.validate()
+        cfg.audio.backend = 'native'
+        cfg.validate()
+        for name in ('native_webrtc_gain', 'start_muted'):
+            for invalid in ('true', 1, None):
+                with self.subTest(name=name, invalid=invalid):
+                    candidate = Config()
+                    setattr(candidate.audio, name, invalid)
+                    with self.assertRaisesRegex(ValueError, 'must be a boolean'):
+                        candidate.validate()
+
+    def test_native_gain_and_start_mute_environment_override_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('[audio]\nbackend = "native"\nnative_webrtc_gain = false\nstart_muted = false\n')
+            with patch.dict(os.environ, {'JARVIS_NATIVE_WEBRTC_GAIN': 'true',
+                                         'JARVIS_START_MUTED': 'true'}):
+                cfg = load_config(path)
+            self.assertTrue(cfg.audio.native_webrtc_gain)
+            self.assertTrue(cfg.audio.start_muted)
+
     @patch('config._find_config_file', return_value=None)
     def test_default_config(self, _mock_find):
         cfg = load_config(path=None)
+        self.assertEqual(cfg.audio.backend, 'native')
         self.assertEqual(cfg.agent.name, 'Jarvis')
         self.assertEqual(cfg.agent.voice, 'Aoede')
         self.assertEqual(cfg.agent.model, 'gemini-3.8-live')
@@ -26,7 +63,7 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(cfg.audio.local_barge_in)
         self.assertFalse(cfg.audio.diagnostic_transcripts)
         self.assertEqual(cfg.audio.playback_cushion_s, 0.32)
-        self.assertEqual(cfg.audio.mic_volume_percent, 80)
+        self.assertEqual(cfg.audio.mic_volume_percent, 55)
         self.assertEqual(cfg.vad.activity_handling, 'START_OF_ACTIVITY_INTERRUPTS')
         self.assertTrue(cfg.standby.enabled)
         self.assertEqual(cfg.standby.threshold, 0.05)
@@ -104,7 +141,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_toml_file(self):
         with tempfile.NamedTemporaryFile('w', suffix='.toml', delete=False) as f:
-            f.write('[agent]\nname = "TomlBot"\nvoice = "Kore"\n[audio]\ninput_sample_rate = 48000\n')
+            f.write('[agent]\nname = "TomlBot"\nvoice = "Kore"\n[audio]\nbackend = "legacy"\ninput_sample_rate = 48000\n')
             temp_path = f.name
         try:
             cfg = load_config(path=temp_path)
@@ -218,6 +255,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_audio_frame_and_interruption_settings_are_coherent(self):
         config = Config()
+        config.audio.backend = 'legacy'
         config.audio.input_sample_rate = 11025
         with self.assertRaisesRegex(ValueError, 'integral number of samples'):
             config.validate()
@@ -265,6 +303,8 @@ class ConfigTests(unittest.TestCase):
     def test_invalid_audio_environment_override_is_not_silently_ignored(self, _mock_find):
         for key, value in [('JARVIS_MIC_VOLUME_PERCENT', 'loud'),
                            ('JARVIS_NOISE_SUPPRESSION', 'maybe'),
+                           ('JARVIS_NATIVE_WEBRTC_GAIN', 'maybe'),
+                           ('JARVIS_START_MUTED', 'maybe'),
                            ('JARVIS_PLAYBACK_CUSHION_S', 'nan')]:
             with self.subTest(key=key), patch.dict(os.environ, {key: value}):
                 with self.assertRaises(ValueError):
