@@ -22,6 +22,10 @@ class CalendarManagementTests(unittest.IsolatedAsyncioTestCase):
         from core.agent import live_config
         config = types.LiveConnectConfig.model_validate(live_config('Aoede', skills=self.skills))
         names = {item.name for item in config.tools[0].function_declarations}
+        self.assertIn('execute_domain_tool', names)
+        self.assertNotIn('calendar_update_event', names)
+        names = {types.FunctionDeclaration.model_validate(item).name
+                 for item in self.skills.declarations}
         self.assertTrue({'calendar_current_time', 'calendar_update_event',
                          'calendar_delete_event', 'calendar_check_availability'} <= names)
 

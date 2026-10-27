@@ -78,7 +78,7 @@ async def test_dispatch_cancels_child_without_waiting_for_resistant_cleanup(fini
             with pytest.raises(asyncio.CancelledError):
                 await asyncio.wait_for(dispatch, 1)
         else:
-            with pytest.raises(SkillError, match='cancelled'):
+            with pytest.raises(SkillError, match='cancellation was requested.*outcome is unknown'):
                 await asyncio.wait_for(dispatch, 1)
         await asyncio.wait_for(cancelled.wait(), 1)
         # The caller has already returned even though the child's cleanup awaits release.

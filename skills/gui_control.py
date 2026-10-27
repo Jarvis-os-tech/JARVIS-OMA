@@ -10,6 +10,8 @@ import json
 import os
 import tempfile
 import time
+from core.secret_env import sanitized_subprocess_env
+from skills import ground_truth
 
 
 class GuiControlError(ValueError):
@@ -27,22 +29,33 @@ class GuiControl:
         self._browser_tabs = {}
         self._browser_routes = {}
         self._isolated_pids = set()
+        self._observation_tasks = set()
 
     async def _invoke(self, name: str, arguments: dict, timeout: int = 20) -> dict:
         try:
             proc = await asyncio.create_subprocess_exec(
                 self.executable, 'call', name, json.dumps(arguments),
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                env=sanitized_subprocess_env(),
             )
         except OSError as exc:
             detail = exc.strerror or 'could not start GUI driver'
             raise GuiControlError(detail[:500]) from None
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
-        except TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            raise GuiControlError('GUI driver timed out') from None
+        except BaseException as error:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.wait_for(proc.communicate(), 1)
+            except (TimeoutError, OSError):
+                pass
+            if isinstance(error, TimeoutError):
+                raise GuiControlError('GUI driver timed out') from None
+            raise
         if proc.returncode:
             detail = stderr.decode(errors='replace').strip() or stdout.decode(errors='replace').strip()
             raise GuiControlError((detail or 'GUI driver failed')[:500])
@@ -126,14 +139,76 @@ class GuiControl:
         observed = self._elements.get((pid, window_id))
         if not observed or time.monotonic() - observed[0] > 15 or element_token not in observed[2]:
             raise GuiControlError('Inspect this window again before clicking the element')
+        before = await self._surface_fingerprint((pid, window_id))
+        await self._guard_dispatch_focus()
         result = await self._call('click', {
             'pid': pid, 'window_id': window_id, 'element_token': element_token,
             'snapshot_id': observed[1], 'button': 'left',
             'delivery_mode': 'foreground', 'session': self.session,
         })
         self._elements.pop((pid, window_id), None)
-        return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
-                'route': result.get('route'), 'reobserve_required': True}
+        effect = await self._verify_surface_effect(before, (pid, window_id))
+        return {'route': result.get('route'), 'reobserve_required': True, **effect}
+
+    async def _surface_fingerprint(self, target):
+        if target is None:
+            return None
+        pid, window_id = target
+        task = asyncio.create_task(self._call('get_window_state', {
+                'pid': pid, 'window_id': window_id, 'include_screenshot': False,
+                'max_elements': 100, 'session': self.session}, timeout=.1))
+        self._observation_tasks.add(task)
+        def finished(done):
+            self._observation_tasks.discard(done)
+            if not done.cancelled():
+                done.exception()
+        task.add_done_callback(finished)
+        try:
+            done, _ = await asyncio.wait({task}, timeout=.1)
+            if not done:
+                task.cancel()
+                return None
+            state = task.result()
+            return ground_truth.accessibility_fingerprint(state)
+        except (GuiControlError, TimeoutError):
+            return None
+        except BaseException:
+            task.cancel()
+            raise
+
+    async def _verify_surface_effect(self, before, target):
+        deadline = time.monotonic() + .3
+        if before is not None and target is not None:
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                try:
+                    after = await asyncio.wait_for(self._surface_fingerprint(target), remaining)
+                except TimeoutError:
+                    break
+                if after is None:
+                    break
+                if after != before:
+                    return {'status': 'effect_observed', 'effect': 'surface_changed',
+                            'effect_verified': True, 'verified': False,
+                            'verification_scope': 'accessibility_tree_change_only'}
+                await asyncio.sleep(min(.04, max(0, deadline - time.monotonic())))
+        return {'status': 'unverified_effect', 'effect': 'unverified', 'verified': False,
+                'effect_verified': False, 'fallback': 'use_accessibility_or_cli'}
+
+    async def close(self):
+        tasks = list(self._observation_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 1.2)
+        if self._screenshots is not None:
+            screenshots, self._screenshots = self._screenshots, None
+            await asyncio.to_thread(screenshots.cleanup)
+
+    @staticmethod
+    def _surface_target(verification):
+        pid, window_id = verification.get('window_pid'), verification.get('window_id')
+        return (pid, window_id) if type(pid) is int and pid > 0 and type(window_id) is int and window_id > 0 else None
 
     async def observe_desktop(self) -> dict:
         from pathlib import Path
@@ -157,8 +232,13 @@ class GuiControl:
     async def click_desktop(self, x: int, y: int,
                             target_window_id: int | None = None,
                             verify_active: bool = False) -> dict:
+        if ground_truth.ACTION_TARGET.get() is not None:
+            verify_active = True
         verification = await self._verify_action_point(
             x, y, target_window_id=target_window_id, verify_active=verify_active)
+        target_window_id = verification.get('window_id', target_window_id)
+        surface = self._surface_target(verification)
+        before = await self._surface_fingerprint(surface)
         target = {'kind': 'desktop', 'display_id': 'primary'}
         action = 'click'
         if target_window_id is not None:
@@ -169,6 +249,7 @@ class GuiControl:
             action = 'click_window'
             target['address'] = verification['window_address']
             target['require_active'] = True
+        await self._guard_dispatch_focus()
         result = await self._call(action, {
             'x': x, 'y': y, 'target': target, 'button': 'left',
             'delivery_mode': 'foreground', 'session': self.session,
@@ -178,7 +259,8 @@ class GuiControl:
             if result.get('target_verified') is not True or acknowledged != verification['window_address']:
                 raise GuiControlError('GUI driver did not atomically verify the target window')
         self._desktop = None
-        return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
+        effect = await self._verify_surface_effect(before, surface)
+        return {**effect,
                 'route': result.get('route'), 'reobserve_required': True,
                 **verification,
                 'target_verified': verification['bounds_verified'] and
@@ -197,22 +279,24 @@ class GuiControl:
         hyprctl = shutil.which('hyprctl')
         if not hyprctl:
             return None
+        code, stdout, _ = await ground_truth._run_command(hyprctl, 'activewindow', '-j', timeout=2)
         try:
-            proc = await asyncio.create_subprocess_exec(
-                hyprctl, 'activewindow', '-j',
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
-            if proc.returncode == 0 and stdout:
-                return json.loads(stdout.decode('utf-8', errors='replace'))
-        except (OSError, asyncio.TimeoutError, json.JSONDecodeError):
-            return None
+            if code == 0 and stdout:
+                result = json.loads(stdout)
+                return result if isinstance(result, dict) else None
+        except json.JSONDecodeError:
+            pass
         return None
 
     async def _verify_action_point(self, x: int, y: int,
                                    target_window_id: int | None = None,
                                    verify_active: bool = False):
         self._require_desktop_point(x, y)
+        context = ground_truth.ACTION_TARGET.get()
+        if context is not None:
+            target_window_id = target_window_id or context['window'].get('window_id')
+            if target_window_id is None:
+                raise GuiControlError('Exact target_window_id is required for verified coordinate input')
         if verify_active and target_window_id is None:
             raise GuiControlError('verify_active requires an exact target_window_id')
         target = None
@@ -223,6 +307,8 @@ class GuiControl:
             target = next((w for w in windows if w.get('window_id') == target_window_id), None)
             if not target:
                 raise GuiControlError(f'Target window {target_window_id} not found in window list')
+            if context is not None and not ground_truth.same_window(context['window'], target):
+                raise GuiControlError('Target identity changed before coordinate input')
             if not target.get('is_on_screen', True):
                 raise GuiControlError(f'Target window {target_window_id} is not visible or on screen')
             bounds = target.get('bounds')
@@ -260,7 +346,9 @@ class GuiControl:
                     f'Target window {target_window_id} is not the active window {active_identity}')
             focus_verified = True
         return {'bounds_verified': bounds_verified, 'focus_verified': focus_verified,
-                'window_address': requested_identity if verify_active else None}
+                'window_address': requested_identity if verify_active else None,
+                'window_pid': target.get('pid') if isinstance(target, dict) else None,
+                'window_id': target_window_id}
 
     @staticmethod
     def _window_address(value) -> str | None:
@@ -281,13 +369,17 @@ class GuiControl:
         if direction not in ('up', 'down', 'left', 'right') or not 1 <= amount <= 10:
             raise GuiControlError('Invalid scroll direction or amount')
         verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
+        surface = self._surface_target(verification)
+        before = await self._surface_fingerprint(surface)
+        await self._guard_dispatch_focus()
         result = await self._call('scroll', {
             'direction': direction, 'amount': amount, 'by': 'line', 'x': x, 'y': y,
             'target': {'kind': 'desktop', 'display_id': 'primary'},
             'delivery_mode': 'foreground', 'session': self.session,
         })
         self._desktop = None
-        return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
+        effect = await self._verify_surface_effect(before, surface)
+        return {**effect,
                 'route': result.get('route'), 'reobserve_required': True,
                 **verification, 'target_verified': verification['bounds_verified']}
 
@@ -296,6 +388,7 @@ class GuiControl:
         verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
         if not text or len(text) > 4000:
             raise GuiControlError('Text must contain 1 to 4000 characters')
+        await self._guard_dispatch_focus()
         result = await self._call('type_text', {
             'text': text, 'x': x, 'y': y,
             'target': {'kind': 'desktop', 'display_id': 'primary'},
@@ -324,11 +417,17 @@ class GuiControl:
         else:
             arguments['key'] = key
             tool = 'press_key'
+        await self._guard_dispatch_focus()
         result = await self._call(tool, arguments)
         self._desktop = None
         return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
                 **verification, 'target_verified': verification['bounds_verified']}
+
+    async def _guard_dispatch_focus(self):
+        verified, reason = await ground_truth.ensure_dispatch_focus()
+        if not verified:
+            raise GuiControlError(reason)
 
     async def browser_bind(self, pid: int, window_id: int) -> dict:
         if pid <= 0 or window_id <= 0:

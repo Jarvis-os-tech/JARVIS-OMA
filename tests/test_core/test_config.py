@@ -20,6 +20,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_native_webrtc_gain_requires_native_backend_and_boolean_settings(self):
         cfg = Config()
+        cfg.audio.backend = 'legacy'
         cfg.audio.native_webrtc_gain = True
         with self.assertRaisesRegex(ValueError, 'requires the native backend'):
             cfg.validate()
@@ -46,6 +47,7 @@ class ConfigTests(unittest.TestCase):
     @patch('config._find_config_file', return_value=None)
     def test_default_config(self, _mock_find):
         cfg = load_config(path=None)
+        self.assertEqual(cfg.audio.backend, 'native')
         self.assertEqual(cfg.agent.name, 'Jarvis')
         self.assertEqual(cfg.agent.voice, 'Aoede')
         self.assertEqual(cfg.agent.model, 'gemini-3.8-live')
@@ -139,7 +141,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_toml_file(self):
         with tempfile.NamedTemporaryFile('w', suffix='.toml', delete=False) as f:
-            f.write('[agent]\nname = "TomlBot"\nvoice = "Kore"\n[audio]\ninput_sample_rate = 48000\n')
+            f.write('[agent]\nname = "TomlBot"\nvoice = "Kore"\n[audio]\nbackend = "legacy"\ninput_sample_rate = 48000\n')
             temp_path = f.name
         try:
             cfg = load_config(path=temp_path)
@@ -253,6 +255,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_audio_frame_and_interruption_settings_are_coherent(self):
         config = Config()
+        config.audio.backend = 'legacy'
         config.audio.input_sample_rate = 11025
         with self.assertRaisesRegex(ValueError, 'integral number of samples'):
             config.validate()

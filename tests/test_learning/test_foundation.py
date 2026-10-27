@@ -221,6 +221,7 @@ async def test_enabled_startup_installs_pinned_bundle_without_real_devices(tmp_p
     bundle = registry.register(seed_bundle())
     registry.activate(bundle.digest)
     config = Config()
+    config.audio.backend = 'legacy'  # The test supplies a legacy engine double.
     config.skills.enabled = False
     config.agent.greet_on_activation = False
     echo = SimpleNamespace(start=AsyncMock(), close=AsyncMock(), source='source', sink='sink')

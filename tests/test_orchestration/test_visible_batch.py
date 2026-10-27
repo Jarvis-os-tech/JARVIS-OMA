@@ -145,6 +145,7 @@ class VisibleBatchTests(unittest.IsolatedAsyncioTestCase):
         event = runner.events.get_nowait()
         self.assertEqual(event, {
             'kind': 'team', 'id': key, 'state': 'failed',
+            'verified': False, 'completion_kind': None,
             'workspace': team['workspace'],
         })
         self.assertTrue(runner.events.empty())

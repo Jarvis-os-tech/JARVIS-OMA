@@ -64,6 +64,7 @@ class CommandLineConfigTests(unittest.TestCase):
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.config = Config()
+        self.config.audio.backend = 'legacy'  # Explicit legacy fixture; native cases override below.
         self.config.skills.enabled = False
         self.config.agent.greet_on_activation = False
         self.config.agent.model = 'saved-model'

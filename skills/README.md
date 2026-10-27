@@ -21,6 +21,7 @@ The `skills/` package houses dynamic desktop automation tools, declarative JSON 
   - Serves a sleek multimodal web interface allowing users to type, paste, or attach files (images, audio, PDFs, text) into the active Gemini Live voice session.
 - **`system_control.py`**:
   - Direct Wayland/Hyprland input simulation (`wtype`), keyboard shortcuts, top-bar panel toggles, and shell control.
+  - Window/workspace actions bind exact targets and require timestamped compositor readback for success. Ordinary skill adapters and supported voice aliases share this path; failed/missing readback is preserved as an error or unverified result.
 - **`manifests/`**:
   - Declarative JSON manifests declaring tools, parameters, descriptions, and required adapter bindings.
 

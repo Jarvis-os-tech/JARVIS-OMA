@@ -73,10 +73,11 @@ class CLIAnythingSkillTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(spec['adapter'].startswith('cli_hub.'))
 
     def test_capability_context_lists_cli_hub_group(self):
-        """The cli-hub skills must show up in the session capability context."""
+        """The compact context names the domain; schemas remain discoverable."""
         context = self.skills.capability_context()
-        self.assertIn('cli_hub:', context)
-        self.assertIn('cli_hub_matrix_preflight', context)
+        self.assertIn('cli_anything (', context)
+        self.assertNotIn('cli_hub_matrix_preflight', context)
+        self.assertIn('cli_hub_matrix_preflight', {item['name'] for item in self.skills.declarations})
 
     # ── list / search ──────────────────────────────────────────────
 

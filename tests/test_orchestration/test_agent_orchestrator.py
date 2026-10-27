@@ -12,6 +12,58 @@ from agent import LiveVoice
 
 
 class OrchestratorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_valid_code_changes_are_verified_before_completion_event(self):
+        runner = self.runner("from pathlib import Path; Path('result.py').write_text('answer = 42\\n')")
+        with tempfile.TemporaryDirectory() as directory:
+            key = runner.delegate('codex', 'Write a module', directory)['job']['id']
+            await runner.workers[key]
+            job = runner.status(key)['job']
+            event = await runner.events.get()
+            self.assertEqual(job['state'], 'completed')
+            self.assertTrue(job['verified'])
+            self.assertFalse(job['verification']['functional_verified'])
+            self.assertEqual(job['verification']['smoke']['status'], 'passed')
+            self.assertEqual(event['state'], 'completed')
+            self.assertEqual(event['completion_kind'], 'verified_changes')
+            self.assertNotIn('checks', event['verification'])  # Keep voice context bounded.
+
+    async def test_invalid_code_blocks_completed_announcement_even_with_exit_zero(self):
+        runner = self.runner("from pathlib import Path; Path('result.py').write_text('def broken(\\n'); print('completed and tested!')")
+        with tempfile.TemporaryDirectory() as directory:
+            key = runner.delegate('codex', 'Write a module', directory)['job']['id']
+            await runner.workers[key]
+            job = runner.status(key)['job']
+            self.assertEqual(job['exit_code'], 0)
+            self.assertEqual(job['state'], 'failed')
+            self.assertFalse(job['verified'])
+            self.assertEqual((await runner.events.get())['state'], 'failed')
+
+    async def test_plain_answer_is_announced_as_response_not_verified_effect(self):
+        runner = self.runner("print('A useful answer')")
+        with tempfile.TemporaryDirectory() as directory:
+            key = runner.delegate('codex', 'Explain the plan', directory)['job']['id']
+            await runner.workers[key]
+            self.assertEqual(runner.jobs[key]['state'], 'completed')
+            event = await runner.events.get()
+            self.assertEqual(event['state'], 'response_received')
+            self.assertFalse(event['verified'])
+
+    async def test_cancellation_while_verifying_does_not_wait_out_check_budget(self):
+        runner = self.runner("print('done')")
+        entered = asyncio.Event()
+
+        async def check(workspace, baseline):
+            entered.set()
+            await asyncio.Event().wait()
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+                'orchestration.agent_orchestrator.verify_workspace_changes', side_effect=check):
+            key = runner.delegate('codex', 'Work', directory)['job']['id']
+            await asyncio.wait_for(entered.wait(), 2)
+            result = await asyncio.wait_for(runner.cancel(key), 2)
+            self.assertEqual(result['job']['state'], 'cancelled')
+            self.assertEqual((await runner.events.get())['state'], 'cancelled')
+
     def runner(self, code):
         runner = AgentOrchestrator({name: sys.executable for name in AGENTS},
             lambda agent, executable, prompt: [executable, '-u', '-c', code])

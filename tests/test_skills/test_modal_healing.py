@@ -174,8 +174,8 @@ class ModalHealingUnitTests(unittest.IsolatedAsyncioTestCase):
         mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}"
         mock_run.return_value = (0, "", "")
 
-        antigravity_win = {"address": "0xanti", "class": "antigravity", "title": "Antigravity IDE"}
-        stolen_win = {"address": "0xstolen", "class": "dunst", "title": "Notification Popup"}
+        antigravity_win = {"address": "0xa11", "class": "antigravity", "title": "Antigravity IDE"}
+        stolen_win = {"address": "0xd011", "class": "dunst", "title": "Notification Popup"}
 
         mock_clients.return_value = [antigravity_win, stolen_win]
         # Initially active window is stolen_win, after heal it becomes antigravity_win

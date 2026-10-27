@@ -39,5 +39,5 @@ async def run_skill_call(skills, name, arguments, *, timeout=45):
         execution.cancel()
         execution.add_done_callback(_consume_completion)
         log.warning('Desktop skill %s exceeded the %.0fs response deadline', name, timeout)
-        raise SkillError(f'{name} did not respond in time; its operation was cancelled')
+        raise SkillError(f'{name} did not respond in time; cancellation was requested and its final outcome is unknown')
     return execution.result()

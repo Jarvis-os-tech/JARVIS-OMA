@@ -35,7 +35,8 @@ class CapabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(instruction.startswith('You are my personal assistant.'))
         self.assertIn('CAPABILITY CHECK RULE', instruction)
         self.assertIn('list_capabilities', instruction)
-        self.assertIn('gui_list_windows', instruction)
+        self.assertIn('gui (', instruction)
+        self.assertIn('discover_domain_tools', instruction)
         self.assertIn('set_volume', instruction)
 
     async def test_registered_declarations_have_callable_handlers(self):

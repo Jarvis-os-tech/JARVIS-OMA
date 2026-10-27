@@ -276,8 +276,8 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
                 await voice.run_proactive(NS())
         self.assertEqual(runtime.call.await_args_list[1].args[0], 'observe_focus')
         self.assertEqual(len(voice._notices), 1)
-        self.assertIn('Prepare report', voice._notices[0])
-        self.assertIn('Do not execute suggested tasks', voice._notices[0])
+        self.assertIn('Prepare report', voice._notices[0]['text'])
+        self.assertIn('Do not execute suggested tasks', voice._notices[0]['text'])
 
     async def test_proactive_observer_stays_dormant_until_requested(self):
         requested = asyncio.Event()
@@ -365,7 +365,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(voice._notices), 2)
         self.assertEqual(voice._notices[0]['expires_at'], start)
         self.assertIn('Project review', voice._notices[0]['text'])
-        self.assertIn('Project review', voice._notices[1])
+        self.assertIn('Project review', voice._notices[1]['text'])
 
     async def test_calendar_voice_notice_waits_for_resume(self):
         state = NS(can_run=False)
@@ -963,6 +963,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
              self.assertLogs('gemini_voice', level='WARNING'):
             from config import Config
             configuration = Config()
+            configuration.audio.backend = 'legacy'
             configuration.memory.path = directory
             with self.assertRaises(asyncio.CancelledError):
                 await run(args, 'fake-key', config=configuration)
@@ -1186,7 +1187,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(second_result['output']['visual_input'], 'ocr_only')
             await voice.cancel_tools()
 
-    async def test_screen_inspection_keeps_ocr_when_video_send_fails(self):
+    async def test_screen_transport_failure_requests_session_recovery(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             screen_dir = Path(runtime_dir) / 'jarvis_screen'
             screen_dir.mkdir()
@@ -1213,15 +1214,11 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict('os.environ', {'XDG_RUNTIME_DIR': runtime_dir}):
                 await voice.handle(types.LiveServerMessage(tool_call=types.LiveServerToolCall(
                     function_calls=[call])), session)
-                for _ in range(25):
-                    if responses:
-                        break
-                    await asyncio.sleep(.01)
+                from core.audio_scheduler import SendStalled
+                with self.assertRaises(SendStalled):
+                    await asyncio.wait_for(voice.send_lock.monitor(), 1)
 
-            self.assertEqual(len(responses), 1)
-            output = responses[0].response['output']
-            self.assertEqual(output['visual_input'], 'ocr_only')
-            self.assertEqual(output['text_content'], 'Error dialog')
+            self.assertEqual(responses, [])
             await voice.cancel_tools()
 
     async def test_goaway_reconnect_buffers_audio(self):
@@ -1327,6 +1324,7 @@ class VoiceTests(unittest.IsolatedAsyncioTestCase):
              patch('agent.asyncio.sleep', side_effect=no_wait):
             from config import Config
             configuration = Config()
+            configuration.audio.backend = 'legacy'
             with self.assertRaises(asyncio.CancelledError):
                 await run(args, 'fake-key', config=configuration)
 

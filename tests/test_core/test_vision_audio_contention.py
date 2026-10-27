@@ -2,12 +2,62 @@
 import asyncio
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
+from types import SimpleNamespace as NS
 
 from core.agent import LiveVoice, RenewConnection, VISION_SEND_BUDGET_SECONDS
+from core.audio_scheduler import SendStalled
 
 
 class VisionAudioContentionTests(IsolatedAsyncioTestCase):
-    async def test_stalled_video_is_cancelled_and_microphone_send_proceeds(self):
+    async def test_capture_from_previous_generation_is_dropped_before_transport(self):
+        engine = NS(active_generation=0, async_input_queue=asyncio.Queue())
+        voice = LiveVoice(engine)
+        voice._schedule_camera_stream_update = lambda: None
+        captured, release = asyncio.Event(), asyncio.Event()
+
+        async def frame():
+            captured.set()
+            await release.wait()
+            return b'old-frame'
+
+        voice._capture_screen_frame = frame
+        voice.set_vision_mode('screen')
+        session = NS(send_realtime_input=AsyncMock())
+        task = asyncio.create_task(voice.stream_vision(session))
+        try:
+            await asyncio.wait_for(captured.wait(), 1)
+            engine.active_generation = 1
+            release.set()
+            async with asyncio.timeout(1):
+                while not voice.send_lock.dropped_video_frames:
+                    await asyncio.sleep(.001)
+            session.send_realtime_input.assert_not_awaited()
+            self.assertFalse(task.done())
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_capture_is_deferred_while_microphone_frames_are_queued(self):
+        engine = NS(active_generation=0, async_input_queue=asyncio.Queue())
+        for _ in range(3):
+            engine.async_input_queue.put_nowait(bytes(640))
+        voice = LiveVoice(engine)
+        voice._schedule_camera_stream_update = lambda: None
+        voice._capture_screen_frame = AsyncMock(return_value=b'frame')
+        voice.set_vision_mode('screen')
+        session = NS(send_realtime_input=AsyncMock())
+        task = asyncio.create_task(voice.stream_vision(session))
+        try:
+            await asyncio.sleep(.01)
+            voice._capture_screen_frame.assert_not_awaited()
+            session.send_realtime_input.assert_not_awaited()
+            self.assertGreater(voice.send_lock.dropped_video_frames, 0)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_stalled_video_is_cancelled_before_any_more_socket_writes(self):
         engine = MagicMock()
         engine.async_input_queue = asyncio.Queue()
         voice = LiveVoice(engine)
@@ -39,14 +89,16 @@ class VisionAudioContentionTests(IsolatedAsyncioTestCase):
         # Exercise the real audio sender while a video write owns the lock.
         await engine.async_input_queue.put(b'\0' * voice.input_bytes)
         audio = asyncio.create_task(voice.send_audio(session))
-        await asyncio.wait_for(audio_sent.wait(), timeout=1)
         await asyncio.wait_for(video_cancelled.wait(), timeout=1)
         with self.assertRaises(RenewConnection):
             await vision
+        with self.assertRaises(SendStalled):
+            await asyncio.wait_for(audio, 1)
 
         # The optional frame was dropped; no detached send or queued video
         # backlog remains, and the regular vision worker remains manageable.
-        self.assertEqual(calls, ['video', 'audio'])
+        self.assertEqual(calls, ['video'])
+        self.assertFalse(audio_sent.is_set())
         self.assertFalse(voice.send_lock.locked())
         self.assertTrue(vision.done())
 

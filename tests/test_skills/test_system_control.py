@@ -205,18 +205,23 @@ class SystemControlUnitTests(unittest.IsolatedAsyncioTestCase):
         mock_run.return_value = (0, "ok", "")
         # Test tile left
         res1 = await system_control.execute_desktop_command("tile left")
-        self.assertEqual(res1["status"], "success")
+        self.assertEqual(res1["status"], "unverified")
+        self.assertFalse(res1["verified"])
         self.assertEqual(res1["action"], "movewindow l")
 
-        # Test fullscreen
-        res2 = await system_control.execute_desktop_command("fullscreen")
-        self.assertEqual(res2["status"], "success")
-        self.assertEqual(res2["action"], "fullscreen")
+        # Supported aliases share the exact-target verifier and preserve failure.
+        for status in ("success", "error", "unverified"):
+            result = {"status": status, "verified": status == "success", "action": "fullscreen"}
+            with patch("system_control.manage_window", new=AsyncMock(return_value=result)) as manage:
+                res2 = await system_control.execute_desktop_command("fullscreen")
+            self.assertEqual(res2, {**result, "command": "fullscreen"})
+            manage.assert_awaited_once_with("fullscreen")
 
-        # Test new workspace
-        res3 = await system_control.execute_desktop_command("new workspace")
-        self.assertEqual(res3["status"], "success")
-        self.assertEqual(res3["action"], "workspace e+1")
+            result = {"status": status, "verified": status == "success", "target_workspace": 2}
+            with patch("system_control.switch_workspace", new=AsyncMock(return_value=result)) as switch:
+                res3 = await system_control.execute_desktop_command("new workspace")
+            self.assertEqual(res3, {**result, "command": "new workspace"})
+            switch.assert_awaited_once_with("next")
 
     @patch("shutil.which", return_value="/usr/bin/omarchy-shell")
     @patch("system_control._run_command", new_callable=AsyncMock)
@@ -531,19 +536,23 @@ class DesktopSkillsSystemControlIntegrationTests(unittest.IsolatedAsyncioTestCas
         self.assertIn("adjust_volume", skills.SKILL_ALIASES)
         self.assertIn("adjust_brightness", skills.SKILL_ALIASES)
 
-        with patch("skills.system_control.type_text", new_callable=AsyncMock) as mock_type:
+        with patch("skills.system_control.type_text", new_callable=AsyncMock) as mock_type, \
+             patch("skills.system_control._query_active_window", return_value={"address": "0x123", "pid": 42}):
             mock_type.return_value = {"status": "success", "method": "typed"}
             res = await skills.execute("type_text", {"text": "hello"})
-            self.assertEqual(res["status"], "success")
+            self.assertEqual(res["status"], "unverified_effect")
+            self.assertTrue(res["post_action_focus_verified"])
             mock_type.assert_awaited_once_with("hello", target_window=None, press_enter=False)
 
     async def test_skills_execute_type_text_targeting_app(self):
         skills = DesktopSkills()
-        with patch("skills.system_control.type_text", new_callable=AsyncMock) as mock_type:
+        with patch("skills.system_control.type_text", new_callable=AsyncMock) as mock_type, \
+             patch("skills.system_control._query_active_window", return_value={"address": "0x123", "pid": 42}), \
+             patch("skills.system_control._focus_window_target", return_value=(True, "verified_active", {"address": "0x123", "pid": 42})):
             mock_type.return_value = {"status": "success", "method": "typed", "target_window": "antigravity textbar"}
 
             res = await skills.execute("type_text", {"text": "hello from user", "target_window": "antigravity textbar"})
-            self.assertEqual(res["status"], "success")
+            self.assertEqual(res["status"], "unverified_effect")
             mock_type.assert_awaited_once_with("hello from user", target_window="antigravity textbar", press_enter=False)
 
     @patch("shutil.which", return_value=None)

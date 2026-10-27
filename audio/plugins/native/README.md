@@ -1,8 +1,9 @@
-# Native PipeWire audio backend (opt-in)
+# Native PipeWire audio backend
 
 This companion implements the first native audio backend for JARVIS on Linux.
 The existing protected engine and its tests are unchanged. The default backend
-is still `legacy`; this implementation has not established browser parity.
+is `native`; `legacy` remains an explicit rollback option. Device-level and
+acoustic acceptance still need to be measured on the target machine.
 
 ## Build and check
 
@@ -71,6 +72,10 @@ binary or a promise of identical acoustic behavior.
 - Native main/control code handles framed pipe I/O and packetizes capture at
   320 samples / 20 ms. PipeWire adapts 16 kHz capture and 24 kHz playback to the
   negotiated device graph. Device consumption controls playout timing.
+- The control loop polls both input and pending output readiness. Available
+  capture and complete commands run immediately; parsing is capped per pass.
+  Partial commands, generation acknowledgements and blocked pipes retain bounded
+  waits so capture cannot be delayed by a command flood or a busy loop.
 - Preallocated single-producer/single-consumer rings separate control and device
   execution. Capture retains at most 100 ms at the native boundary and expires
   at 150 ms in Python. Old speech is not replayed after a long outage.
@@ -106,7 +111,7 @@ Local pipes only, little endian. Each packet has four unsigned 32-bit fields:
 | 5 STOP | Python → native | Empty; EOF also terminates cleanly |
 | 101 CAPTURE | Native → Python | u64 estimated monotonic capture time, then 320 PCM16 samples |
 | 102 READY | Native → Python | Two u32 PipeWire node IDs: capture, playback |
-| 103 STATS | Native → Python | Eight u64: captured, rendered in epoch, starved, dropped capture samples, max callback ns, queued playback samples, playing, applied epoch |
+| 103 STATS | Native → Python | Nine u64: captured, rendered in epoch, starved, dropped capture samples, max callback ns, queued playback samples, playing, applied epoch, current buffering target in samples. The adapter also accepts the older eight-field packet. |
 
 Capture timestamps estimate sample age from callback time and ring occupancy;
 they are not hardware ADC timestamps or an acoustic latency measurement.
@@ -117,16 +122,34 @@ of graph xruns. Native stderr is read outside callbacks and retained bounded.
 ## Current limits and next gates
 
 The initial candidate uses server-confirmed interruptions; the legacy local
-FFT gate is not part of this backend. The native priming target is fixed, not
-yet adaptive. Existing shared network send scheduling and reconnect cleanup
-retain their existing policy; a WebSocket outage can still interrupt a reply.
+FFT gate is not part of this backend. The native priming target starts at the
+configured floor. After starvation it adds 40 ms up to 240 ms (or a higher
+configured floor), then sheds 20 ms after each five seconds of clean rendered
+speech. Completed short replies bypass priming as before. This adaptation runs
+inside the render callback with bounded arithmetic and no allocation or logging.
+IPC status reports the current target. Connection setup has a bounded deadline;
+two failed resume handshakes trigger a fresh provider session without replaying
+requests or tool actions. A WebSocket outage can still interrupt a reply.
 Native capture continues while the model thinks, allowing spoken corrections.
 Frame expiry is rechecked after acquiring the network send lock. The existing
 PipeWire AEC implementation is reused, so its observed graph errors still need
 direct before/after measurement. Native callback metrics do not replace those
 graph metrics. No automatic claim of real-time scheduling is made.
 
-Before production promotion: test audible output and double-talk, microphone
+The Live transport writer gives waiting microphone frames priority over queued
+tool responses and video, preserving FIFO order within each class. Microphone
+writes have a one-second hard budget, control writes 500 ms, and requested or continuous
+video writes 100 ms. These limit transport backpressure, not provider inference
+time. Native capture still expires at 150 ms before a send begins; only the
+single in-flight 20 ms frame may arrive late during backpressure. A failed or cancelled write marks the socket unusable before releasing
+ownership; a supervised monitor closes the session even if an optional worker
+or detached tool task catches the original error. A new connection resets the
+writer only after its old tasks finish. Screenshot file reads run off-loop, and
+the frame and tool result use separate leases so audio may run between them.
+IPC status exposes recent microphone-writer wait p50/p95/p99, waiter count and
+send timeout count. It does not store speech content or imply acoustic latency.
+
+For acoustic acceptance: test audible output and double-talk, microphone
 permission/device changes, disconnect recovery, suspend/resume, graph error
 deltas, and at least 60 minutes of conversation under load. Compare identical
 model/VAD/device conditions with the browser baseline. Keep the legacy backend
@@ -143,3 +166,5 @@ It exercises 30 turns, 20 interruption acknowledgements, failure/recovery of
 its own child, and paced playback with jitter. Always restart the primary
 service afterward, even if a check fails. This probe does not establish
 acoustic latency, echo quality, or network recovery.
+Capture-gap percentiles cover the paced streaming phase, excluding the deliberate
+helper crash/recovery phase.

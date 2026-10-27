@@ -107,3 +107,26 @@ async def test_router_round_robins_successful_requests_across_keys():
 
     assert [call.kwargs['headers']['Authorization'] for call in client.post.await_args_list] == [
         'Bearer first-key', 'Bearer second-key']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('name,arguments,reason', [
+    ('undeclared_tool', '{"value":3}', 'outside the selected registered domain'),
+    ('exact_tool', '{"value":true}', 'outside the selected tool schema'),
+    ('exact_tool', '{"value":3,"shell":"unapproved"}', 'outside the selected tool schema'),
+])
+async def test_router_rejects_unselected_or_schema_invalid_calls(name, arguments, reason):
+    declaration = {
+        'name': 'exact_tool', 'description': 'Operate a value',
+        'parameters_json_schema': {'type': 'object', 'properties': {'value': {'type': 'integer'}},
+                                   'required': ['value'], 'additionalProperties': False},
+    }
+    response = httpx.Response(200, json={'choices': [{'message': {'tool_calls': [
+        {'function': {'name': name, 'arguments': arguments}}]}}]},
+        request=httpx.Request('POST', 'https://api.groq.com/openai/v1/chat/completions'))
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    client.post.return_value = response
+    with patch('orchestration.groq_tool_router.httpx.AsyncClient', return_value=client):
+        with pytest.raises(ValueError, match=reason):
+            await GroqToolRouter('test-key', [declaration]).route('operate a value')

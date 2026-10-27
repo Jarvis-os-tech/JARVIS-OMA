@@ -4,6 +4,17 @@ from proactive.monitor import JobMonitor, MonitorError, ProactiveMonitor
 
 
 class ProactiveMonitorTests(unittest.TestCase):
+    def test_unverified_process_completion_is_only_a_received_response_notice(self):
+        monitor = ProactiveMonitor()
+        monitor.track('answer', timeout_seconds=10)
+        monitor.update('answer', 'completed', now=1)
+        notice = monitor.completion_notice('answer')
+        self.assertEqual(notice['state'], 'response_received')
+        self.assertFalse(notice['verified'])
+        monitor.track('self-report', timeout_seconds=10)
+        monitor.update('self-report', 'completed', now=1, verification={'status': 'passed'})
+        self.assertEqual(monitor.completion_notice('self-report')['state'], 'response_received')
+
     def test_whitespace_alias_cannot_replace_running_job(self):
         monitor = ProactiveMonitor()
         original = monitor.track('job', timeout_seconds=10, max_retries=2,

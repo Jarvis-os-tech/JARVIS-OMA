@@ -3,27 +3,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="jarvis.service"
-SRC_UNIT="${SCRIPT_DIR}/systemd/${SERVICE_NAME}"
-TARGET_DIR="${HOME}/.config/systemd/user"
+SERVICE_NAME="jarvis-oma.service"
+TARGET_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
 TARGET_UNIT="${TARGET_DIR}/${SERVICE_NAME}"
 
 action="${1:-install}"
 
 case "${action}" in
   install)
-    mkdir -p "${TARGET_DIR}"
-    if [[ -f "${TARGET_UNIT}" ]] && ! cmp -s "${SRC_UNIT}" "${TARGET_UNIT}"; then
-      cp -a "${TARGET_UNIT}" "${TARGET_UNIT}.bak.$(date +%s)"
-      echo "Backed up existing unit to ${TARGET_UNIT}.bak.*"
-    fi
-    cp "${SRC_UNIT}" "${TARGET_UNIT}"
-    systemctl --user daemon-reload
-    systemctl --user enable "${SERVICE_NAME}"
-    echo "✓ JARVIS systemd user service installed and enabled for boot/login."
-    echo "  Activate now:       systemctl --user start ${SERVICE_NAME}"
-    echo "  Check status:       systemctl --user status ${SERVICE_NAME}"
-    echo "  Follow live logs:   journalctl --user -u jarvis -f"
+    python_bin="${SCRIPT_DIR}/.venv/bin/python"
+    [[ -x "${python_bin}" ]] || python_bin=python3
+    exec "${python_bin}" "${SCRIPT_DIR}/scripts/desktop_integration.py"
     ;;
   enable)
     systemctl --user daemon-reload
@@ -56,6 +46,11 @@ case "${action}" in
     systemctl --user stop "${SERVICE_NAME}" 2>/dev/null || true
     systemctl --user disable "${SERVICE_NAME}" 2>/dev/null || true
     rm -f "${TARGET_UNIT}"
+    if [[ -L "${TARGET_DIR}/jarvis.service" && "$(readlink "${TARGET_DIR}/jarvis.service")" == "jarvis-oma.service" ]]; then
+      rm "${TARGET_DIR}/jarvis.service"
+    fi
+    rm -f "${XDG_CONFIG_HOME:-${HOME}/.config}/omarchy/hooks/post-boot.d/jarvis-desktop"
+    rm -f "${XDG_DATA_HOME:-${HOME}/.local/share}/applications/jarvis.desktop"
     systemctl --user daemon-reload
     echo "✓ JARVIS systemd user service removed."
     ;;

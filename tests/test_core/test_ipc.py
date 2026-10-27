@@ -227,6 +227,7 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
              patch('agent.asyncio.sleep', side_effect=no_wait):
             from config import Config
             configuration = Config()
+            configuration.audio.backend = 'legacy'  # This fixture replaces NativeAudioEngine.
             configuration.agent.model = 'test-model'
             with self.assertRaises(asyncio.CancelledError):
                 await run(args, 'fake-key', config=configuration)

@@ -220,6 +220,7 @@ async def test_startup_wires_service_and_declares_voice_tools(tmp_path, ipc_enab
     bundle = registry.register(seed_bundle())
     registry.activate(bundle.digest)
     config = Config()
+    config.audio.backend = 'legacy'  # The test supplies a legacy engine double.
     config.skills.enabled = True
     config.memory.enabled = False
     config.agent.greet_on_activation = False
@@ -263,7 +264,10 @@ async def test_startup_wires_service_and_declares_voice_tools(tmp_path, ipc_enab
     else:
         assert skills.learning_service is None
     names = {item['name'] for item in connected[0]['config']['tools'][0]['function_declarations']}
-    assert {'get_learning_status', 'list_research_lessons', 'record_research_feedback'} <= names
+    assert {'discover_domain_tools', 'execute_domain_tool'} <= names
+    domain = await skills.execute('discover_domain_tools', {'domain': 'learning'})
+    assert {'get_learning_status', 'list_research_lessons', 'record_research_feedback'} <= {
+        item['name'] for item in domain['tools']}
     types.LiveConnectConfig.model_validate(connected[0]['config'])
     if ipc_enabled:
         status = ipc_factory.call_args.kwargs['status_provider']()

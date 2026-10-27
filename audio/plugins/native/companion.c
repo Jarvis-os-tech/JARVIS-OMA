@@ -40,8 +40,10 @@ struct runtime {
     _Atomic bool muted, complete, failed, in_ready, out_ready;
     _Atomic uint64_t capture_end_ns, captured, rendered, starved, dropped, capture_max_ns, render_max_ns;
     _Atomic uint32_t applied_generation, stats_sequence;
+    _Atomic uint32_t buffering_target;
     _Atomic bool playing;
     uint32_t render_generation, prebuffer;
+    uint32_t recovery_prebuffer, clean_samples;
     bool primed;
     uint32_t fade_left;
     int16_t last;
@@ -54,6 +56,18 @@ static void put32(uint8_t *p, uint32_t n) {
 }
 static void put64(uint8_t *p, uint64_t n) {
     for (int i=0;i<8;i++) p[i]=(uint8_t)(n>>(8*i));
+}
+static int control_poll_timeout(const uint8_t *input, size_t have, bool output_pending,
+                                bool output_ready, uint32_t generation, uint32_t applied) {
+    if(have>=16) {
+        uint32_t magic=get32(input),type=get32(input+4),gen=get32(input+8),len=get32(input+12);
+        /* Invalid headers are runnable too: reject them without another wait. */
+        if(magic!=MAGIC || len>MAX_PAYLOAD || len%2) return 0;
+        if(have>=16+len && !(type==AUDIO && gen==generation && gen!=applied)) return 0;
+    }
+    /* Wait for POLLOUT while a packet is in flight. In particular, capture
+     * backlog must not cause a busy loop when stdout is backpressured. */
+    return !output_pending && output_ready ? 0 : 5;
 }
 static uint64_t now_ns(void) {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -111,14 +125,15 @@ static void render(struct runtime *r, int16_t *out, uint32_t n) {
     if(gen!=r->render_generation) {
         uint64_t boundary=atomic_load_explicit(&r->flush_boundary,memory_order_acquire);
         atomic_store_explicit(&r->playback.read,boundary,memory_order_release);
-        r->render_generation=gen; r->primed=false;
+        r->render_generation=gen; r->primed=false; r->clean_samples=0;
         atomic_store(&r->rendered,0);
     }
     bool muted=atomic_load_explicit(&r->muted,memory_order_relaxed);
     uint64_t queued=available(&r->playback);
     /* Completion releases a short turn, not an empty ring. In particular a
      * zero cushion must not repeatedly count idle silence as starvation. */
-    if(!r->primed && queued && (queued>=r->prebuffer ||
+    uint32_t target=SPA_MAX(r->prebuffer,r->recovery_prebuffer);
+    if(!r->primed && queued && (queued>=target ||
                       atomic_load_explicit(&r->complete,memory_order_acquire))) {
         r->primed=true; r->fade_left=240;
     }
@@ -134,7 +149,19 @@ static void render(struct runtime *r, int16_t *out, uint32_t n) {
     }
     if(got<n && r->primed && !muted && !atomic_load(&r->complete)) {
         atomic_fetch_add_explicit(&r->starved,n-got,memory_order_relaxed); r->primed=false;
+        /* Add 40 ms only after real starvation, capped at 240 ms (or the
+         * configured floor). Keep the fast initial path on healthy links. */
+        r->recovery_prebuffer=SPA_MIN(target+960,SPA_MAX(r->prebuffer,5760u));
+        r->clean_samples=0;
+    } else if(got && r->recovery_prebuffer>r->prebuffer) {
+        r->clean_samples+=got;
+        if(r->clean_samples>=120000) { /* Five seconds of clean speech. */
+            r->recovery_prebuffer=SPA_MAX(r->prebuffer,r->recovery_prebuffer-480);
+            r->clean_samples=0;
+        }
     }
+    atomic_store_explicit(&r->buffering_target,
+                          SPA_MAX(r->prebuffer,r->recovery_prebuffer),memory_order_relaxed);
     /* A completed turn can end exactly on a callback boundary. Reset priming
      * there too, so the following turn cannot inherit a bypassed cushion. */
     if(atomic_load(&r->complete) && !available(&r->playback)) r->primed=false;
@@ -192,6 +219,23 @@ static struct pw_stream *open_stream(struct runtime *r, const char *target, bool
     return s;
 }
 static int self_test(void) {
+    uint8_t packet[32]={0}; put32(packet,MAGIC); put32(packet+4,AUDIO);
+    put32(packet+8,1); put32(packet+12,16);
+    /* Buffered commands and capture work run immediately, while partial
+     * packets and generation fences wait for an actual event or deadline. */
+    assert(control_poll_timeout(packet,32,false,false,1,1)==0);
+    assert(control_poll_timeout(packet,31,false,false,1,1)==5);
+    assert(control_poll_timeout(packet,32,false,false,1,0)==5);
+    assert(control_poll_timeout(packet,32,false,false,2,0)==0);
+    assert(control_poll_timeout(packet,0,false,true,1,1)==0);
+    assert(control_poll_timeout(packet,0,true,true,1,1)==5);
+    assert(control_poll_timeout(packet,0,false,false,1,1)==5);
+    put32(packet,0); assert(control_poll_timeout(packet,16,false,false,1,1)==0);
+    /* Writable stdout wakes poll immediately even without stdin activity. */
+    int channel[2]; assert(pipe(channel)==0);
+    struct pollfd writable={.fd=channel[1],.events=POLLOUT};
+    assert(poll(&writable,1,5)==1 && (writable.revents&POLLOUT));
+    close(channel[0]); close(channel[1]);
     struct runtime *r=calloc(1,sizeof(*r)); assert(r);
     int16_t in[480],out[480]; for(int i=0;i<480;i++) in[i]=1000;
     r->prebuffer=480;
@@ -258,7 +302,26 @@ static int self_test(void) {
         assert(atomic_load(&r->rendered)==480 && !r->primed);
         for(int i=0;i<480;i++) in[i]=1000;
     }
-    free(r); puts("native audio self-test passed (idle, boundaries, jitter, 100 cancellations)"); return 0;
+    free(r);
+
+    r=calloc(1,sizeof(*r)); assert(r); r->prebuffer=1920;
+    /* Real starvation raises the next priming target, and never discards PCM. */
+    for(int i=0;i<4;i++) assert(push(&r->playback,in,480));
+    for(int i=0;i<5;i++) render(r,out,480);
+    assert(atomic_load(&r->starved)==480 && r->recovery_prebuffer==2880);
+    for(int i=0;i<4;i++) assert(push(&r->playback,in,480));
+    render(r,out,480); assert(available(&r->playback)==1920 && !r->primed);
+    for(int i=0;i<2;i++) assert(push(&r->playback,in,480));
+    render(r,out,480); assert(r->primed && available(&r->playback)==2400);
+    for(int i=0;i<249;i++) { assert(push(&r->playback,in,480)); render(r,out,480); }
+    assert(r->recovery_prebuffer==2400);
+    atomic_store(&r->complete,true);
+    while(available(&r->playback)) render(r,out,480);
+    assert(atomic_load(&r->rendered)==124320 && atomic_load(&r->starved)==480);
+    /* A short completed reply still starts below the adaptive target. */
+    assert(push(&r->playback,in,100)); render(r,out,480);
+    assert(available(&r->playback)==0 && !r->primed);
+    free(r); puts("native audio self-test passed (scheduling, idle, boundaries, adaptive jitter, 100 cancellations)"); return 0;
 }
 int main(int argc,char **argv) {
     if(argc==2 && !strcmp(argv[1],"--self-test")) return self_test();
@@ -305,21 +368,32 @@ int main(int argc,char **argv) {
     fcntl(STDIN_FILENO,F_SETFL,O_NONBLOCK); fcntl(STDOUT_FILENO,F_SETFL,O_NONBLOCK);
     _Alignas(8) uint8_t input[MAX_PAYLOAD+16],output[MAX_PAYLOAD+16]; size_t have=0,pending=0,sent=0;
     uint64_t stats_at=0,unready_since=0; bool ready=false,stop=false; int result=0;
+    uint32_t reported_generation=UINT32_MAX;
     while(!stop && !atomic_load(&r->failed)) {
         if(ready && (!atomic_load(&r->in_ready) || !atomic_load(&r->out_ready))) {
             if(!unready_since) unready_since=now_ns();
             if(now_ns()-unready_since>2000000000u) {result=1;break;}
         } else unready_since=0;
-        struct pollfd fd={.fd=STDIN_FILENO,.events=POLLIN};
-        if(poll(&fd,1,5)<0 && errno!=EINTR) {result=1;break;}
-        if(fd.revents&(POLLERR|POLLHUP|POLLNVAL)) break;
-        if((fd.revents&POLLIN) && have<sizeof(input)) {
+        uint64_t now=now_ns();
+        bool output_ready=(!ready && atomic_load(&r->in_ready) && atomic_load(&r->out_ready)) ||
+                          now-stats_at>=100000000u || available(&r->capture)>=320 ||
+                          atomic_load(&r->applied_generation)!=reported_generation;
+        int timeout=control_poll_timeout(input,have,sent<pending,output_ready,
+                                        atomic_load(&r->generation),atomic_load(&r->applied_generation));
+        struct pollfd fds[2]={
+            {.fd=STDIN_FILENO,.events=have<sizeof(input)?POLLIN:0},
+            {.fd=STDOUT_FILENO,.events=sent<pending?POLLOUT:0},
+        };
+        if(poll(fds,2,timeout)<0 && errno!=EINTR) {result=1;break;}
+        if((fds[0].revents|fds[1].revents)&(POLLERR|POLLHUP|POLLNVAL)) break;
+        if((fds[0].revents&POLLIN) && have<sizeof(input)) {
             ssize_t got=read(0,input+have,sizeof(input)-have);
             if(got==0) break;
             if(got<0 && errno!=EAGAIN && errno!=EINTR) {result=1;break;}
             if(got>0) have+=(size_t)got;
         }
-        while(have>=16) {
+        /* A flood of small control commands cannot monopolize capture/stats. */
+        for(unsigned parsed=0; parsed<64 && have>=16; parsed++) {
                 uint32_t magic=get32(input),type=get32(input+4),gen=get32(input+8),len=get32(input+12);
                 if(magic!=MAGIC || len>MAX_PAYLOAD || len%2) {result=2;stop=true;break;}
                 if(have<len+16) break;
@@ -337,26 +411,31 @@ int main(int argc,char **argv) {
                 else if(type!=AUDIO && type!=COMPLETE) {result=2;stop=true;break;}
                 memmove(input,input+16+len,have-16-len); have-=16+len;
         }
-        if(sent<pending) {
+        if(sent<pending && (fds[1].revents&POLLOUT)) {
             ssize_t n=write(1,output+sent,pending-sent);
             if(n>0) sent+=(size_t)n;
             else if(n<0 && errno!=EAGAIN && errno!=EINTR) break;
         }
         if(sent<pending) continue;
         pending=sent=0;
-        uint32_t type=0,len=0; uint64_t now=now_ns();
+        uint32_t type=0,len=0; now=now_ns();
         if(!ready && atomic_load(&r->in_ready) && atomic_load(&r->out_ready)) {
             ready=true; type=READY; len=8;
             put32(output+16,pw_stream_get_node_id(r->input)); put32(output+20,pw_stream_get_node_id(r->output));
-        } else if(now-stats_at>=100000000u) {
-            type=STATS; len=64; stats_at=now;
+        } else if(now-stats_at>=100000000u ||
+                  atomic_load(&r->applied_generation)!=reported_generation) {
+            type=STATS; len=72; stats_at=now;
             uint32_t seq=atomic_load_explicit(&r->stats_sequence,memory_order_acquire);
             uint64_t stats[]={atomic_load(&r->captured),atomic_load(&r->rendered),
                 atomic_load(&r->starved),atomic_load(&r->dropped),
                 SPA_MAX(atomic_load(&r->capture_max_ns),atomic_load(&r->render_max_ns)),
-                available(&r->playback),atomic_load(&r->playing),atomic_load(&r->applied_generation)};
+                available(&r->playback),atomic_load(&r->playing),atomic_load(&r->applied_generation),
+                atomic_load(&r->buffering_target)};
             if((seq&1) || seq!=atomic_load_explicit(&r->stats_sequence,memory_order_acquire)) continue;
-            for(int i=0;i<8;i++) put64(output+16+8*i,stats[i]);
+            /* Acknowledge interruption epochs without waiting for the 100 ms
+             * telemetry interval. Device callbacks still perform no pipe I/O. */
+            reported_generation=(uint32_t)stats[7];
+            for(int i=0;i<9;i++) put64(output+16+8*i,stats[i]);
         } else if(available(&r->capture)>=320) {
             uint64_t count=available(&r->capture);
             /* Consumer owns read: discard oldest capture beyond 100 ms. */

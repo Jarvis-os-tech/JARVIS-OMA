@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-jarvis-island",
+  "name": "JARVIS Dynamic Island",
+  "version": "1.2.1",
+  "author": "Antigravity & User",
+  "description": "Reactive JARVIS island with compact battery status, voice controls, media, and measured system telemetry",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Island.qml"
+  }
+}

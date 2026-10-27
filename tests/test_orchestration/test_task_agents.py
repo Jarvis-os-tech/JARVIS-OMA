@@ -38,6 +38,32 @@ class Bridge:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('valid', [True, False])
+async def test_code_task_waits_for_independent_checks_before_announcing(tmp_path, valid):
+    class CodeBridge(Bridge):
+        async def create_session(self, *, workspace):
+            self.workspace = Path(workspace)
+            return await super().create_session(workspace=workspace)
+
+        async def run(self, session_id, prompt, *, timeout_seconds):
+            (self.workspace / 'result.py').write_text('answer = 42\n' if valid else 'def broken(\n')
+            return {'status': 'completed', 'output': 'I completed and tested it.'}
+
+    events = asyncio.Queue()
+    agents = TaskAgents(tmp_path, events, bridge=CodeBridge())
+    try:
+        item = agents.start('Write a module')
+        await asyncio.wait_for(agents.workers[item['id']], 5)
+        result = agents.status(item['id'])
+        assert result['state'] == ('completed' if valid else 'failed')
+        assert result['verified'] is valid
+        assert result['verification']['functional_verified'] is False
+        assert events.get_nowait()['state'] == ('completed' if valid else 'failed')
+    finally:
+        await agents.close()
+
+
+@pytest.mark.asyncio
 async def test_role_runs_in_new_session_and_followup_reuses_only_explicit_session(tmp_path):
     bridge = Bridge()
     events = asyncio.Queue(maxsize=2)

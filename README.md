@@ -51,10 +51,14 @@ audio is not sent to Gemini until the wake phrase is detected.
 
 ## Run as a system service (Boot & Shutdown Automation)
 
-Install JARVIS as a systemd user service so it automatically activates on boot/login and gracefully deactivates on logout or system shutdown:
+Install JARVIS as a systemd user service so it activates at desktop login and
+gracefully deactivates on logout or system shutdown. The installer adds a
+**JARVIS Voice** launcher, user commands, and an Omarchy login hook that refreshes
+the current desktop environment. It uses the actual checkout location and backs
+up existing files. No root privileges are needed.
 
 ```bash
-# Install and enable the systemd user service
+# Install, enable and start the systemd user service
 ./install-service.sh install
 
 # Or use standard systemctl commands:
@@ -64,10 +68,21 @@ systemctl --user status jarvis.service    # Check service status
 systemctl --user restart jarvis.service   # Restart JARVIS
 
 # Follow live service logs:
-journalctl --user -u jarvis -f
+journalctl --user -u jarvis-oma -f
 ```
 
-The service is managed under `graphical-session.target` and receives `SIGTERM` on logout/shutdown, cleanly disconnecting Gemini Live, tearing down microphone streams, and releasing PipeWire echo-cancellation routes without zombie processes.
+The canonical unit is `jarvis-oma.service`; `jarvis.service` is an alias to the
+same process. The service is managed under `graphical-session.target` and receives
+`SIGTERM` on logout/shutdown. The login hook respects a disabled service.
+
+Connection setup has a configurable ten-second deadline, without limiting
+conversation duration. JARVIS tries a resume handle twice after failed network
+handshakes, then opens a fresh provider session with its persistent local memory.
+It does not replay past user requests or desktop actions. Native playback starts
+with the configured cushion (80 ms by default), adds 40 ms after starvation up to
+240 ms, and reduces the extra cushion by 20 ms per five seconds of clean speech.
+A configured cushion above 240 ms remains the minimum. These buffers do not
+measure end-to-end conversational latency.
 
 ## Daemon Control Plane (`jarvisctl` / `voicectl`)
 
@@ -116,6 +131,13 @@ Jarvis proactively greets the user upon activation and strictly answers in a sin
 variables (`JARVIS_AGENT_NAME`, `JARVIS_VOICE`, `JARVIS_MODEL`, `JARVIS_CONFIG`, `JARVIS_GREET_ON_ACTIVATION`, `JARVIS_GREETING_PROMPT`, `JARVIS_SINGLE_SENTENCE`, `JARVIS_NO_INTERRUPT`, `GEMINI_LIVE_MODEL`).
 
 ## Dynamic Omarchy skills
+
+JARVIS now performs ongoing, configurable observations for upcoming calendar
+events, native reminders and critical local system conditions. Notices wait for
+conversation and playback to finish, respect mute/standby, and are spaced apart.
+Daily suggestions are off by default. Saved memory is available to the first
+voice connection. Ask “What is your voice status?” for live readiness or “What
+can you do?” for installed capabilities. See [real-time assistant behavior](docs/realtime-assistant.md).
 
 Skills are enabled by default. At startup Jarvis reads JSON manifests from
 `skill_manifests/`, validates their names and strict argument schemas, and gives

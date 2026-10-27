@@ -182,7 +182,8 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
         report = self._read_completion_report(completion, job)
         if report is None:
             return False
-        job['state'] = report['state']
+        job['reported_state'] = report['state']
+        job['state'] = 'verifying' if report['state'] == 'completed' else 'failed'
         job['completion_report'] = report
         job['completion_source'] = 'agent report; process retirement pending'
         job['terminal_state'] = 'open'
@@ -191,7 +192,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
 
     async def _retire_completed_process(self, job, target):
         """Stop a reported-complete TUI while retaining an inspectable dead pane."""
-        reported_state = job['state']
+        reported_state = job.get('reported_state', job['state'])
         try:
             await self._tmux(
                 'respawn-pane', '-k', '-t', target,
@@ -249,7 +250,9 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
         if self.events.full():
             self.events.get_nowait()
         self.events.put_nowait({
-            'kind': 'team', 'id': team_id, 'state': team['state'],
+            'kind': 'team', 'id': team_id,
+            'state': 'response_received' if team['state'] == 'completed' and not team.get('verified') else team['state'],
+            'verified': team.get('verified', False), 'completion_kind': team.get('completion_kind'),
             'workspace': team['workspace'],
         })
 
@@ -427,6 +430,11 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
         launcher = None
         completion = None
         try:
+            from proactive.verification import capture_workspace
+            baseline = await capture_workspace(job['workspace'])
+            if job['cancel_requested']:
+                job['state'] = 'cancelled'
+                return
             deadline = asyncio.get_running_loop().time() + timeout_seconds
             if job.get('batch'):
                 command = shlex.join(visible_batch_command(
@@ -505,7 +513,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                                         '#{pane_dead} #{pane_dead_status}')
                 if dead.startswith('1 '):
                     job['exit_code'] = int(dead.split()[1])
-                    job['state'] = 'completed' if job['exit_code'] == 0 else 'failed'
+                    job['state'] = 'verifying' if job['exit_code'] == 0 else 'failed'
                     job['terminal_state'] = 'closed'
                     break
                 if asyncio.get_running_loop().time() >= deadline:
@@ -518,6 +526,11 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                 job['state'] = 'cancelled'
                 await self._tmux('kill-session', '-t', session)
                 job['terminal_state'] = 'closed'
+            await self._verify_completion(job, baseline)
+        except asyncio.CancelledError:
+            job['state'] = 'cancelled'
+            await self._cleanup_tmux('session', session)
+            raise
         except Exception as error:
             job['state'] = 'failed'
             self._append(job, f'\nVisible launch failed: {error}\n')
@@ -531,7 +544,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             job['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()
-            self.events.put_nowait({key: job[key] for key in ('id', 'agent', 'state', 'workspace')})
+            self.events.put_nowait(self._completion_event(job))
 
     async def _run_shared_pane(self, job_id, prompt, timeout_seconds, prepared=False):
         job = self.jobs[job_id]
@@ -542,6 +555,11 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
         seed_task = None
         pane_alive = False
         try:
+            from proactive.verification import capture_workspace
+            baseline = await capture_workspace(job['workspace'])
+            if job['cancel_requested']:
+                job['state'] = 'cancelled'
+                return
             if job.get('batch'):
                 command = visible_batch_command(job['agent'], self.executables[job['agent']],
                     prompt, model=job.get('model'), yolo=job.get('yolo', False))
@@ -581,7 +599,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     pane_alive = False
                     job['terminal_state'] = 'closed'
                     job['exit_code'] = int(dead.split()[1])
-                    job['state'] = 'completed' if completion is None and job['exit_code'] == 0 else 'failed'
+                    job['state'] = 'verifying' if completion is None and job['exit_code'] == 0 else 'failed'
                     break
                 if job['cancel_requested'] or asyncio.get_running_loop().time() >= deadline:
                     job['state'] = 'cancelled' if job['cancel_requested'] else 'timed_out'
@@ -590,6 +608,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
                     job['terminal_state'] = 'closed'
                     break
                 await asyncio.sleep(.5)
+            await self._verify_completion(job, baseline)
         except asyncio.CancelledError:
             if pane_alive:
                 await self._cleanup_tmux('pane', pane)
@@ -612,4 +631,4 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             job['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()
-            self.events.put_nowait({key: job[key] for key in ('id', 'agent', 'state', 'workspace')})
+            self.events.put_nowait(self._completion_event(job))

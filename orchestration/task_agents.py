@@ -20,6 +20,7 @@ import uuid
 from learning.bundles import private_directory
 from learning.evidence import sanitize
 from core.secret_env import sanitized_subprocess_env
+from proactive.verification import capture_workspace, verify_workspace_changes, completion_evidence, verification_notice
 
 JOB_ID = re.compile(r'task-[0-9a-f]{12}')
 TERMINAL = {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'}
@@ -217,6 +218,7 @@ class TaskAgents:
 
     async def _run(self, key):
         job = self.jobs[key]
+        response_received = False
         try:
             job.update(state='running', execution='not_started', updated_at=time.time())
             self._save(job)
@@ -230,6 +232,7 @@ class TaskAgents:
                 self._save(job)
             job['execution'] = 'running'
             self._save(job)
+            baseline = await capture_workspace(job['workspace'])
             prompt = ('JARVIS delegated task. You are a temporary agent for this request only.\n'
                       'Use your existing Hermes harness and configured skills as needed. '
                       'Do not change global skills, agent settings or permissions. '
@@ -245,15 +248,29 @@ class TaskAgents:
             if result.get('status') not in {'completed', 'success'} or not output.strip():
                 raise ValueError('Hermes did not report a completed response')
             cleaned = sanitize(output)
-            job.update(state='completed', execution='response_received', output=cleaned['data'],
+            response_received = True
+            job.update(state='running', execution='verifying', output=cleaned['data'],
                        output_truncated=cleaned['truncated'], output_redacted=cleaned['redacted'],
                        summary='Hermes returned a response. Claimed actions remain unverified.')
+            outcome = await verify_workspace_changes(job['workspace'], baseline)
+            job.update(completion_evidence(outcome))
+            job.update(state='completed' if outcome['status'] in ('passed', 'not_applicable') else 'failed',
+                       execution='response_received')
+            if job['verified']:
+                job['summary'] = 'Hermes returned a response; changed file bytes and syntax checks passed. Functional behavior remains unverified.'
+            elif job['state'] == 'failed':
+                job['summary'] = 'Hermes returned a response but independent workspace checks did not pass.'
         except asyncio.CancelledError:
-            acknowledged = await self._cancel_remote(job)
-            job.update(state='cancelled', execution='cancel_acknowledged' if acknowledged else 'unknown',
-                       cancellation_acknowledged=acknowledged,
-                       summary='Task cancellation acknowledged by Hermes.' if acknowledged else
-                       'Local waiting stopped; remote Hermes execution is unknown. Inspect Hermes before retrying.')
+            if response_received:
+                job.update(state='cancelled', execution='response_received', verified=False,
+                           cancellation_acknowledged=None,
+                           summary='Response received; local verification was cancelled. Claimed effects remain unverified.')
+            else:
+                acknowledged = await self._cancel_remote(job)
+                job.update(state='cancelled', execution='cancel_acknowledged' if acknowledged else 'unknown',
+                           cancellation_acknowledged=acknowledged,
+                           summary='Task cancellation acknowledged by Hermes.' if acknowledged else
+                           'Local waiting stopped; remote Hermes execution is unknown. Inspect Hermes before retrying.')
         except TimeoutError:
             acknowledged = await self._cancel_remote(job)
             job.update(state='timed_out', execution='cancel_acknowledged' if acknowledged else 'unknown',
@@ -270,7 +287,10 @@ class TaskAgents:
             self._save(job)
             if self.events is not None:
                 event = {'kind': 'task_agent', **{name: job.get(name) for name in
-                    ('id', 'state', 'role', 'summary', 'verified', 'output_truncated')}}
+                    ('id', 'state', 'role', 'summary', 'verified', 'output_truncated', 'completion_kind', 'verification')}}
+                if job['state'] == 'completed' and not job.get('verified'):
+                    event.update(state='response_received', job_state='completed')
+                event['verification'] = verification_notice(job.get('verification'))
                 try:
                     self.events.put_nowait(event)
                 except asyncio.QueueFull:

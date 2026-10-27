@@ -13,6 +13,7 @@ import uuid
 from core.secret_env import sanitized_subprocess_env
 from orchestration.personas import PERSONAS
 from orchestration.harness2_adapter import Harness2Adapter
+from proactive.verification import capture_workspace, verify_workspace_changes, completion_evidence, verification_notice
 
 AGENTS = ('codex', 'claude', 'opencode', 'gemini', 'hermes', 'omp', 'pi', 'crush')
 TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'timed_out'})
@@ -186,6 +187,7 @@ class AgentOrchestrator:
                'task_summary': prompt.strip()[:200],
                'created_at': now(), 'updated_at': now(), 'exit_code': None,
                'output': '', 'output_truncated': False, 'cancel_requested': False}
+        job.update(verified=False, completion_kind=None, verification={'status': 'pending'})
         self.jobs[job_id] = job
         self.workers[job_id] = asyncio.create_task(self._run(job_id, prompt, timeout_seconds))
         self.workers[job_id].add_done_callback(lambda done, key=job_id: self.workers.pop(key, None))
@@ -241,6 +243,10 @@ class AgentOrchestrator:
             # Existing injected builders use the original three-argument contract.
             command = (command_for(*arguments, model=job.get('model'))
                        if self._command_builder is command_for else self._command_builder(*arguments))
+            baseline = await capture_workspace(job['workspace'])
+            if job['cancel_requested']:
+                job['state'] = 'cancelled'
+                return
             process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=job['workspace'], stdin=asyncio.subprocess.DEVNULL,
@@ -255,7 +261,14 @@ class AgentOrchestrator:
             try:
                 await asyncio.wait_for(process.wait(), timeout_seconds)
                 await asyncio.wait_for(asyncio.gather(*readers), 3)
-                job['state'] = 'completed' if process.returncode == 0 else 'failed'
+                if process.returncode == 0:
+                    # A model turn/process exit is only a response. Stop all
+                    # owned helpers before inspecting independently observed bytes.
+                    await self._stop_process(process)
+                    job['state'] = 'verifying'
+                    await self._verify_completion(job, baseline)
+                else:
+                    job['state'] = 'failed'
             except TimeoutError:
                 job['state'] = 'timed_out'
             if job['cancel_requested']:
@@ -278,9 +291,28 @@ class AgentOrchestrator:
             job['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()
-            self.events.put_nowait({key: job[key] for key in ('id', 'agent', 'state', 'workspace')})
+            self.events.put_nowait(self._completion_event(job))
             self.harness2.record_outcome(agent=job['agent'], task=job['task_summary'],
                                          state=job['state'], output=job['output'])
+
+    async def _verify_completion(self, job, baseline):
+        if job['state'] not in ('completed', 'verifying'):
+            return
+        job['state'] = 'verifying'
+        outcome = await verify_workspace_changes(job['workspace'], baseline)
+        job.update(completion_evidence(outcome))
+        job['state'] = ('completed' if outcome['status'] in ('passed', 'not_applicable') else 'failed')
+        if job.get('cancel_requested'):
+            job['state'] = 'cancelled'
+
+    @staticmethod
+    def _completion_event(job):
+        event = {key: job[key] for key in ('id', 'agent', 'state', 'workspace')}
+        event.update(verified=job.get('verified', False), completion_kind=job.get('completion_kind'),
+                     verification=verification_notice(job.get('verification')))
+        if job['state'] == 'completed' and not job.get('verified'):
+            event.update(state='response_received', job_state='completed')
+        return event
 
     def status(self, job_id, max_chars=6000):
         job = self.jobs.get(job_id)
@@ -290,7 +322,10 @@ class AgentOrchestrator:
             raise OrchestrationError('output limit must be from 100 to 20000 characters')
         result = {**job, 'output': job['output'][-max_chars:],
                   'output_truncated': job['output_truncated'] or len(job['output']) > max_chars}
-        return self._response(f'{job["agent"]} job is {job["state"]}.', job=result,
+        summary = (f'{job["agent"]} returned a response; claimed effects are unverified.'
+                   if job['state'] == 'completed' and not job.get('verified') else
+                   f'{job["agent"]} job is {job["state"]}; see verification scope.')
+        return self._response(summary, job=result,
             next_actions=(['check_agent_job', 'cancel_agent_job'] if job['state'] not in TERMINAL else []),
             artifacts=[job_id, job['workspace']])
 
@@ -390,6 +425,8 @@ class AgentOrchestrator:
                     return
             team['state'] = 'completed'
             team['verification'] = 'Agent stages finished; inspect QA and review evidence before claiming success.'
+            team['verified'] = all(self.jobs[key].get('verified') is True for key in team['jobs'])
+            team['completion_kind'] = 'verified_changes' if team['verified'] else 'response_received'
         except asyncio.CancelledError:
             team['state'] = 'cancelled'
             raise
@@ -401,8 +438,10 @@ class AgentOrchestrator:
             team['updated_at'] = now()
             if self.events.full():
                 self.events.get_nowait()
-            self.events.put_nowait({'kind': 'team', 'id': team_id, 'state': team['state'],
-                                   'workspace': team['workspace']})
+            event_state = ('response_received' if team['state'] == 'completed' and not team.get('verified') else team['state'])
+            self.events.put_nowait({'kind': 'team', 'id': team_id, 'state': event_state,
+                                   'workspace': team['workspace'], 'verified': team.get('verified', False),
+                                   'completion_kind': team.get('completion_kind')})
 
     def _delegate_team_assignment(self, assignment, prompt, workspace, timeout_seconds):
         return self.delegate(assignment['agent'], prompt, workspace, timeout_seconds,
@@ -469,11 +508,15 @@ class AgentOrchestrator:
         job = self.jobs[job_id]
         if job['state'] not in TERMINAL:
             job['cancel_requested'] = True
+            worker = self.workers.get(job_id)
+            if job['state'] == 'verifying' and worker is not None:
+                # Verifier subprocesses own cancellation cleanup; do not wait
+                # out a syntax/test deadline after the user asks to stop.
+                worker.cancel()
             # Wait for spawn to resolve rather than cancelling during process creation.
             await self._stop_process(self.processes.get(job_id))
-            worker = self.workers.get(job_id)
             if worker:
-                await worker
+                await asyncio.gather(worker, return_exceptions=True)
         return self.status(job_id)
 
     async def close(self):

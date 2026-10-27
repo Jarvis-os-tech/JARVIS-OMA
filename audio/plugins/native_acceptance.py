@@ -36,18 +36,18 @@ async def run(duration, output):
     consumer = None
     captured = 0
     gaps = []
+    last_capture_at = None
     result = {'scope': 'local silent device test; no cloud, no acoustic parity claim'}
 
     async def consume():
-        nonlocal captured
-        last = None
+        nonlocal captured, last_capture_at
         while True:
             frame = await engine.async_input_queue.get()
             assert len(frame) == 640
             now = time.monotonic()
-            if last is not None:
-                gaps.append(now - last)
-            last = now
+            if last_capture_at is not None:
+                gaps.append(now - last_capture_at)
+            last_capture_at = now
             captured += 1
 
     try:
@@ -98,6 +98,9 @@ async def run(duration, output):
 
         start_rss = rss_bytes(base._process.pid)
         start_starved = base._starved
+        # Measure steady streaming separately from deliberate helper downtime.
+        gaps.clear()
+        last_capture_at = None
         start = due = time.monotonic()
         frames = 0
         next_report = start + 30
@@ -113,9 +116,16 @@ async def run(duration, output):
         engine.mark_turn_complete()
         await until(lambda: base._rendered == frames * 480 and not engine.speaking)
         assert base._starved - start_starved == 0, 'playback starved during paced jitter run'
+        ordered_gaps = sorted(gaps)
+        gap_percentiles = {
+            f'capture_gap_p{label}_ms': ordered_gaps[int((len(ordered_gaps)-1)*fraction)]*1000
+            if ordered_gaps else 0
+            for label, fraction in ((50, .50), (95, .95), (99, .99))
+        }
         result.update(duration_s=duration, paced_frames=frames, rendered_samples=base._rendered,
                       starved_samples_delta=base._starved-start_starved,
                       capture_frames=captured, capture_gap_max_ms=max(gaps, default=0)*1000,
+                      **gap_percentiles,
                       callback_max_ns=base.callback_max_ns,
                       helper_rss_growth_bytes=rss_bytes(base._process.pid)-start_rss,
                       capture_dropped_frames=base.capture_dropped_frames,

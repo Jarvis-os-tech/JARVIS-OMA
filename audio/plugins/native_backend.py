@@ -117,6 +117,14 @@ class NativeCompanionEngine:
         self._playback_prebuffer_frames = round(native_cushion_s / .02)
 
     @property
+    def capture_sample_clock(self):
+        return self._captured
+
+    @property
+    def playback_sample_clock(self):
+        return self._rendered
+
+    @property
     def capture_dropped_frames(self):
         return self._capture_drops // 320 + self.async_input_queue.expired_frames
 
@@ -296,7 +304,12 @@ class NativeCompanionEngine:
             self.input_rms = (sum(value * value for value in samples) / 320) ** .5 / 32768
             asyncio.Queue.put_nowait(self.async_input_queue, (captured_ns, pcm))
         elif kind == STATS:
-            captured, rendered, starved, drops, max_ns, queued, playing, gen = struct.unpack('<8Q', payload)
+            if len(payload) not in (64, 72):
+                raise ValueError('invalid native stats size')
+            captured, rendered, starved, drops, max_ns, queued, playing, gen = struct.unpack_from('<8Q', payload)
+            if len(payload) == 72:
+                target = struct.unpack_from('<Q', payload, 64)[0]
+                self._playback_prebuffer_frames = round(target / 480)
             self._captured, self._capture_drops = captured, drops
             if gen == self.active_generation:
                 self._rendered = rendered

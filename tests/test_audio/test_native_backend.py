@@ -140,6 +140,17 @@ class NativeBackendTests(unittest.IsolatedAsyncioTestCase):
         engine._event(STATS, 1, struct.pack('<8Q', 320, 480, 0, 0, 10, 0, 0, 1))
         self.assertFalse(engine.speaking)
 
+    async def test_adaptive_cushion_stats_and_legacy_packet_compatibility(self):
+        engine = self.engine
+        engine._event(STATS, 0, struct.pack('<9Q', 320, 0, 480, 0, 10, 960, 0, 0, 2880))
+        self.assertEqual(engine._playback_prebuffer_frames, 6)
+        self.assertEqual(engine.playback_rebuffers, 1)
+        engine._event(STATS, 0, struct.pack('<8Q', 640, 480, 480, 0, 10, 480, 1, 0))
+        self.assertEqual(engine._playback_prebuffer_frames, 6)
+        self.assertEqual(engine.playback_rebuffers, 1)
+        with self.assertRaisesRegex(ValueError, 'stats size'):
+            engine._event(STATS, 0, bytes(32))
+
     def test_graph_requires_correct_owner_direction_and_active_links(self):
         def node(i, name, client=None):
             props = {'node.name': name}

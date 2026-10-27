@@ -438,22 +438,44 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_manage_window_adapter(self):
         skills = self.make_desktop_skills()
-        skills._run = AsyncMock(return_value='')
-        result = await skills.execute('manage_window', {'action': 'fullscreen'})
-        self.assertEqual(result['status'], 'done')
-        skills._run.assert_awaited_once_with(
-            skills._commands['hyprctl'], 'dispatch', 'hl.dsp.window.fullscreen({ mode = "fullscreen" })')
+        skills._run = AsyncMock(side_effect=AssertionError('Unverified legacy dispatch must not run'))
+        verified = {'status': 'success', 'action': 'fullscreen', 'verified': True,
+                    'target': {'address': '0x1234'}}
+        with patch('skills.ground_truth.prepare_action_target', new=AsyncMock(return_value={
+                'verified': True, 'window': {'address': '0x1234', 'pid': 42}, 'healed': False})), \
+             patch('skills.skills.system_control.manage_window', new=AsyncMock(return_value=verified)) as control:
+            result = await skills.execute('manage_window', {'action': 'fullscreen'})
+        self.assertEqual({key: result[key] for key in verified}, verified)
+        self.assertTrue(result['pre_action_verified'])
+        self.assertTrue(result['post_action_verified'])
+        control.assert_awaited_once_with('fullscreen')
 
         with self.assertRaises(SkillError):
             await skills.execute('manage_window', {'action': 'destroy_everything'})
 
     async def test_switch_workspace_adapter(self):
         skills = self.make_desktop_skills()
-        skills._run = AsyncMock(return_value='')
-        result = await skills.execute('switch_workspace', {'workspace': 2})
-        self.assertEqual(result['status'], 'switched')
-        skills._run.assert_awaited_once_with(
-            skills._commands['hyprctl'], 'dispatch', 'hl.dsp.focus({ workspace = "2" })')
+        skills._run = AsyncMock(side_effect=AssertionError('Unverified legacy dispatch must not run'))
+        verified = {'status': 'success', 'workspace': 2, 'target_workspace': 2, 'verified': True}
+        with patch('skills.skills.system_control.switch_workspace', new=AsyncMock(return_value=verified)) as control:
+            result = await skills.execute('switch_workspace', {'workspace': 2})
+        self.assertEqual(result, verified)
+        control.assert_awaited_once_with(2)
+
+    async def test_desktop_adapters_preserve_failed_and_unverified_results(self):
+        skills = self.make_desktop_skills()
+        for status in ('error', 'unverified'):
+            outcome = {'status': status, 'verified': False, 'message': 'Target was not confirmed'}
+            with patch('skills.ground_truth.prepare_action_target', new=AsyncMock(return_value={
+                    'verified': True, 'window': {'address': '0x1234', 'pid': 42}, 'healed': False})), \
+                 patch('skills.skills.system_control.manage_window', new=AsyncMock(return_value=outcome)):
+                result = await skills.execute('manage_window', {'action': 'float'})
+                self.assertFalse(result['verified'])
+                self.assertEqual(result['message'], outcome['message'])
+                self.assertEqual(result['status'], 'error' if status == 'error' else 'unverified_effect')
+                self.assertTrue(result['pre_action_verified'])
+            with patch('skills.skills.system_control.switch_workspace', new=AsyncMock(return_value=outcome)):
+                self.assertEqual(await skills.execute('switch_workspace', {'workspace': 2}), outcome)
 
     async def test_system_power_adapter_rejects_dangerous_actions(self):
         skills = self.make_desktop_skills()

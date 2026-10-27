@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from typing import Any
+from .verification import completion_evidence
 
 
 ACTIVE = frozenset({"running"})
@@ -98,6 +99,7 @@ class ProactiveMonitor:
         *,
         now: float,
         detail: str | None = None,
+        verification: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Record an execution result; failed jobs may enter retry_wait."""
         if status not in TERMINAL | ACTIVE:
@@ -116,9 +118,20 @@ class ProactiveMonitor:
             return deepcopy(job)
         job["status"] = status
         job["deadline_at"] = None
+        if status == 'completed':
+            job.update(completion_evidence(verification))
         if status in RETRYABLE:
             self._schedule_retry(job, timestamp)
         return deepcopy(job)
+
+    def completion_notice(self, job_id: str) -> dict[str, Any]:
+        """Safe announcement projection; an unverified exit is only a response."""
+        job = self._get(job_id)
+        if job['status'] != 'completed':
+            return {'id': job['id'], 'state': job['status'], 'verified': False}
+        return {'id': job['id'], 'state': job['announcement_state'],
+                'verified': job['verified'], 'completion_kind': job['completion_kind'],
+                'verification': deepcopy(job['verification'])}
 
     def poll(self, *, now: float) -> list[dict[str, Any]]:
         """Mark overdue running jobs timed out and return their new snapshots."""

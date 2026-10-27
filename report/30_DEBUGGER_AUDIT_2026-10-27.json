@@ -1,0 +1,536 @@
+{
+  "schema_version": "ecc.agent-architecture-audit.report.v1",
+  "date": "2026-10-27",
+  "repository": "/home/g0pi/Projects/JARVIS-OMA",
+  "base_revision": "17bec36",
+  "branch": "main",
+  "executive_verdict": {
+    "overall_health": "high_risk",
+    "primary_failure_mode": "Execution ownership and integration-contract gaps survive the passing unit suite.",
+    "most_urgent_fix": "Close child credential inheritance and unify stop/cancel ownership."
+  },
+  "scope": {
+    "target_name": "JARVIS-OMA",
+    "model_stack": [
+      "Gemini Live",
+      "optional Groq router",
+      "delegated local agent CLIs"
+    ],
+    "layers_to_audit": [
+      "audio capture/playback",
+      "transport/session",
+      "tool selection/execution",
+      "GUI/controller",
+      "IPC/OS lifecycle",
+      "background verification",
+      "memory",
+      "proactive notifications"
+    ],
+    "method": "Read-only runtime inspection, source tracing, installed CLI schema inspection and isolated reproductions; no production changes or live desktop mutations."
+  },
+  "validation": {
+    "audit_reproductions_passed": 13,
+    "meaning": "Passing audit probes confirm the documented current defects/limitations. They are not fix acceptance tests.",
+    "existing_regression_tests_passed": 138,
+    "existing_subtests_passed": 30,
+    "voice_lock_files_verified": 7,
+    "prior_full_suite": {
+      "tests_passed": 1300,
+      "subtests_passed": 385,
+      "skipped": 2,
+      "fresh_in_this_audit": false
+    }
+  },
+  "findings": [
+    {
+      "id": "J01",
+      "severity": "high",
+      "title": "Credentials reach audio and GUI helper processes",
+      "evidence_type": "reproduced + live metadata",
+      "symptom": "Compromise or diagnostic dumping of a helper can expose credentials that the helper never needs.",
+      "mechanism": "NativeCompanionEngine.start omits env=, and GUI daemon autostart copies os.environ. Camera, screen capture and vision HUD launches also omit the shared sanitizer. The live daemon and its native audio child each contained 18 credential-named environment variables; only counts were inspected/reported, never values. The existing secret_env implementation is present and works, but these call sites bypass it.",
+      "source_layer": "audio",
+      "root_cause": "NativeCompanionEngine.start omits env=, and GUI daemon autostart copies os.environ. Camera, screen capture and vision HUD launches also omit the shared sanitizer. The live daemon and its native audio child each contained 18 credential-named environment variables; only counts were inspected/reported, never values. The existing secret_env implementation is present and works, but these call sites bypass it.",
+      "evidence_refs": [
+        "audio/plugins/native_backend.py:156",
+        "audio/plugins/native_backend.py:176",
+        "skills/gui_control.py:91",
+        "core/agent.py:369",
+        "core/agent.py:536",
+        "core/agent.py:1932",
+        "core/secret_env.py:18"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Apply sanitized_subprocess_env at every non-provider helper launch, preserving only needed desktop/audio variables. Audit all subprocess paths through one launch utility. Restart affected helpers after the fix. No evidence of credential exfiltration was found; rotate credentials if exposure is independently suspected.",
+      "acceptance_test": "Inject synthetic credential keys and assert they are absent from every child environment, including GUI recovery/autostart. Recheck helper environment counts without reading values.",
+      "reproduction": "test_native_helper_inherits_environment_without_filter; test_gui_daemon_autostart_copies_secret_variables"
+    },
+    {
+      "id": "J02",
+      "severity": "high",
+      "title": "Verified coordinate clicking calls an unsupported driver tool",
+      "evidence_type": "installed contract mismatch",
+      "symptom": "A desktop click can fail even when its coordinates and focus checks are correct.",
+      "mechanism": "The mandatory registry path forces verify_active=True, which selects click_window. Installed cua-driver 0.28.2 reports \u201cUnknown tool: click_window\u201d. Its supported click target schema also requires both pid and window_id, whereas this bridge constructs a window target without pid. Mocked tests accepted the invented atomic click contract.",
+      "source_layer": "skills",
+      "root_cause": "The mandatory registry path forces verify_active=True, which selects click_window. Installed cua-driver 0.28.2 reports \u201cUnknown tool: click_window\u201d. Its supported click target schema also requires both pid and window_id, whereas this bridge constructs a window target without pid. Mocked tests accepted the invented atomic click contract.",
+      "evidence_refs": [
+        "skills/gui_control.py:232",
+        "skills/gui_control.py:244",
+        "skills/action_verification.py:17"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Negotiate the installed driver tool/schema contract at startup. Use supported PID/window targeting only where focus guarantees are actually available; otherwise return an explicit unavailable/fallback result. Implement a supported compositor-specific atomic adapter if strict atomic focus-and-input is required. Do not silently weaken the focus guard.",
+      "acceptance_test": "Validate generated calls against the installed driver schema and exercise one disposable-window click. Assert unsupported contracts are disabled before dispatch. The read-only command cua-driver describe click_window currently exits 64.",
+      "reproduction": null
+    },
+    {
+      "id": "J03",
+      "severity": "high",
+      "title": "\u201cStop all\u201d does not stop every JARVIS job type",
+      "evidence_type": "reproduced",
+      "symptom": "The assistant can report stopped while personal Hermes helpers, task-runner steps, or model jobs continue.",
+      "mechanism": "The stop adapter stops the proactive runtime/orchestrator and evolution jobs, but does not stop _task_agents, _task_runner or _model_jobs. Their separate cleanup exists only on shutdown. The public tool description promises every active JARVIS-managed agent.",
+      "source_layer": "skills",
+      "root_cause": "The stop adapter stops the proactive runtime/orchestrator and evolution jobs, but does not stop _task_agents, _task_runner or _model_jobs. Their separate cleanup exists only on shutdown. The public tool description promises every active JARVIS-managed agent.",
+      "evidence_refs": [
+        "skills/skills.py:1183",
+        "proactive/runtime.py:300",
+        "skills/skills.py:1091",
+        "skill_manifests/proactive.json:90"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Introduce one admission latch and execution registry shared by every job producer. Stop admission first, cancel each job owner, retain uncertain/still-running work, and return a per-job outcome instead of unconditional stopped.",
+      "acceptance_test": "Start one fake job in each job manager; stop all must cancel each, reject new work until resume, and report any cancellation-resistant task accurately.",
+      "reproduction": "test_stop_all_omits_personal_helpers_tasks_and_model_jobs"
+    },
+    {
+      "id": "J04",
+      "severity": "high",
+      "title": "Cancellation can orphan a desktop command subprocess",
+      "evidence_type": "reproduced",
+      "symptom": "A canceled voice action can keep executing a CLI command after JARVIS has returned to conversation.",
+      "mechanism": "DesktopSkills._run handles its own TimeoutError but has no CancelledError/finally cleanup. Provider cancellation or the outer tool deadline cancels communicate without killing/reaping the process. The isolated fake-child probe observed no kill or wait call.",
+      "source_layer": "skills",
+      "root_cause": "DesktopSkills._run handles its own TimeoutError but has no CancelledError/finally cleanup. Provider cancellation or the outer tool deadline cancels communicate without killing/reaping the process. The isolated fake-child probe observed no kill or wait call.",
+      "evidence_refs": [
+        "skills/skills.py:765",
+        "core/tool_dispatch.py:28",
+        "core/agent.py:1629"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Give command execution explicit child ownership, cancellation cleanup, bounded process-group termination and reaping. Distinguish short command processes from intentionally detached application launches.",
+      "acceptance_test": "Cancel a disposable long-running child and a child with a descendant; both must terminate within a bound, with their final status observable and no inherited pipe hang.",
+      "reproduction": "test_registry_command_cancellation_does_not_kill_child"
+    },
+    {
+      "id": "J05",
+      "severity": "high",
+      "title": "Timed-out file operations can finish later without action-level tracking",
+      "evidence_type": "reproduced",
+      "symptom": "A file change may occur after a timeout, while the assistant appears idle or a new request is being handled.",
+      "mechanism": "BoundedWorker correctly retains a running thread slot, but cancellation cannot stop its synchronous callable. run_skill_call detaches the canceled caller and has no persistent action record for the remaining work. The probe wrote a temporary file after the timeout had returned. A historical runtime log also contains one 45-second tool timeout; it does not prove that specific action later completed.",
+      "source_layer": "core",
+      "root_cause": "BoundedWorker correctly retains a running thread slot, but cancellation cannot stop its synchronous callable. run_skill_call detaches the canceled caller and has no persistent action record for the remaining work. The probe wrote a temporary file after the timeout had returned. A historical runtime log also contains one 45-second tool timeout; it does not prove that specific action later completed.",
+      "evidence_refs": [
+        "core/workers.py:49",
+        "core/tool_dispatch.py:35",
+        "skills/skills.py:1346",
+        "core/agent.py:1464"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Promote mutating worker operations into tracked jobs with stable IDs, state=outcome_unknown/still_running, target-path reservations and eventual result events. Use cooperative cancellation boundaries or isolated workers where safe. Never release action ownership just because its waiter timed out.",
+      "acceptance_test": "A canceled running mutation remains visible, blocks conflicting mutations, and publishes its eventual completion/failure. Stop-all must report work that cannot be preempted.",
+      "reproduction": "test_running_file_work_survives_tool_timeout"
+    },
+    {
+      "id": "J06",
+      "severity": "high",
+      "title": "Manual interruption can resume the same old voice reply",
+      "evidence_type": "reproduced",
+      "symptom": "Pressing the interrupt control can silence playback briefly, then the same answer starts speaking again.",
+      "mechanism": "interrupt_audio clears playback and advances the local generation, but does not set the existing _drop_interrupted_audio gate or cancel the remote response. Later PCM from the still-active provider turn is assigned the new local generation and accepted. SIGUSR2 has a second, narrower path that calls only stop_speaking.",
+      "source_layer": "core",
+      "root_cause": "interrupt_audio clears playback and advances the local generation, but does not set the existing _drop_interrupted_audio gate or cancel the remote response. Later PCM from the still-active provider turn is assigned the new local generation and accepted. SIGUSR2 has a second, narrower path that calls only stop_speaking.",
+      "evidence_refs": [
+        "core/agent.py:439",
+        "core/agent.py:1564",
+        "core/agent.py:1834",
+        "core/agent.py:1923",
+        "audio/downstream.py:29"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Unify IPC, signal and local interrupt behavior into a turn-cancellation transition. Suppress old-turn PCM until a verified provider turn boundary and use a supported provider cancellation mechanism where available. Maintain generation fencing in the unlocked controller/plugin layers.",
+      "acceptance_test": "Feed late PCM after a manual interrupt and assert no resumed output; then a new confirmed turn must play normally. Repeat for the signal and IPC entrypoints.",
+      "reproduction": "test_manual_interrupt_accepts_late_old_turn_pcm_again"
+    },
+    {
+      "id": "J07",
+      "severity": "high",
+      "title": "Audio failure during standby can leave wake-up stuck",
+      "evidence_type": "reproduced + control-flow inspection",
+      "symptom": "After the audio helper dies or its device disappears in standby, saying \u201cHey Jarvis\u201d may never wake the assistant.",
+      "mechanism": "The live supervisor includes monitor_health, but the EnterStandby branch directly awaits listen_for_wake_word. That listener waits indefinitely on the capture queue and never supervises engine health. Exceptions raised inside that except branch also bypass sibling recovery handlers.",
+      "source_layer": "core",
+      "root_cause": "The live supervisor includes monitor_health, but the EnterStandby branch directly awaits listen_for_wake_word. That listener waits indefinitely on the capture queue and never supervises engine health. Exceptions raised inside that except branch also bypass sibling recovery handlers.",
+      "evidence_refs": [
+        "core/agent.py:2020",
+        "audio/plugins/standby.py:126",
+        "audio/plugins/native_backend.py:389"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Supervise wake detection and audio health together, with device recovery that preserves standby and keeps cloud audio disconnected. Return to a local recoverable-error state when recovery is exhausted.",
+      "acceptance_test": "Fail the owned helper and disconnect/reconnect a device during standby; local capture must recover or visibly report failure, without requiring a service restart or sending standby audio to the cloud.",
+      "reproduction": "test_standby_does_not_observe_failed_audio_health"
+    },
+    {
+      "id": "J08",
+      "severity": "high",
+      "title": "Desktop mutations are not serialized across simultaneous tool calls",
+      "evidence_type": "reproduced boundary gap",
+      "symptom": "Two requests can fight over focus, clipboard contents or pointer position, allowing input to reach the wrong surface.",
+      "mechanism": "Every provider function call starts an independent task; routed actions also use gather. The verification decorator has no desktop-wide action lock. ContextVar isolates metadata, not the compositor. A controlled two-action probe entered both mutation bodies simultaneously. Wrong-window typing was not attempted on the real desktop.",
+      "source_layer": "core",
+      "root_cause": "Every provider function call starts an independent task; routed actions also use gather. The verification decorator has no desktop-wide action lock. ContextVar isolates metadata, not the compositor. A controlled two-action probe entered both mutation bodies simultaneously. Wrong-window typing was not attempted on the real desktop.",
+      "evidence_refs": [
+        "core/agent.py:1429",
+        "core/agent.py:1672",
+        "skills/action_verification.py:16",
+        "skills/system_control.py:321"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Serialize foreground focus/input/clipboard transactions through one desktop action coordinator, including focus and workspace changes. Acquire it before observation and hold through verification. Keep independent read-only tools concurrent. External focus changes still require exact-target adapters and fail-closed checks.",
+      "acceptance_test": "Race two different target-window actions and a clipboard paste; each transaction must finish before the next begins, and injected external focus theft must block or safely recover.",
+      "reproduction": "test_gui_verification_boundary_allows_overlapping_mutations"
+    },
+    {
+      "id": "J09",
+      "severity": "medium",
+      "title": "Wake-word initialization and inference block the conversation loop",
+      "evidence_type": "code-confirmed + historical timing",
+      "symptom": "Entering standby can pause voice/IPC responsiveness; wake inference also shares the control loop.",
+      "mechanism": "prepare is async but constructs OpenWakeWordDetector synchronously, before setting the standby request latch. Every prediction runs synchronously in the wake loop. The bounded two-hour log sample contains an enter_standby duration of 2669.9 ms; that duration includes the whole tool and is not an isolated model-load measurement.",
+      "source_layer": "audio",
+      "root_cause": "prepare is async but constructs OpenWakeWordDetector synchronously, before setting the standby request latch. Every prediction runs synchronously in the wake loop. The bounded two-hour log sample contains an enter_standby duration of 2669.9 ms; that duration includes the whole tool and is not an isolated model-load measurement.",
+      "evidence_refs": [
+        "audio/plugins/standby.py:107",
+        "audio/plugins/standby.py:119",
+        "audio/plugins/standby.py:143"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Create, reset and run the detector on one dedicated serial worker. Gate microphone upload as soon as standby is accepted, prepare locally, and handle preparation failure explicitly. Warm the detector in bounded background work if resource use permits.",
+      "acceptance_test": "Inject slow initialization/prediction and verify event-loop heartbeat, IPC deadlines and the privacy gate remain responsive; all detector access must stay on its owner thread.",
+      "reproduction": null
+    },
+    {
+      "id": "J10",
+      "severity": "medium",
+      "title": "A resumed conversation permanently runs out of tool slots",
+      "evidence_type": "reproduced design limit",
+      "symptom": "After 256 distinct calls, all new actions fail until a fresh conversation is created.",
+      "mechanism": "The cache intentionally retains identity tombstones for safety, has a default capacity of 256, and never retires delivered identities during resumption. The rejection tells the user to start fresh, but the live handler neither rotates the conversation nor exposes a dedicated fresh-session recovery path.",
+      "source_layer": "core",
+      "root_cause": "The cache intentionally retains identity tombstones for safety, has a default capacity of 256, and never retires delivered identities during resumption. The rejection tells the user to start fresh, but the live handler neither rotates the conversation nor exposes a dedicated fresh-session recovery path.",
+      "evidence_refs": [
+        "core/connection.py:18",
+        "core/connection.py:38",
+        "core/connection.py:90",
+        "core/agent.py:1655"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Use a bounded durable action journal with explicit session namespaces, or rotate at a quiet, action-free boundary before capacity is reached. Keep completed identity evidence across uncertain reconnects; never solve this by forgetting effects and replaying them.",
+      "acceptance_test": "Run more than 256 calls across reconnects; new actions remain available and duplicate effects never execute twice.",
+      "reproduction": "test_completed_calls_exhaust_cache_after_256_actions"
+    },
+    {
+      "id": "J11",
+      "severity": "medium",
+      "title": "A second daemon can replace a live IPC endpoint",
+      "evidence_type": "reproduced",
+      "symptom": "The controller can connect to a different daemon while the first daemon still owns audio; shutdown of one instance may remove another instance\u2019s socket path.",
+      "mechanism": "start unlinks an existing path without checking whether a live owner is listening. close removes the path without checking inode ownership. In a private temporary directory, the second server replaced the endpoint while the first remained serving.",
+      "source_layer": "core",
+      "root_cause": "start unlinks an existing path without checking whether a live owner is listening. close removes the path without checking inode ownership. In a private temporary directory, the second server replaced the endpoint while the first remained serving.",
+      "evidence_refs": [
+        "core/ipc.py:76",
+        "core/ipc.py:300"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Acquire a per-user instance lock before audio startup. Probe ownership and liveness before replacing stale sockets; record the bound inode and unlink only that inode. Reject a second live instance cleanly.",
+      "acceptance_test": "Start two instances against one private runtime path. The second must refuse, the first must stay reachable, and stale-socket recovery must still work.",
+      "reproduction": "test_second_ipc_server_replaces_first_live_endpoint"
+    },
+    {
+      "id": "J12",
+      "severity": "medium",
+      "title": "IPC limits cover subscribers but not idle command clients",
+      "evidence_type": "reproduced",
+      "symptom": "Buggy or hostile same-user clients can accumulate sockets/tasks and degrade control responsiveness.",
+      "mechanism": "The server adds every connection to _clients and waits on readline without a first-request deadline or global client admission cap. max_subscribers does not apply until subscribe. Four idle clients remained admitted with max_subscribers=1. This is a local-user availability boundary, not a demonstrated remote exploit.",
+      "source_layer": "core",
+      "root_cause": "The server adds every connection to _clients and waits on readline without a first-request deadline or global client admission cap. max_subscribers does not apply until subscribe. Four idle clients remained admitted with max_subscribers=1. This is a local-user availability boundary, not a demonstrated remote exploit.",
+      "evidence_refs": [
+        "core/ipc.py:90",
+        "core/ipc.py:98"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Add a total client cap, a short request-read deadline, request shape/size validation and response-drain deadlines. Preserve the already bounded subscriber queues.",
+      "acceptance_test": "Many silent/partial clients must be rejected or expire while a healthy status request still completes within its budget.",
+      "reproduction": "test_idle_ipc_clients_bypass_subscriber_limit"
+    },
+    {
+      "id": "J13",
+      "severity": "medium",
+      "title": "Desktop session refresh cannot repair stale existing variables",
+      "evidence_type": "reproduced condition",
+      "symptom": "After a compositor/session change, voice may remain connected while Hyprland/Wayland controls fail.",
+      "mechanism": "recover_desktop_environment only fills missing variables and preserves stale existing values. The login hook imports fresh values into the systemd manager, then starts an already-active service; that does not alter the running process environment. A full graphical-session restart may restart the unit, so this finding applies to surviving services or bad overrides.",
+      "source_layer": "core",
+      "root_cause": "recover_desktop_environment only fills missing variables and preserves stale existing values. The login hook imports fresh values into the systemd manager, then starts an already-active service; that does not alter the running process environment. A full graphical-session restart may restart the unit, so this finding applies to surviving services or bad overrides.",
+      "evidence_refs": [
+        "core/desktop_session.py:20",
+        "scripts/desktop-session.sh:10",
+        "systemd/jarvis-oma.service:4"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Validate socket liveness and session identity, distinguish intentional configuration overrides from stale inherited values, and refresh/restart the controller at an idle boundary when the compositor epoch changes.",
+      "acceptance_test": "Simulate a new compositor socket with old environment variables while the voice service survives. Fresh desktop controls must use the new session without duplicate daemons.",
+      "reproduction": "test_desktop_recovery_retains_invalid_existing_identifiers"
+    },
+    {
+      "id": "J14",
+      "severity": "medium",
+      "title": "\u201cVerified changes\u201d can still contain a functional bug",
+      "evidence_type": "reproduced acceptance limitation",
+      "symptom": "An agent job can be announced completed even though its changed code produces the wrong result.",
+      "mechanism": "The independent verifier checks digests and syntax, deliberately avoiding arbitrary project code. Replacing add(a,b)=a+b with add(a,b)=0 passed and produced announcement_state=completed, while functional_verified remained false. Existing scope labels are honest, but the completion headline is stronger than the evidence.",
+      "source_layer": "proactive",
+      "root_cause": "The independent verifier checks digests and syntax, deliberately avoiding arbitrary project code. Replacing add(a,b)=a+b with add(a,b)=0 passed and produced announcement_state=completed, while functional_verified remained false. Existing scope labels are honest, but the completion headline is stronger than the evidence.",
+      "evidence_refs": [
+        "proactive/verification.py:304",
+        "proactive/verification.py:337",
+        "proactive/verification.py:383",
+        "orchestration/agent_orchestrator.py:298"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Separate response_received, structurally_checked and acceptance_passed in UI/events. Add trusted predeclared task-specific acceptance checks, executed in an isolated worktree/sandbox with credentials removed and resource/network policy. Do not automatically run arbitrary agent-authored test configuration.",
+      "acceptance_test": "A syntactically valid wrong implementation must fail the trusted functional check and never appear as acceptance_passed. Structural-only work must be labeled as such.",
+      "reproduction": "test_structural_completion_can_pass_a_functional_regression"
+    },
+    {
+      "id": "J15",
+      "severity": "medium",
+      "title": "Typing/key tools cannot prove their intended effect",
+      "evidence_type": "code-confirmed functional gap",
+      "symptom": "Successful input is commonly returned as unverified; the model may retry and duplicate text or leave the user without a confirmed result.",
+      "mechanism": "The shared decorator accepts only effect_observed for non-window actions. type_text and press_key paths return success/dispatched and do not read the affected field or application state, so they are downgraded to unverified_effect. This is safer than false success, but readback/fallback execution is still missing. Some GUI actions intentionally change or close focus, which also needs action-specific postconditions.",
+      "source_layer": "skills",
+      "root_cause": "The shared decorator accepts only effect_observed for non-window actions. type_text and press_key paths return success/dispatched and do not read the affected field or application state, so they are downgraded to unverified_effect. This is safer than false success, but readback/fallback execution is still missing. Some GUI actions intentionally change or close focus, which also needs action-specific postconditions.",
+      "evidence_refs": [
+        "skills/action_verification.py:39",
+        "skills/system_control.py:364",
+        "skills/system_control.py:383",
+        "skills/gui_control.py:398"
+      ],
+      "confidence": 1.0,
+      "recommended_fix": "Use action-specific postconditions: accessibility field value for text, destination/tab/application state for shortcuts, and exact disappearance for close. Preserve dispatched=true/attempt ID when effects are uncertain and prohibit automatic replay of input.",
+      "acceptance_test": "Verify text once, handle focus-changing shortcuts correctly, and assert that an unverified first attempt does not lead to duplicate typing without a new observation.",
+      "reproduction": null
+    },
+    {
+      "id": "J16",
+      "severity": "medium",
+      "title": "Fast local audio acknowledgements do not establish fast voice responses",
+      "evidence_type": "measured gap + design limitation",
+      "symptom": "Voice can still feel slow or interrupted despite a near-zero audio send-lock wait.",
+      "mechanism": "The latest live snapshot had transcript-observation-to-first-PCM p50=1247.374 ms and p95=4377.964 ms over 12 samples, while audio writer wait p95 was 0.003 ms. Rebuffer events rose from 1 to 3 and capture-drop counters from 555 to 564 between snapshots. These small, opportunistic samples are not an acoustic benchmark; drops can include deliberate expiry and startup/standby transitions. Native local barge-in remains disabled, so speech interruption depends on provider detection. The scheduler still allows a one-second in-flight audio write, versus the suggested 150 ms; its 150 ms capture-expiry check runs before that write.",
+      "source_layer": "core",
+      "root_cause": "The latest live snapshot had transcript-observation-to-first-PCM p50=1247.374 ms and p95=4377.964 ms over 12 samples, while audio writer wait p95 was 0.003 ms. Rebuffer events rose from 1 to 3 and capture-drop counters from 555 to 564 between snapshots. These small, opportunistic samples are not an acoustic benchmark; drops can include deliberate expiry and startup/standby transitions. Native local barge-in remains disabled, so speech interruption depends on provider detection. The scheduler still allows a one-second in-flight audio write, versus the suggested 150 ms; its 150 ms capture-expiry check runs before that write.",
+      "evidence_refs": [
+        "core/response_metrics.py:21",
+        "audio/plugins/native_backend.py:83",
+        "core/audio_scheduler.py:23",
+        "core/agent.py:850"
+      ],
+      "confidence": 0.99,
+      "recommended_fix": "Instrument correlated speech-end, send-start/end, provider-first-PCM, native-first-render and interruption-detection timestamps. Measure latency distributions under real conversation and contention before tuning budgets. Consider an AEC-aware local duck/barge-in plugin with false-positive tests; preserve the locked core.",
+      "acceptance_test": "Run a controlled audible conversation test with interruptions, double-talk, vision, long tools and network jitter. Publish end-to-end p50/p95, cut-off/false-interruption rate, and stage-level latency instead of treating the 11.6 ms local flush acknowledgement as reply latency.",
+      "reproduction": null
+    },
+    {
+      "id": "J17",
+      "severity": "medium",
+      "title": "Filesystem mutation checks retain a path-substitution race",
+      "evidence_type": "conditional code risk; previously documented",
+      "symptom": "A concurrent process changing parent paths between validation and mutation could redirect an authorized operation.",
+      "mechanism": "Protection checks resolve path identities, then mutation uses pathname operations later. Existing CRITICAL_PATHS checks and Python deletion safeguards are valuable but are not an end-to-end descriptor-pinned transaction. No destructive exploit was attempted; this residual limitation was already documented in report 28.",
+      "source_layer": "filesystem",
+      "root_cause": "Protection checks resolve path identities, then mutation uses pathname operations later. Existing CRITICAL_PATHS checks and Python deletion safeguards are valuable but are not an end-to-end descriptor-pinned transaction. No destructive exploit was attempted; this residual limitation was already documented in report 28.",
+      "evidence_refs": [
+        "filesystem/filesystem.py:45",
+        "filesystem/filesystem.py:500",
+        "report/28_REMAINING_AUDIT_REPAIR_LOOP.md:39"
+      ],
+      "confidence": 0.9,
+      "recommended_fix": "Pin trusted parent directories using descriptor-relative operations and O_NOFOLLOW, revalidate identities at publication, and constrain delegated mutations to isolated roots. Preserve CRITICAL_PATHS and recoverable staging behavior.",
+      "acceptance_test": "Use a disposable adversarial parent-swap fixture and assert operations cannot reach protected/outside paths. Test rollback and retained recovery copies as well.",
+      "reproduction": null
+    },
+    {
+      "id": "J18",
+      "severity": "low",
+      "title": "Memory recall repeatedly scans and synchronizes whole collections",
+      "evidence_type": "code-confirmed scaling risk; unbenchmarked",
+      "symptom": "Memory tools may become slower as sessions and documents grow; no current corpus-size slowdown was established.",
+      "mechanism": "Recall lists all memory/fact entries and scans trust on each call. Semantic search reconstructs document and conversation collections and synchronizes every namespace before embedding the query. This runs on a bounded serial worker, protecting the event loop, but long recalls can queue other memory work.",
+      "source_layer": "memory",
+      "root_cause": "Recall lists all memory/fact entries and scans trust on each call. Semantic search reconstructs document and conversation collections and synchronizes every namespace before embedding the query. This runs on a bounded serial worker, protecting the event loop, but long recalls can queue other memory work.",
+      "evidence_refs": [
+        "memory/codes-dev/jarvis_memory/bridge.py:164",
+        "memory/codes-dev/jarvis_memory/bridge.py:196",
+        "memory/codes-dev/jarvis_memory/bridge.py:219",
+        "skills/skills.py:1217"
+      ],
+      "confidence": 0.9,
+      "recommended_fix": "Benchmark synthetic corpora first. Move indexing/trust scanning to admission/update time, maintain incremental vector revisions, and query bounded lexical/vector indexes. Retain provenance, user-correction priority and untrusted-content gates.",
+      "acceptance_test": "Measure cold/warm recall at increasing corpus sizes; enforce bounded queue wait and verify deleted/corrected facts do not return.",
+      "reproduction": null
+    },
+    {
+      "id": "J19",
+      "severity": "low",
+      "title": "Camera transport updates a file much faster than cloud vision consumes it",
+      "evidence_type": "code-confirmed optimization candidate",
+      "symptom": "Camera mode performs avoidable file updates and helper work; its contribution to voice jitter has not been measured.",
+      "mechanism": "The camera streams 15 FPS MJPEG into an atomically replaced file while the cloud loop uses at most 1 FPS. The target is normally XDG_RUNTIME_DIR and may be memory-backed, so calling this proven physical disk thrashing would be inaccurate. The preview may legitimately need a higher frame rate.",
+      "source_layer": "core",
+      "root_cause": "The camera streams 15 FPS MJPEG into an atomically replaced file while the cloud loop uses at most 1 FPS. The target is normally XDG_RUNTIME_DIR and may be memory-backed, so calling this proven physical disk thrashing would be inaccurate. The preview may legitimately need a higher frame rate.",
+      "evidence_refs": [
+        "core/agent.py:335",
+        "core/agent.py:364",
+        "core/vision_stream.py:12"
+      ],
+      "confidence": 0.95,
+      "recommended_fix": "Separate preview and cloud consumers, keep only the newest frame in a bounded memory buffer, and produce preview frames at the UI-required rate. Profile before replacing the current mechanism.",
+      "acceptance_test": "Compare camera-on/off CPU, file-update count, capture drops and audio latency while preserving preview brightness and camera lifecycle.",
+      "reproduction": null
+    }
+  ],
+  "ordered_fix_plan": [
+    {
+      "order": 1,
+      "goal": "Close helper credential inheritance",
+      "finding_ids": [
+        "J01"
+      ],
+      "why_now": "Apply the existing sanitizer consistently and validate child environments.",
+      "expected_effect": "Apply the existing sanitizer consistently and validate child environments."
+    },
+    {
+      "order": 2,
+      "goal": "Restore trustworthy stop/cancel behavior",
+      "finding_ids": [
+        "J03",
+        "J04",
+        "J05"
+      ],
+      "why_now": "Unify job ownership, admission and cancellation; keep uncertain effects visible.",
+      "expected_effect": "Unify job ownership, admission and cancellation; keep uncertain effects visible."
+    },
+    {
+      "order": 3,
+      "goal": "Repair voice interruption and standby recovery",
+      "finding_ids": [
+        "J06",
+        "J07",
+        "J09"
+      ],
+      "why_now": "Unify turn cancellation, supervise standby health and move detector work off-loop.",
+      "expected_effect": "Unify turn cancellation, supervise standby health and move detector work off-loop."
+    },
+    {
+      "order": 4,
+      "goal": "Make GUI actions match the installed driver and execute serially",
+      "finding_ids": [
+        "J02",
+        "J08",
+        "J15"
+      ],
+      "why_now": "Contract-test real schemas; coordinate foreground actions and add action-specific readback.",
+      "expected_effect": "Contract-test real schemas; coordinate foreground actions and add action-specific readback."
+    },
+    {
+      "order": 5,
+      "goal": "Harden daemon/session lifecycle",
+      "finding_ids": [
+        "J10",
+        "J11",
+        "J12",
+        "J13"
+      ],
+      "why_now": "Add safe cache rotation, singleton ownership, client deadlines and compositor epoch refresh.",
+      "expected_effect": "Add safe cache rotation, singleton ownership, client deadlines and compositor epoch refresh."
+    },
+    {
+      "order": 6,
+      "goal": "Separate structural evidence from accepted outcomes",
+      "finding_ids": [
+        "J14"
+      ],
+      "why_now": "Use explicit evidence levels and trusted isolated functional checks.",
+      "expected_effect": "Use explicit evidence levels and trusted isolated functional checks."
+    },
+    {
+      "order": 7,
+      "goal": "Measure actual voice responsiveness",
+      "finding_ids": [
+        "J16"
+      ],
+      "why_now": "Correlate all latency stages and perform controlled acoustic acceptance before tuning.",
+      "expected_effect": "Correlate all latency stages and perform controlled acoustic acceptance before tuning."
+    },
+    {
+      "order": 8,
+      "goal": "Close residual mutation races and optimize measured bottlenecks",
+      "finding_ids": [
+        "J17",
+        "J18",
+        "J19"
+      ],
+      "why_now": "Harden path ownership, then benchmark indexing and camera transport.",
+      "expected_effect": "Harden path ownership, then benchmark indexing and camera transport."
+    }
+  ],
+  "observations": {
+    "helper_environment": {
+      "daemon_credential_named_variables": 18,
+      "native_child_credential_named_variables": 18,
+      "values_recorded": false
+    },
+    "installed_gui_driver": {
+      "version": "0.28.2",
+      "click_window_describe_exit_code": 64,
+      "window_click_required_fields": [
+        "kind",
+        "pid",
+        "window_id"
+      ]
+    },
+    "voice_snapshot": {
+      "audio_backend": "native",
+      "connection_state": "listening",
+      "state": "thinking",
+      "active_jobs": 0,
+      "pending_tool_calls": 0,
+      "audio_send_wait_p95_ms": 0.003,
+      "network_send_timeouts": 0,
+      "response_first_audio_p50_ms": 1247.374,
+      "response_first_audio_p95_ms": 4377.964,
+      "response_first_audio_samples": 12,
+      "playback_rebuffers": 3,
+      "capture_dropped_frames": 564,
+      "provider_interruptions": 5
+    },
+    "measurement_limit": "Uncontrolled live samples. Response timings begin at received transcription, not acoustic speech end; counters are cumulative."
+  }
+}

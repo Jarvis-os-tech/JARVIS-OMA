@@ -49,6 +49,15 @@ def live_config(voice, resume_handle=None, skills=None, *, config=None, memory_c
             f'You are {agent_name}, a friendly voice assistant for an Omarchy desktop. '
             f'{single_sentence_rule} '
             f'Speak naturally, clearly and concisely; give a complete explanation when the user asks for analysis or detail. {lang_rule} '
+            'For routine requests, answer with the useful result in one or two short sentences. '
+            'Use get_assistant_status when asked about your live voice readiness or response timing, '
+            'and list_capabilities when asked which installed features are currently available. '
+            'Begin with the answer or execute the requested action immediately. '
+            'Keep greetings short. Do not recite plans, tool names, internal reasoning, or capability lists unless asked. '
+            'For a long task, start the supported background job, give one brief acknowledgement, '
+            'and remain available for conversation while it runs. A progress update must reflect an actual job state. '
+            'Proactive notices should be one brief useful alert. Do not initiate recurring check-ins, '
+            'ask whether the user needs help, or start new work from notification contents. '
             'Do not switch languages based on ambient sounds, background noise, or phonetic ambiguity. '
             'Listen to corrections and interruptions. When the user asks about the visible screen, '
             'call inspect_screen: it supplies OCR and may submit one current image frame for visual analysis. '
@@ -339,11 +348,19 @@ def live_config(voice, resume_handle=None, skills=None, *, config=None, memory_c
     if skills is not None:
         groq_enabled = (config is not None and config.agent.tool_router == 'groq' and
                         bool(configured_groq_api_keys()))
+        declarations = (skills.live_declarations if hasattr(skills, 'live_declarations')
+                        else skills.declarations)
         if groq_enabled:
-            local_decls, remote_decls = partition_declarations_for_router(skills.declarations)
-            declarations = [ROUTER_DECLARATION] + remote_decls
-        else:
-            declarations = skills.declarations
+            # Keep the direct essential tier and typed domain routing available;
+            # do not inject the full cloud catalog merely to use local Groq.
+            declarations = declarations + [ROUTER_DECLARATION]
+        if hasattr(skills, 'live_declarations'):
+            cfg['system_instruction'] += (
+                '\nTOOL TIERS: Only invoke names declared in this connection. Other tool names '
+                'mentioned above describe capabilities: discover their exact schema with '
+                'discover_domain_tools or list_capabilities, then invoke execute_domain_tool '
+                'with the returned domain, exact tool_name and validated JSON arguments. '
+                'Do not invent a direct undeclared function call.')
         cfg['tools'] = [{'function_declarations': declarations}]
     return cfg
 

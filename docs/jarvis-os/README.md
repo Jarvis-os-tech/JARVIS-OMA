@@ -11,6 +11,7 @@ This directory is the long-term design record for turning JARVIS-OMA into a depe
 5. Read [roadmap.md](roadmap.md) before starting implementation work.
 6. Record important choices in [decision-log.md](decision-log.md).
 7. Use [verification-matrix-2026-10-18.md](verification-matrix-2026-10-18.md) as the evidence boundary for implementation status.
+8. Follow [implementation-progress-2026-10-26.md](implementation-progress-2026-10-26.md) for the current redesign build order, verified increments and unresolved baseline results.
 
 These documents describe intended behavior. The repository and tests remain the source of truth for what is currently implemented.
 

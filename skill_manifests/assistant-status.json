@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "skills": [{
+    "name": "get_assistant_status",
+    "description": "Check JARVIS voice readiness, mute/standby state, response timing observations, pending alerts and proactive observation health. This is read-only and does not resume paused work. Timing excludes microphone endpointing and speaker buffering.",
+    "adapter": "assistant.status",
+    "parameters_json_schema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }]
+}

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 from typing import Any
+from core.secret_env import sanitized_subprocess_env
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class DesktopDialog:
 
 
 def _desktop_env() -> dict[str, str]:
-    env = os.environ.copy()
+    env = sanitized_subprocess_env()
     if "XDG_RUNTIME_DIR" not in env:
         env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
     if "WAYLAND_DISPLAY" not in env:
@@ -130,6 +131,7 @@ def _desktop_env() -> dict[str, str]:
 
 
 async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]:
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -139,8 +141,20 @@ async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, stdout.decode("utf-8", errors="replace").strip(), stderr.decode("utf-8", errors="replace").strip()
-    except (OSError, asyncio.TimeoutError) as exc:
-        return 1, "", str(exc)
+    except BaseException as exc:
+        if proc is not None:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.wait_for(proc.communicate(), 1)
+            except (TimeoutError, OSError):
+                pass
+        if isinstance(exc, (OSError, TimeoutError)):
+            return 1, "", str(exc)
+        raise
 
 
 async def _query_clients() -> list[dict[str, Any]]:
@@ -409,7 +423,7 @@ async def heal_window_focus(target_window: str) -> dict[str, Any]:
     Args:
         target_window: Application class, window title keyword, or window address to restore.
     """
-    from skills import system_control
+    from skills import system_control, ground_truth
 
     cleaned = system_control._clean_window_target(target_window)
     query_str = cleaned if cleaned else target_window.strip().casefold()
@@ -452,7 +466,7 @@ async def heal_window_focus(target_window: str) -> dict[str, Any]:
     active_addr = active.get("address", "").casefold() if active else ""
 
     # Check if target is already focused
-    if active_addr and active_addr == match_addr:
+    if ground_truth.same_window(match, active):
         return {
             "status": "already_focused",
             "window": match,
@@ -461,6 +475,12 @@ async def heal_window_focus(target_window: str) -> dict[str, Any]:
 
     # Inspect active window to see why focus drifted
     active_dialog = classify_dialog(active) if active else None
+    if active_dialog and active_dialog.requires_user_auth:
+        return {'status': 'blocked', 'recovered': False,
+                'message': 'Authentication prompt requires the user; focus was not changed'}
+    if ground_truth.window_identity(match) is None:
+        return {'status': 'healing_failed', 'recovered': False,
+                'message': 'Exact target window identity is unavailable'}
     stolen_by = active or {}
 
     # Dispatched focus restoration
@@ -471,7 +491,7 @@ async def heal_window_focus(target_window: str) -> dict[str, Any]:
 
     await asyncio.sleep(0.08)
     new_active = await _query_active_window()
-    recovered = bool(new_active and new_active.get("address", "").casefold() == match_addr)
+    recovered = ground_truth.same_window(match, new_active)
 
     return {
         "status": "healed" if recovered else "healing_failed",

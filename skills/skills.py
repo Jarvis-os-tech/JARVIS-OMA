@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import configparser
 import contextlib
+import copy
 import datetime as dt
 import ipaddress
 import json
@@ -52,39 +53,30 @@ from skills.gui_control import GuiControl, GuiControlError
 log = logging.getLogger(__name__)
 
 
-class SkillError(ValueError):
-    """A safe, user-presentable skill failure."""
+from skills.errors import SkillError
+from skills.domains.workspace import WorkspaceDomain, ADAPTERS as WORKSPACE_ADAPTERS, ADAPTER_COMMANDS as WORKSPACE_COMMANDS
+from skills.domains.github import GithubDomain, ADAPTERS as GITHUB_ADAPTERS, ADAPTER_COMMANDS as GITHUB_COMMANDS
+from skills.domains.orchestration import OrchestrationDomain, ADAPTERS as ORCHESTRATION_ADAPTERS, ADAPTER_COMMANDS as ORCHESTRATION_COMMANDS
+from orchestration.tool_tiers import CORE_TOOLS, META_TOOLS, DOMAINS, META_SPECS, domain_for_tool
 
 
 def _normalized(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.casefold())
 
 
-class DesktopSkills:
+class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
     # ── Adapter → method mapping ──────────────────────────────────────
     ADAPTERS = {
-        'hermes.status': '_adapter_hermes_status',
-        'personal_agents.create': '_adapter_create_task_agent',
-        'personal_agents.status': '_adapter_task_agent_status',
-        'personal_agents.list': '_adapter_list_task_agents',
-        'personal_agents.cancel': '_adapter_cancel_task_agent',
-        'personal_agents.followup': '_adapter_followup_task_agent',
-        'harness.refine': '_adapter_start_harness_refinement',
-        'learning.feedback_list': '_adapter_list_research_feedback',
-        'harness.status': '_adapter_harness_status',
-        'harness.start_check': '_adapter_start_harness_check',
-        'harness.check_status': '_adapter_harness_check_status',
-        'harness.cancel_check': '_adapter_cancel_harness_check',
-        'learning.status': '_adapter_learning_status',
-        'learning.lessons': '_adapter_learning_lessons',
-        'learning.feedback': '_adapter_learning_feedback',
+        **WORKSPACE_ADAPTERS,
+        **GITHUB_ADAPTERS,
+        **ORCHESTRATION_ADAPTERS,
+        'domains.discover': '_adapter_discover_domain_tools',
+        'domains.execute': '_adapter_execute_domain_tool',
         'jarvis.switch_mode': '_adapter_switch_jarvis_mode',
         'jarvis.get_mode': '_adapter_get_jarvis_mode',
         'jarvis.sync_branch': '_adapter_sync_jarvis_branch',
-        'models.start': '_adapter_model_job',
-        'models.status': '_adapter_model_job_status',
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
         'web.open': '_adapter_open_website',
@@ -128,61 +120,6 @@ class DesktopSkills:
         'task.list': '_adapter_list_tasks',
         'task.cancel': '_adapter_cancel_task',
         'standby.enter': '_adapter_enter_standby',
-        'agents.list': '_adapter_list_system_agents',
-        'agents.delegate': '_adapter_delegate_agent',
-        'agents.delegate_team': '_adapter_delegate_team',
-        'agents.start_goal': '_adapter_start_agent_goal',
-        'agents.team_status': '_adapter_check_agent_team',
-        'agents.cancel_team': '_adapter_cancel_agent_team',
-        'agents.status': '_adapter_check_agent_job',
-        'agents.jobs': '_adapter_list_agent_jobs',
-        'agents.cancel': '_adapter_cancel_agent_job',
-        'evolution.start': '_adapter_start_development',
-        'evolution.request': '_adapter_request_capability',
-        'evolution.status': '_adapter_development_status',
-        'evolution.list': '_adapter_list_development_jobs',
-        'evolution.cancel': '_adapter_cancel_development',
-        'google.gmail_search': '_adapter_google_gmail_search',
-        'google.gmail_read': '_adapter_google_gmail_read',
-        'google.gmail_create_draft': '_adapter_google_gmail_create_draft',
-        'google.gmail_send_draft': '_adapter_google_gmail_send_draft',
-        'google.gmail_list_labels': '_adapter_google_gmail_list_labels',
-        'google.calendar_list_events': '_adapter_google_calendar_list_events',
-        'google.calendar_get_event': '_adapter_google_calendar_get_event',
-        'google.calendar_create_event': '_adapter_google_calendar_create_event',
-        'google.calendar_list_calendars': '_adapter_google_calendar_list_calendars',
-        'google.calendar_current_time': '_adapter_google_calendar_current_time',
-        'google.calendar_update_event': '_adapter_google_calendar_update_event',
-        'google.calendar_delete_event': '_adapter_google_calendar_delete_event',
-        'google.calendar_check_availability': '_adapter_google_calendar_check_availability',
-        'google.calendar_create_calendar': '_adapter_google_calendar_create_calendar',
-        'google.calendar_delete_calendar': '_adapter_google_calendar_delete_calendar',
-        'google.calendar_add_attachment': '_adapter_google_calendar_add_attachment',
-        'google.tasks_list_lists': '_adapter_google_tasks_list_lists',
-        'google.tasks_list_tasks': '_adapter_google_tasks_list_tasks',
-        'google.tasks_create_task': '_adapter_google_tasks_create_task',
-        'google.tasks_complete_task': '_adapter_google_tasks_complete_task',
-        'google.google_authorize': '_adapter_google_authorize',
-        'google.google_connection_status': '_adapter_google_connection_status',
-        'google.drive_search_files': '_adapter_google_drive_search_files',
-        'google.drive_get_file': '_adapter_google_drive_get_file',
-        'google.drive_read_text_file': '_adapter_google_drive_read_text_file',
-        'google.docs_read_document': '_adapter_google_docs_read_document',
-        'google.sheets_get_spreadsheet': '_adapter_google_sheets_get_spreadsheet',
-        'google.sheets_read_range': '_adapter_google_sheets_read_range',
-        'github.authorize': '_adapter_github_authorize',
-        'github.status': '_adapter_github_connection_status',
-        'github.repositories': '_adapter_github_list_repositories',
-        'github.repository': '_adapter_github_get_repository',
-        'github.files': '_adapter_github_list_repository_files',
-        'github.file': '_adapter_github_read_repository_file',
-        'github.find_relevant_files': '_adapter_github_find_relevant_files',
-        'github.read_repository_files': '_adapter_github_read_repository_files',
-        'github.analyze_repository': '_adapter_github_analyze_repository',
-        'github.issues': '_adapter_github_list_issues',
-        'github.issue': '_adapter_github_get_issue',
-        'github.pulls': '_adapter_github_list_pull_requests',
-        'github.pull': '_adapter_github_get_pull_request',
         'memory.remember': '_adapter_remember_memory',
         'memory.recall': '_adapter_recall_memory',
         'memory.forget': '_adapter_forget_memory',
@@ -204,6 +141,7 @@ class DesktopSkills:
         'input_bar.close': '_adapter_close_input_bar',
         'proactive.enqueue': '_adapter_proactive_task',
         'proactive.status': '_adapter_proactive_status',
+        'assistant.status': '_adapter_assistant_status',
         'proactive.pause': '_adapter_proactive_pause',
         'proactive.resume': '_adapter_proactive_resume',
         'proactive.stop': '_adapter_proactive_stop',
@@ -274,6 +212,9 @@ class DesktopSkills:
 
     # ── Adapter → required system commands ────────────────────────────
     ADAPTER_COMMANDS = {
+        **WORKSPACE_COMMANDS,
+        **GITHUB_COMMANDS,
+        **ORCHESTRATION_COMMANDS,
         'jarvis.switch_mode': ('systemctl', 'git'),
         'jarvis.get_mode': (),
         'jarvis.sync_branch': ('systemctl', 'git'),
@@ -303,8 +244,7 @@ class DesktopSkills:
         'todo.delete': (),
         'todo.clear_completed': (),
         'todo.move': (),
-        'system.context': ('hyprctl', 'omarchy-battery-status', 'omarchy-network-status',
-                           'omarchy-brightness-display', 'omarchy-hyprland-monitor-focused', 'pactl'),
+        'system.context': ('hyprctl', 'omarchy-battery-status', 'omarchy-network-status', 'omarchy-brightness-display', 'omarchy-hyprland-monitor-focused', 'pactl'),
         'filesystem.list': (),
         'filesystem.read': (),
         'filesystem.search': (),
@@ -319,34 +259,6 @@ class DesktopSkills:
         'task.status': (),
         'task.list': (),
         'task.cancel': (),
-        'agents.list': (),
-        'agents.delegate': (),
-        'agents.status': (),
-        'agents.jobs': (),
-        'agents.cancel': (),
-        'evolution.start': ('git', 'bwrap'),
-        'evolution.request': ('git', 'bwrap'),
-        'evolution.status': (),
-        'evolution.list': (),
-        'evolution.cancel': (),
-        'google.gmail_search': (), 'google.gmail_read': (),
-        'google.gmail_create_draft': (), 'google.gmail_send_draft': (),
-        'google.gmail_list_labels': (),
-        'google.calendar_list_events': (), 'google.calendar_get_event': (),
-        'google.calendar_create_event': (), 'google.calendar_list_calendars': (),
-        'google.calendar_current_time': (), 'google.calendar_update_event': (),
-        'google.calendar_delete_event': (), 'google.calendar_check_availability': (),
-        'google.calendar_create_calendar': (), 'google.calendar_delete_calendar': (),
-        'google.calendar_add_attachment': (),
-        'google.tasks_list_lists': (), 'google.tasks_list_tasks': (),
-        'google.tasks_create_task': (), 'google.tasks_complete_task': (),
-        'google.google_authorize': (), 'google.google_connection_status': (),
-        'google.drive_search_files': (), 'google.drive_get_file': (),
-        'google.drive_read_text_file': (), 'google.docs_read_document': (),
-        'google.sheets_get_spreadsheet': (), 'google.sheets_read_range': (),
-        'github.authorize': (), 'github.status': (), 'github.repositories': (), 'github.repository': (),
-        'github.files': (), 'github.file': (),
-        'github.issues': (), 'github.issue': (), 'github.pulls': (), 'github.pull': (),
         'memory.remember': (),
         'memory.recall': (),
         'memory.forget': (),
@@ -366,8 +278,11 @@ class DesktopSkills:
         'workspace.list': ('hyprctl',),
         'input_bar.open': ('omarchy-launch-webapp',),
         'input_bar.close': ('hyprctl',),
-        'proactive.enqueue': (), 'proactive.status': (), 'proactive.pause': (),
-        'proactive.resume': (), 'proactive.stop': (),
+        'proactive.enqueue': (),
+        'proactive.status': (),
+        'proactive.pause': (),
+        'proactive.resume': (),
+        'proactive.stop': (),
         'system.resources': (),
         'system.information': (),
         'system.control_status': (),
@@ -469,6 +384,14 @@ class DesktopSkills:
             manifest_dirs = [Path(__file__).resolve().parents[1] / 'skill_manifests']
         self.manifest_dirs = [Path(directory) for directory in manifest_dirs]
         self._skills = self._load_manifests()
+        self._tiering_enabled = ('list_capabilities' in self._skills or len(self._skills) > len(CORE_TOOLS))
+        self._active_domains = set()
+        if self._tiering_enabled:
+            for spec in META_SPECS:
+                if spec['name'] in self._skills and self._skills[spec['name']] != spec:
+                    raise SkillError('domain router tool names are reserved')
+                self._validate_spec(spec, 'built-in domain router')
+                self._skills[spec['name']] = copy.deepcopy(spec)
         self._capability_catalog = dict(self._skills)
         self._memory_config = config.memory if config else MemoryConfig()
         self._memory_api_key = api_key
@@ -553,6 +476,65 @@ class DesktopSkills:
              'parameters_json_schema': spec['parameters_json_schema']}
             for spec in self._skills.values()
         ]
+
+    @property
+    def live_declarations(self):
+        """Expose a bounded initial tier; domain schemas are returned on demand."""
+        declarations = self.declarations
+        if not self._tiering_enabled:
+            return declarations
+        return [item for item in declarations if item['name'] in CORE_TOOLS | META_TOOLS]
+
+    @property
+    def active_domains(self):
+        return tuple(sorted(self._active_domains))
+
+    async def _adapter_discover_domain_tools(self, domain, query='', limit=20):
+        if domain not in DOMAINS or not isinstance(query, str) or len(query) > 4000:
+            raise SkillError('invalid capability domain or query')
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise SkillError('domain discovery limit must be between 1 and 20')
+        terms = re.findall(r'[a-z0-9]+', query.casefold())
+        matches = []
+        for declaration in self.declarations:
+            if declaration['name'] in META_TOOLS or domain_for_tool(declaration['name']) != domain:
+                continue
+            corpus = (declaration['name'].replace('_', ' ') + ' ' + declaration['description']).casefold()
+            score = sum(term in corpus for term in terms)
+            if terms and not score:
+                continue
+            matches.append((score, declaration))
+        matches.sort(key=lambda row: (-row[0], row[1]['name']))
+        self._active_domains.add(domain)
+        return {'status': 'success', 'domain': domain,
+                'tools': [item for _, item in matches[:limit]],
+                'total_matches': len(matches), 'truncated': len(matches) > limit,
+                'execution': 'Use execute_domain_tool with the exact name and JSON arguments; discovery does not execute actions.'}
+
+    def resolve_domain_call(self, domain, tool_name, arguments_json):
+        """Validate a domain request before the shared execution policy sees it."""
+        if domain not in DOMAINS or not isinstance(tool_name, str) or tool_name in META_TOOLS:
+            raise SkillError('invalid domain tool request')
+        spec = self._skills.get(tool_name)
+        if spec is None or domain_for_tool(tool_name) != domain:
+            raise SkillError('tool is not registered in the requested domain')
+        if not isinstance(arguments_json, str) or len(arguments_json.encode('utf-8')) > 65536:
+            raise SkillError('domain arguments must be a JSON object of at most 65536 bytes')
+        try:
+            arguments = json.loads(arguments_json)
+        except (ValueError, RecursionError):
+            raise SkillError('domain arguments must be valid JSON') from None
+        if not isinstance(arguments, dict) or not self._arguments_match(arguments, spec['parameters_json_schema']):
+            raise SkillError(f'invalid arguments for {tool_name}')
+        return tool_name, arguments
+
+    async def _adapter_execute_domain_tool(self, domain, tool_name, arguments_json):
+        name, arguments = self.resolve_domain_call(domain, tool_name, arguments_json)
+        # Keep mute policy, timeouts, GUI verification and schema checks common
+        # to direct and domain-routed execution, rather than calling a handler.
+        from core.tool_dispatch import run_skill_call
+        self._active_domains.add(domain)
+        return await run_skill_call(self, name, arguments)
 
     def _load_manifests(self):
         files = []
@@ -707,8 +689,21 @@ class DesktopSkills:
         for name, spec in self._skills.items():
             groups.setdefault(spec['adapter'].split('.')[0], []).append(name)
         lines = ['CURRENT JARVIS CAPABILITIES (generated from this session tool registry):']
-        for group, names in sorted(groups.items()):
-            lines.append(group + ': ' + ', '.join(sorted(names)))
+        if self._tiering_enabled:
+            lines.append('Always-on: ' + ', '.join(sorted(item['name'] for item in self.live_declarations)))
+            counts = {}
+            for name in self._skills:
+                domain = domain_for_tool(name)
+                if domain != 'core':
+                    counts[domain] = counts.get(domain, 0) + 1
+            lines.append('On-demand domains: ' + ', '.join(f'{name} ({count})' for name, count in sorted(counts.items())))
+            lines.append('For a tool absent from the initial tier, use discover_domain_tools or list_capabilities '
+                         'to read its exact schema, then execute_domain_tool. Never call an undeclared domain function '
+                         'directly. Domain routing does not grant permission or bypass normal security checks. '
+                         'A timed event belongs to workspace Calendar, not an untimed Tasks entry; bare mute means enter_standby.')
+        else:
+            for group, names in sorted(groups.items()):
+                lines.append(group + ': ' + ', '.join(sorted(names)))
         return '\n'.join(lines)
 
     async def _adapter_list_capabilities(self, query='', limit=20):
@@ -734,6 +729,7 @@ class DesktopSkills:
                 'parameters_json_schema': spec['parameters_json_schema'],
             }))
         matches.sort(key=lambda row: (-row[0], row[1]['name']))
+        self._active_domains.update(domain_for_tool(item['name']) for _, item in matches[:limit])
         return {'status': 'success', 'summary': 'Current registered capabilities and local dependencies; runtime success requires calling the relevant tool.',
                 'capabilities': [item for _, item in matches[:limit]],
                 'total_matches': len(matches), 'truncated': len(matches) > limit,
@@ -856,7 +852,9 @@ class DesktopSkills:
             raise SkillError(f'invalid arguments for {name}')
         handler = getattr(self, self.ADAPTERS[spec['adapter']])
         try:
-            return await handler(**arguments)
+            from skills.action_verification import verify_adapter_action
+            return await verify_adapter_action(
+                self, spec['adapter'], arguments, lambda: handler(**arguments))
         except GuiControlError as error:
             raise SkillError(str(error)) from None
         except TypeError:
@@ -926,97 +924,16 @@ class DesktopSkills:
         spec = self._skills.get(name)
         return spec is not None and self._arguments_match(arguments, spec['parameters_json_schema'])
 
-    async def _adapter_list_system_agents(self):
-        return self._agent_orchestrator.discover()
 
-    async def _adapter_model_job(self, prompt, route='background'):
-        from orchestration.model_routes import ModelJobs
-        if not hasattr(self, '_model_jobs'):
-            self._model_jobs = ModelJobs(self._memory_api_key, self.task_events)
-        try:
-            return self._model_jobs.start(prompt, route)
-        except ValueError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_model_job_status(self, job_id):
-        jobs = getattr(self, '_model_jobs', None)
-        if jobs is None or job_id not in jobs.jobs:
-            raise SkillError('Unknown model job')
-        return dict(jobs.jobs[job_id])
 
-    async def _adapter_delegate_agent(self, agent, prompt, workspace, timeout_seconds=900,
-                                      task_type=None, model=None, visible=None,
-                                      cost_profile='budget'):
-        try:
-            prompt = prompt.strip()
-            options = {}
-            if task_type is not None:
-                options['task_type'] = task_type
-            if model is None:
-                from orchestration.model_policy import apply_model_policy
-                routed = apply_model_policy([{'agent': agent}], cost_profile)[0]
-                if routed.get('model'):
-                    options['model'] = routed['model']
-                if routed.get('batch'):
-                    options['batch'] = True
-            else:
-                options['model'] = model
-            if visible is not None:
-                options['visible'] = visible
-            return self._agent_orchestrator.delegate(agent, prompt, workspace, timeout_seconds, **options)
-        except (OrchestrationError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_delegate_team(self, goal, assignments, workspace, timeout_seconds=900):
-        try:
-            assignments = [
-                {**assignment, 'prompt': assignment['prompt'].strip()}
-                for assignment in assignments
-            ]
-            return self._agent_orchestrator.delegate_team(
-                goal, assignments, workspace, timeout_seconds)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_start_agent_goal(self, goal, workspace, timeout_seconds=900, cost_profile='budget'):
-        from orchestration.personas import software_assignments
-        from orchestration.model_policy import apply_model_policy
-        try:
-            assignments = apply_model_policy(
-                software_assignments(self._agent_orchestrator.executables), cost_profile)
-        except ValueError as error:
-            raise SkillError(str(error)) from None
-        result = await self._adapter_delegate_team(goal, assignments, workspace, timeout_seconds)
-        result['cost_policy'] = {'profile': cost_profile, 'automatic_escalation': False,
-                                 'billing_limit_enforced': False}
-        return result
 
-    async def _adapter_check_agent_team(self, team_id):
-        try:
-            return self._agent_orchestrator.team_status(team_id)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_cancel_agent_team(self, team_id):
-        try:
-            return await self._agent_orchestrator.cancel_team(team_id)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_check_agent_job(self, job_id, max_chars=6000):
-        try:
-            return self._agent_orchestrator.status(job_id, max_chars)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_list_agent_jobs(self):
-        return self._agent_orchestrator.list_jobs()
 
-    async def _adapter_cancel_agent_job(self, job_id):
-        try:
-            return await self._agent_orchestrator.cancel(job_id)
-        except OrchestrationError as error:
-            raise SkillError(str(error)) from None
 
     async def _adapter_type_text(self, text, target_window=None, press_enter=False):
         res = await system_control.type_text(text, target_window=target_window, press_enter=press_enter)
@@ -1024,214 +941,53 @@ class DesktopSkills:
             raise SkillError(res.get('message', 'type_text failed'))
         return res
 
-    @property
-    def evolution(self):
-        if self._evolution is None:
-            self._evolution = EvolutionManager(
-                self._agent_orchestrator,
-                can_run=lambda: self.proactive.control.get_state().can_run)
-        return self._evolution
 
-    async def _adapter_start_development(self, goal, workspace, agent='codex'):
-        try:
-            return await self.evolution.start(goal, workspace, agent)
-        except (OrchestrationError, OSError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_request_capability(self, request, workspace, agent='codex'):
-        """Turn an unsupported user request into a tracked capability proposal."""
-        goal = (
-            'Build the missing JARVIS capability needed for this user request. '
-            'Expose it as a declared skill with strict arguments, implement it using '
-            'the existing approved adapter patterns, add tests, and document how it is used. '
-            'Original user request: ' + request.strip()
-        )
-        try:
-            return await self.evolution.start(goal, workspace, agent,
-                                              requested_action=request.strip())
-        except (OrchestrationError, OSError, AttributeError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_development_status(self, job_id):
-        try:
-            manager = self._evolution or EvolutionManager(None, read_only=True)
-            response = manager.status(job_id)
-            job = response['job']
-            # Keep voice tool context bounded; full evidence remains on disk/CLI.
-            job.pop('commands', None)
-            job['diff_truncated'] = job['diff_truncated'] or len(job['diff']) > 8000
-            job['diff'] = job['diff'][:8000]
-            for evidence in [*job['stages'], job['tests'], job['baseline_tests']]:
-                if evidence:
-                    output = evidence.get('output', '')
-                    evidence['output_truncated'] = evidence.get('output_truncated', False) or len(output) > 3000
-                    evidence['output'] = output[-3000:]
-            return response
-        except (OrchestrationError, OSError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_list_development_jobs(self):
-        try:
-            manager = self._evolution or EvolutionManager(None, read_only=True)
-            return manager.list_jobs()
-        except (OrchestrationError, OSError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_cancel_development(self, job_id):
-        try:
-            return await self.evolution.cancel(job_id)
-        except (OrchestrationError, OSError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _google(self, tool, arguments):
-        try:
-            result = await google_workspace.dispatch(tool, arguments)
-            if isinstance(result, dict) and result.get('setup_required'):
-                result.setdefault('message', result.get('error') or
-                                  "Say 'open Google authorization' to connect your Google account.")
-            return result
-        except (OSError, RuntimeError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_google_gmail_search(self, query, max_results=10):
-        return await self._google('gmail_search', {'query': query, 'max_results': max_results})
 
-    async def _adapter_google_gmail_read(self, message_id):
-        return await self._google('gmail_read', {'message_id': message_id})
 
-    async def _adapter_google_gmail_create_draft(self, to, subject, body, cc=''):
-        return await self._google('gmail_create_draft', {'to': to, 'subject': subject, 'body': body, 'cc': cc})
 
-    async def _adapter_google_gmail_send_draft(self, draft_id):
-        return await self._google('gmail_send_draft', {'draft_id': draft_id})
 
-    async def _adapter_google_gmail_list_labels(self):
-        return await self._google('gmail_list_labels', {})
 
-    async def _adapter_google_calendar_list_events(self, **arguments):
-        return await self._google('calendar_list_events', arguments)
 
-    async def _adapter_google_calendar_get_event(self, event_id, calendar_id='primary'):
-        return await self._google('calendar_get_event', {'event_id': event_id, 'calendar_id': calendar_id})
 
-    async def _adapter_google_calendar_create_event(self, summary, start_datetime, end_datetime,
-                                                    description='', location='', attendees=None,
-                                                    calendar_id='primary', time_zone='Asia/Kolkata', recurrence_rule=None, reminder_minutes=None, attachments=None):
-        return await self._google('calendar_create_event', {
-            'summary': summary, 'start_datetime': start_datetime, 'end_datetime': end_datetime,
-            'description': description, 'location': location,
-            'attendees': ([item.strip() for item in attendees.split(',') if item.strip()]
-                          if isinstance(attendees, str) else attendees),
-            'calendar_id': calendar_id, 'time_zone': time_zone,
-            'recurrence_rule': recurrence_rule, 'reminder_minutes': reminder_minutes, 'attachments': attachments})
 
-    async def _adapter_google_calendar_current_time(self, **arguments):
-        return await self._google('calendar_current_time', arguments)
 
-    async def _adapter_google_calendar_update_event(self, **arguments):
-        return await self._google('calendar_update_event', arguments)
 
-    async def _adapter_google_calendar_delete_event(self, **arguments):
-        return await self._google('calendar_delete_event', arguments)
 
-    async def _adapter_google_calendar_check_availability(self, **arguments):
-        return await self._google('calendar_check_availability', arguments)
 
-    async def _adapter_google_calendar_list_calendars(self):
-        return await self._google('calendar_list_calendars', {})
 
-    async def _adapter_google_calendar_create_calendar(self, summary, description='', location='', time_zone='Asia/Kolkata'):
-        return await self._google('calendar_create_calendar', {'summary': summary, 'description': description,
-                                                               'location': location, 'time_zone': time_zone})
 
-    async def _adapter_google_calendar_delete_calendar(self, calendar_id):
-        return await self._google('calendar_delete_calendar', {'calendar_id': calendar_id})
 
-    async def _adapter_google_calendar_add_attachment(self, **arguments):
-        return await self._google('calendar_add_attachment', arguments)
 
-    async def _adapter_google_tasks_list_lists(self):
-        return await self._google('tasks_list_lists', {})
 
-    async def _adapter_google_tasks_list_tasks(self, list_id='@default'):
-        return await self._google('tasks_list_tasks', {'list_id': list_id})
 
-    async def _adapter_google_tasks_create_task(self, title, list_id='@default'):
-        return await self._google('tasks_create_task', {'title': title, 'list_id': list_id})
 
-    async def _adapter_google_tasks_complete_task(self, task_id, list_id='@default'):
-        return await self._google('tasks_complete_task', {'task_id': task_id, 'list_id': list_id})
 
-    async def _adapter_google_authorize(self):
-        return await self._google('google_authorize', {})
 
-    async def _adapter_google_connection_status(self):
-        return await self._google('google_connection_status', {})
 
-    async def _adapter_google_drive_search_files(self, query='', max_results=10):
-        return await self._google('drive_search_files', {'query': query, 'max_results': max_results})
 
-    async def _adapter_google_drive_get_file(self, file_id):
-        return await self._google('drive_get_file', {'file_id': file_id})
 
-    async def _adapter_google_drive_read_text_file(self, file_id):
-        return await self._google('drive_read_text_file', {'file_id': file_id})
 
-    async def _adapter_google_docs_read_document(self, document_id):
-        return await self._google('docs_read_document', {'document_id': document_id})
 
-    async def _adapter_google_sheets_get_spreadsheet(self, spreadsheet_id):
-        return await self._google('sheets_get_spreadsheet', {'spreadsheet_id': spreadsheet_id})
 
-    async def _adapter_google_sheets_read_range(self, spreadsheet_id, cell_range='A1:J25'):
-        return await self._google('sheets_read_range', {'spreadsheet_id': spreadsheet_id, 'cell_range': cell_range})
 
-    async def _adapter_github_connection_status(self):
-        return await github.dispatch('github_connection_status', {})
 
-    async def _adapter_github_authorize(self):
-        return await github.dispatch('github_authorize', {})
 
-    async def _adapter_github_list_repositories(self, max_results=20):
-        return await github.dispatch('github_list_repositories', {'max_results': max_results})
 
-    async def _adapter_github_get_repository(self, owner, repository):
-        return await github.dispatch('github_get_repository', {'owner': owner, 'repository': repository})
 
-    async def _adapter_github_list_repository_files(self, owner, repository, path=''):
-        return await github.dispatch('github_list_repository_files', {
-            'owner': owner, 'repository': repository, 'path': path})
 
-    async def _adapter_github_read_repository_file(self, owner, repository, path):
-        return await github.dispatch('github_read_repository_file', {
-            'owner': owner, 'repository': repository, 'path': path})
 
-    async def _adapter_github_find_relevant_files(self, owner, repository, query='', max_results=20):
-        return await github.dispatch('github_find_relevant_files', {
-            'owner': owner, 'repository': repository, 'query': query,
-            'max_results': max_results})
 
-    async def _adapter_github_read_repository_files(self, owner, repository, ref, paths):
-        return await github.dispatch('github_read_repository_files', {
-            'owner': owner, 'repository': repository, 'ref': ref, 'paths': paths})
 
-    async def _adapter_github_analyze_repository(self, owner, repository, query=''):
-        return await github.dispatch('github_analyze_repository', {
-            'owner': owner, 'repository': repository, 'query': query})
 
-    async def _adapter_github_list_issues(self, owner, repository, state='open', max_results=20):
-        return await github.dispatch('github_list_issues', {
-            'owner': owner, 'repository': repository, 'state': state, 'max_results': max_results})
 
-    async def _adapter_github_get_issue(self, owner, repository, number):
-        return await github.dispatch('github_get_issue', {'owner': owner, 'repository': repository, 'number': number})
 
-    async def _adapter_github_list_pull_requests(self, owner, repository, state='open', max_results=20):
-        return await github.dispatch('github_list_pull_requests', {
-            'owner': owner, 'repository': repository, 'state': state, 'max_results': max_results})
 
-    async def _adapter_github_get_pull_request(self, owner, repository, number):
-        return await github.dispatch('github_get_pull_request', {'owner': owner, 'repository': repository, 'number': number})
 
     async def _adapter_press_key(self, key, modifiers=None, target_window=None):
         res = await system_control.press_key(key, modifiers, target_window=target_window)
@@ -1345,6 +1101,11 @@ class DesktopSkills:
             await self._agent_orchestrator.close()
         finally:
             self.test_bar.close()
+            if self._gui is not None:
+                try:
+                    await self._gui.close()
+                except Exception as error:
+                    log.warning('GUI observation cleanup failed: %s', type(error).__name__)
             if self._memory_writes:
                 await asyncio.gather(*tuple(self._memory_writes), return_exceptions=True)
             try:
@@ -1398,8 +1159,14 @@ class DesktopSkills:
                                   verification=[artifact_check] if artifact_check is not None else None)
 
     async def _adapter_proactive_status(self):
-        runtime = await self.get_proactive()
+        runtime = await self.get_proactive(activate=False)
         return await runtime.call('status')
+
+    async def _adapter_assistant_status(self):
+        provider = getattr(self, 'assistant_status_provider', None)
+        if not callable(provider):
+            return {'available': False, 'reason': 'No live voice session is attached'}
+        return {'available': True, **provider()}
 
     async def _adapter_proactive_pause(self):
         runtime = await self.get_proactive()
@@ -1452,115 +1219,23 @@ class DesktopSkills:
             return getattr(self.memory, method)(*args, **kwargs)
         return await self._memory_worker.run(invoke)
 
-    async def _learning_call(self, method, *args, **kwargs):
-        if self.learning_service is None:
-            if method == 'status':
-                return {'enabled': False, 'automatic_refinement': False,
-                        'message': 'Learning capture is disabled. Start JARVIS with --learning-dir to enable it.'}
-            raise SkillError('Research learning is disabled; start with --learning-dir')
-        try:
-            return await self._file_worker.run(getattr(self.learning_service, method), *args, **kwargs)
-        except (OSError, ValueError, KeyError, sqlite3.Error, WorkerBusyError) as error:
-            raise SkillError('Research learning operation unavailable: ' + type(error).__name__) from None
 
-    async def _adapter_learning_status(self):
-        return await self._learning_call('status')
 
-    def _personal_agents(self):
-        if not hasattr(self, '_task_agents'):
-            from orchestration.task_agents import TaskAgents
-            root = (self.learning_service.capture.store.root if self.learning_service is not None
-                    else Path(__file__).resolve().parents[1] / '.jarvis-learning')
-            self._task_agents = TaskAgents(root / 'task-agents', events=self.task_events)
-        return self._task_agents
 
-    async def _adapter_hermes_status(self):
-        try:
-            return await self._personal_agents().capabilities()
-        except (OSError, ValueError, TimeoutError) as error:
-            raise SkillError('Hermes connection unavailable: ' + type(error).__name__) from None
 
-    async def _adapter_create_task_agent(self, task, role='assistant', context='', timeout_seconds=300):
-        try:
-            return self._personal_agents().start(task, role=role, context=context,
-                                                 timeout_seconds=timeout_seconds)
-        except (OSError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_task_agent_status(self, job_id=None):
-        try:
-            return self._personal_agents().status(job_id)
-        except (OSError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_list_task_agents(self):
-        return self._personal_agents().list()
 
-    async def _adapter_cancel_task_agent(self, job_id):
-        try:
-            return await self._personal_agents().cancel(job_id)
-        except (OSError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_followup_task_agent(self, job_id, message):
-        try:
-            return self._personal_agents().followup(job_id, message)
-        except (OSError, ValueError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_list_research_feedback(self):
-        return await self._learning_call('feedback_items')
 
-    async def _adapter_start_harness_refinement(self, feedback_ids):
-        if self.learning_service is None:
-            raise SkillError('Initialize local research learning before refinement')
-        try:
-            # Validation reads the bounded local ledger; process launch stays on this loop.
-            prepared = await self._file_worker.run(self.learning_service.prepare_refinement, feedback_ids)
-            return self.learning_service.jobs.start_refinement(**prepared)
-        except (OSError, ValueError, WorkerBusyError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_harness_status(self):
-        if self.learning_service is None:
-            from learning.jobs import local_status
-            try:
-                status = await self._file_worker.run(local_status)
-            except (OSError, ValueError, WorkerBusyError) as error:
-                raise SkillError('Local Harness status unavailable: ' + type(error).__name__) from None
-            return {**status, 'learning_enabled': False,
-                    'next_actions': ['Start one JARVIS instance using scripts/start-learning.sh.']}
-        return await self._learning_call('harness_status')
 
-    def _harness_jobs(self):
-        if self.learning_service is None:
-            raise SkillError('Local Harness checks require scripts/start-learning.sh or --learning-dir')
-        return self.learning_service.jobs
 
-    async def _adapter_start_harness_check(self):
-        try:
-            return self._harness_jobs().start()
-        except (ValueError, OSError) as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_harness_check_status(self, job_id=None):
-        try:
-            return self._harness_jobs().status(job_id)
-        except ValueError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_cancel_harness_check(self, job_id=None):
-        try:
-            return await self._harness_jobs().cancel(job_id)
-        except ValueError as error:
-            raise SkillError(str(error)) from None
 
-    async def _adapter_learning_lessons(self):
-        return await self._learning_call('lessons')
 
-    async def _adapter_learning_feedback(self, text, category='other'):
-        episode = self.learning_service.capture.previous if self.learning_service is not None else None
-        return await self._learning_call('feedback', text, category, episode)
 
     def queue_memory_exchange(self, user, assistant):
         if not user and not assistant:
@@ -1899,22 +1574,10 @@ class DesktopSkills:
         return res
 
     async def _adapter_switch_workspace(self, workspace):
-        if isinstance(workspace, bool):
+        if not ((type(workspace) is int and 1 <= workspace <= 10)
+                or (type(workspace) is str and workspace in ('next', 'previous'))):
             raise SkillError('workspace must be 1 to 10, next, or previous')
-        if isinstance(workspace, int) and 1 <= workspace <= 10:
-            target = str(workspace)
-        elif workspace in ('next', 'previous'):
-            target = 'e+1' if workspace == 'next' else 'e-1'
-        else:
-            raise SkillError('workspace must be 1 to 10, next, or previous')
-        hypr = self._command('hyprctl')
-        # Hyprland 0.56+ uses Lua dispatch: hl.dsp.focus({ workspace = "..." })
-        # Older Hyprland used: hyprctl dispatch workspace <target>
-        try:
-            await self._run(hypr, 'dispatch', f'hl.dsp.focus({{ workspace = "{target}" }})')
-        except SkillError:
-            await self._run(hypr, 'dispatch', 'workspace', target)
-        return {'status': 'switched', 'workspace': workspace}
+        return await system_control.switch_workspace(workspace)
 
     async def _adapter_show_notification(self, title, message):
         if not all(isinstance(value, str) for value in (title, message)):
@@ -2585,32 +2248,12 @@ class DesktopSkills:
         return {'status': 'captured', 'path': filename}
 
     async def _adapter_manage_window(self, action):
-        """Manage the active window via hyprctl dispatch."""
-        lua_map = {
-            'fullscreen': 'hl.dsp.window.fullscreen({ mode = "fullscreen" })',
-            'maximize': 'hl.dsp.window.fullscreen({ mode = "maximized" })',
-            'close': 'hl.dsp.window.close()',
-            'minimize': 'hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })',
-            'float': 'hl.dsp.window.float({ action = "toggle" })',
-            'center': 'hl.dsp.window.center()',
-        }
-        legacy_map = {
-            'fullscreen': ['fullscreen'],
-            'maximize': ['fullscreen', '1'],
-            'close': ['killactive'],
-            'minimize': ['movetospecialsilent'],
-            'float': ['togglefloating'],
-            'center': ['centerwindow'],
-        }
-        if action not in lua_map:
-            valid = ', '.join(sorted(lua_map))
+        """Use the same exact-target verification path as direct desktop calls."""
+        valid_actions = ('fullscreen', 'close', 'minimize', 'float', 'center', 'maximize')
+        if action not in valid_actions:
+            valid = ', '.join(sorted(valid_actions))
             raise SkillError(f'window action must be one of: {valid}')
-        hypr = self._command('hyprctl')
-        try:
-            await self._run(hypr, 'dispatch', lua_map[action])
-        except SkillError:
-            await self._run(hypr, 'dispatch', *legacy_map[action])
-        return {'status': 'done', 'action': action}
+        return await system_control.manage_window(action)
 
     async def _deferred_service_restart(self, delay=2.0):
         """Wait for spoken turn confirmation to complete, then restart jarvis-oma.service."""

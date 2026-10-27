@@ -8,6 +8,10 @@ import re
 import time
 
 import httpx
+from orchestration.tool_tiers import (
+    CORE_TOOLS, META_TOOLS, domain_for_tool, intent_domains, collision_safe_tools,
+    routed_arguments_match,
+)
 
 
 log = logging.getLogger(__name__)
@@ -128,14 +132,23 @@ class GroqToolRouter:
         return set(re.findall(r'[a-z0-9]+', text.lower()))
 
     def _tools_for(self, command):
-        """Stay below Groq's 128-function limit while prioritizing system controls."""
+        """Select core schemas plus intent-matched domains, bounded to forty."""
         query = self._tokens(command)
+        candidates = [item for item in self.declarations if item.get('name') not in META_TOOLS]
+        requested = intent_domains(command)
+        present = {domain_for_tool(item.get('name', '')) for item in candidates}
+        activated = requested & present
+        if activated:
+            candidates = [item for item in candidates
+                          if item.get('name') in CORE_TOOLS or domain_for_tool(item.get('name', '')) in activated]
+        candidates = collision_safe_tools(command, candidates)
         ranked = []
-        for index, item in enumerate(self.declarations):
+        for index, item in enumerate(candidates):
             searchable = f"{item.get('name', '')} {item.get('description', '')}"
-            ranked.append((is_local_tool(item.get('name', '')),
-                           len(query & self._tokens(searchable)), -index, item))
-        ranked.sort(reverse=True, key=lambda row: row[:3])
+            ranked.append((len(query & self._tokens(searchable)),
+                           domain_for_tool(item.get('name', '')) in activated,
+                           is_local_tool(item.get('name', '')), -index, item))
+        ranked.sort(reverse=True, key=lambda row: row[:4])
         # Large manifest schemas can exceed Groq's HTTP/context request limit well
         # before its theoretical 128-function maximum. Forty keeps routing fast.
         return [{'type': 'function', 'function': {
@@ -144,6 +157,10 @@ class GroqToolRouter:
         }} for *_, item in ranked[:40]]
 
     async def route(self, command):
+        tools = self._tools_for(command)
+        if not tools:
+            raise ValueError('No matching registered tool domain is available')
+        selected = {item['function']['name']: item['function']['parameters'] for item in tools}
         payload = {
             'model': self.model,
             'messages': [
@@ -151,10 +168,12 @@ class GroqToolRouter:
                     'Select the exact JARVIS local machine tool function needed for the user command. '
                     'Use only supplied functions (applications, window/workspace management, typing, local files, volume, system settings, todos, reminders). '
                     'Preserve names, paths, and requested values. '
-                    'Prefer one direct call; use parallel calls only when independently required.')},
+                    'Prefer one direct call; use parallel calls only when independently required. '
+                    'Bare mute means enter_standby; change speakers only for an explicit system audio target. '
+                    'A timed appointment belongs in Calendar, never an untimed Tasks entry.')},
                 {'role': 'user', 'content': command},
             ],
-            'tools': self._tools_for(command), 'tool_choice': 'required',
+            'tools': tools, 'tool_choice': 'required',
             'parallel_tool_calls': True, 'temperature': 0, 'max_completion_tokens': 512,
         }
         indexes = self._available_key_indexes()
@@ -178,14 +197,21 @@ class GroqToolRouter:
             else:
                 response.raise_for_status()
         calls = []
-        for call in response.json()['choices'][0]['message'].get('tool_calls') or []:
+        returned = response.json()['choices'][0]['message'].get('tool_calls') or []
+        if len(returned) > 16:
+            raise ValueError('Groq returned too many tool calls')
+        for call in returned:
             function = call.get('function') or {}
             try:
                 arguments = json.loads(function.get('arguments') or '{}')
-            except json.JSONDecodeError as error:
+            except (ValueError, TypeError, RecursionError) as error:
                 raise ValueError('Groq returned invalid tool arguments') from error
             if not function.get('name') or not isinstance(arguments, dict):
                 raise ValueError('Groq returned an invalid tool call')
+            if function['name'] not in selected:
+                raise ValueError('Groq returned a tool outside the selected registered domain')
+            if not routed_arguments_match(arguments, selected[function['name']]):
+                raise ValueError('Groq returned arguments outside the selected tool schema')
             calls.append({'name': function['name'], 'arguments': arguments})
         if not calls:
             raise ValueError('Groq returned no tool call')

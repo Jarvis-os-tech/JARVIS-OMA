@@ -12,6 +12,33 @@ from orchestration.agent_orchestrator import AGENTS, OrchestrationError
 
 
 class DesktopExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_visible_agent_handoff_does_not_verify_broken_code(self):
+        runner = DesktopAgentOrchestrator({'codex': '/bin/codex'})
+        with tempfile.TemporaryDirectory() as workspace:
+            async def tmux(*args):
+                if args[0] == 'capture-pane':
+                    return '› Ask a question'
+                if args[0] == 'display-message':
+                    return '1' if args[-1] == '#{session_attached}' else '0 '
+                if args[0] == 'send-keys' and args[-1] == 'Enter':
+                    (Path(workspace) / 'result.py').write_text('def broken(\n')
+                    Path(runner.jobs[key]['completion_file']).write_text(json.dumps({
+                        'state': 'completed', 'summary': 'claimed success',
+                    }))
+                return ''
+
+            runner._tmux = AsyncMock(side_effect=tmux)
+            launcher = AsyncMock(returncode=None)
+            with patch('shutil.which', return_value='/bin/tool'), patch(
+                    'asyncio.create_subprocess_exec', return_value=launcher):
+                key = runner.delegate('codex', 'Write a module', workspace)['job']['id']
+                await runner.workers[key]
+            job = runner.jobs[key]
+            self.assertEqual(job['reported_state'], 'completed')
+            self.assertEqual(job['state'], 'failed')
+            self.assertFalse(job['verified'])
+            self.assertEqual((await runner.events.get())['state'], 'failed')
+
     async def test_standalone_interactive_job_finishes_from_bounded_handoff_report(self):
         for reported_state in ('completed', 'failed'):
             with self.subTest(reported_state=reported_state):

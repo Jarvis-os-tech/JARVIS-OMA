@@ -1,0 +1,7 @@
+{
+  "version":1,
+  "skills":[
+    {"name":"list_research_feedback","adapter":"learning.feedback_list","description":"List recent unverified research feedback matching the running project, model and harness. Recording a problem does not diagnose or fix it.","parameters_json_schema":{"type":"object","properties":{},"required":[],"additionalProperties":false}},
+    {"name":"start_harness_refinement","adapter":"harness.refine","description":"On a user request to improve the research harness, use selected feedback IDs to run real Harness² refinement with configured cloud inference in the background. Selected sanitized feedback is sent to the cloud as unverified evidence. Uses bounded isolated instruction worktrees; never changes model weights, application code, permissions or the active bundle. Returns a proposal job, not a verified fix. Inspect harness_check_status and independent checks before any adoption.","parameters_json_schema":{"type":"object","properties":{"feedback_ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":5}},"required":["feedback_ids"],"additionalProperties":false}}
+  ]
+}

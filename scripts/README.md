@@ -4,6 +4,13 @@ The `scripts/` directory contains standalone administrative, setup, and verifica
 
 ## Scripts Overview
 
+- **`desktop_integration.py` / `desktop-session.sh`**:
+  - `./install-service.sh install` installs a portable user service, compatibility
+    alias, user commands, desktop launcher and Omarchy login hook. The hook imports
+    only desktop environment variables and starts the service if it is enabled.
+    Existing files are backed up; repeating installation leaves identical files
+    untouched.
+
 - **`register_obsidian_vault.py`**:
   - Automatically inspects the local user environment for existing Obsidian installations and registers the `JARVIS-OMA Memory` vault path.
   - Usage:

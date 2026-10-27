@@ -38,7 +38,9 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
         control._call = AsyncMock(side_effect=[
             {'snapshot_id': 's12345678', 'elements_complete': False,
              'elements': [{'element_token': 'token'}]},
+            {'elements': [{'role': 'button', 'label': 'Run'}]},
             {'ok': True},
+            {'elements': [{'role': 'button', 'label': 'Done'}]},
         ])
         result = await control.inspect_window(123, 456)
         self.assertTrue(result['element_click_available'])
@@ -59,7 +61,7 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
         control._desktop = (time.monotonic(), 1920, 1080)
         with self.assertRaises(GuiControlError):
             await control.click_desktop(1920, 10)
-        self.assertEqual((await control.click_desktop(10, 10))['status'], 'dispatched')
+        self.assertEqual((await control.click_desktop(10, 10))['status'], 'unverified_effect')
         self.assertIsNone(control._desktop)
 
     async def test_type_and_key_use_recent_visual_target(self):
@@ -162,7 +164,7 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
         
         # In-bounds click
         result = await control.click_desktop(250, 250, target_window_id=100)
-        self.assertEqual(result['status'], 'dispatched')
+        self.assertEqual(result['status'], 'unverified_effect')
         self.assertTrue(result['target_verified'])
         self.assertTrue(result['bounds_verified'])
         self.assertFalse(result['focus_verified'])
@@ -205,7 +207,7 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
             'pid': 555, 'address': '0x64', 'class': 'test-app',
         })
         result = await control.click_desktop(250, 250, target_window_id=100, verify_active=True)
-        self.assertEqual(result['status'], 'dispatched')
+        self.assertEqual(result['status'], 'unverified_effect')
         self.assertTrue(result['target_verified'])
         self.assertTrue(result['bounds_verified'])
         self.assertTrue(result['focus_verified'])
