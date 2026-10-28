@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from core.secret_env import sanitized_subprocess_env
+from core.desktop_session import recover_desktop_environment
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ _TEXTBAR_ALIASES = {
 def _desktop_env() -> dict[str, str]:
     """Preserve essential desktop session and Wayland environment variables."""
     env = sanitized_subprocess_env(os.environ)
+    env.update(recover_desktop_environment(env))
     if "OMARCHY_PATH" not in env:
         env["OMARCHY_PATH"] = "/usr/share/omarchy"
     return env

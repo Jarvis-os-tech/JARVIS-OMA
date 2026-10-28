@@ -21,12 +21,18 @@ if [[ -d "${HOME}/.local/share/mise/shims" ]]; then
     export PATH="${HOME}/.local/share/mise/shims:${PATH}"
 fi
 
+# Invoking the project's Python directly does not activate its virtualenv.
+# Keep installed project CLIs discoverable under the smaller service PATH too.
+if [[ -d "${AGENT_DIR}/.venv/bin" ]]; then
+    export PATH="${AGENT_DIR}/.venv/bin:${PATH}"
+fi
+
 PYTHON="${AGENT_DIR}/.venv/bin/python"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
 # systemd may retain XDG_RUNTIME_DIR while omitting the active compositor's
 # display identifiers. Recover only unambiguous values; .env values take priority.
-eval "$(cd -- "$AGENT_DIR" && "$PYTHON" -m core.desktop_session)"
+eval "$(cd -- "$AGENT_DIR" && "$PYTHON" -m core.desktop_session --wait-seconds 5)"
 
 # The application also runs network, database and desktop work. Keep the
 # process on normal scheduling; PipeWire manages its audio worker priority.

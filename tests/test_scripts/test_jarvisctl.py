@@ -9,11 +9,20 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from unittest.mock import AsyncMock
 
 from scripts import jarvisctl
 
 
 class TestJarvisCtl(unittest.IsolatedAsyncioTestCase):
+    async def test_unmute_rejection_returns_failure(self):
+        with patch.object(jarvisctl, "send_command", new_callable=AsyncMock,
+                          return_value={"status": "error", "error": "Unknown command: set_mute"}), \
+             patch("sys.stderr", new=io.StringIO()) as output:
+            code = await jarvisctl.run_async(["unmute"])
+        self.assertEqual(code, 1)
+        self.assertIn("Unknown command", output.getvalue())
+
     async def asyncSetUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.socket_path = Path(self.temp_dir.name) / "test_jarvisctl.sock"

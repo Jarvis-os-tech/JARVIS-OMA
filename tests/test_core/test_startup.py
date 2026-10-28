@@ -19,6 +19,7 @@ class CommandLineConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'config.toml'
             path.write_text('[agent]\nmodel="saved-model"\nvoice="Kore"\n'
+                            '[audio]\nbackend="legacy"\n'
                             '[skills]\nenabled=false\n')
             with patch.dict(os.environ, env or {}, clear=True), \
                  patch('sys.argv', ['agent', '--check', '--config', str(path), *extra_args]), \
@@ -63,6 +64,9 @@ class CommandLineConfigTests(unittest.TestCase):
 class StartupTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.config = Config()
+        # These fixtures mock NativeAudioEngine specifically. Production may
+        # choose another backend; tests must never open a real audio companion.
+        self.config.audio.backend = 'legacy'
         self.config.skills.enabled = False
         self.config.agent.greet_on_activation = False
         self.config.agent.model = 'saved-model'
@@ -71,6 +75,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                        no_ipc=True, retries=2)
         self.echo = NS(start=AsyncMock(), close=AsyncMock(), source='source', sink='sink')
         self.engine = MagicMock()
+        self.engine.async_input_queue = asyncio.Queue()
         self.engine.monitor_health = AsyncMock()
         self.connect_calls = []
 
@@ -149,6 +154,56 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await agent.run(self.args, 'fake', config=self.config)
         self.assertTrue(factory.call_args.kwargs['allow_barge_in'])
+
+    async def test_native_audio_readiness_precedes_skills_and_provider_startup(self):
+        self.config.audio.backend = 'native'
+        self.config.skills.enabled = True
+        self.config.memory.enabled = False
+        events = []
+        engine = self.engine
+        engine.start.side_effect = lambda *_args: events.append('audio_started')
+        engine.wait_ready = AsyncMock(side_effect=lambda *_args: events.append('audio_ready'))
+        engine.aclose = AsyncMock()
+        skills = MagicMock()
+        skills.close_agent_jobs = AsyncMock()
+
+        class NativeCompanionStub:
+            def __init__(self, *_args, **_kwargs):
+                events.append('native_created')
+
+            def __getattr__(self, name):
+                return getattr(engine, name)
+
+        def skills_factory(*_args, **_kwargs):
+            self.assertEqual(events[-1], 'audio_ready')
+            events.append('skills_created')
+            return skills
+
+        def provider_factory(*_args, **_kwargs):
+            self.assertIn('audio_ready', events)
+            self.assertIn('skills_created', events)
+            events.append('provider_created')
+            return self.client
+
+        with patch.object(agent, 'EchoCancellation', return_value=self.echo), \
+             patch.object(agent, 'NativeCompanionEngine', new=NativeCompanionStub), \
+             patch.object(agent, 'NativeAudioEngine', side_effect=AssertionError('wrong audio backend')), \
+             patch.object(agent, 'DesktopSkills', side_effect=skills_factory), \
+             patch.object(agent, 'live_config', return_value={}), \
+             patch.object(agent.LiveVoice, 'start_observers'), \
+             patch('google.genai.Client', side_effect=provider_factory), \
+             patch.object(agent, 'supervise', side_effect=self.supervise_once):
+            with self.assertRaises(asyncio.CancelledError):
+                await agent.run(self.args, 'fake', config=self.config)
+
+        self.assertEqual(events, ['native_created', 'audio_started', 'audio_ready',
+                                  'skills_created', 'provider_created'])
+        engine.wait_ready.assert_awaited_once_with('source', 'sink')
+        engine.terminate.assert_called_once()
+        engine.aclose.assert_awaited_once()
+        skills.close_agent_jobs.assert_awaited_once()
+        self.assertEqual(len(self.connect_calls), 1)
+        self.echo.close.assert_awaited_once()
 
     async def test_cancellation_during_skill_cleanup_still_releases_audio(self):
         self.config.skills.enabled = True

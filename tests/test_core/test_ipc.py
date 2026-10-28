@@ -97,6 +97,29 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(resp.get("interrupted"))
         self.assertTrue(self.interrupted)
 
+    async def test_explicit_mute_is_idempotent(self):
+        calls = []
+        def set_muted(value):
+            calls.append(value)
+            self.muted = value
+            return value
+        self.server.set_mute_cb = set_muted
+        for value in (True, True, False, False):
+            response = await self._send_command({"command": "set_mute", "muted": value})
+            self.assertEqual(response, {"status": "ok", "muted": value})
+            self.assertEqual(self.muted, value)
+        self.assertEqual(calls, [True, True, False, False])
+
+    async def test_explicit_mute_rejects_invalid_values(self):
+        for value in (None, "false", 0, 1):
+            response = await self._send_command({"command": "set_mute", "muted": value})
+            self.assertEqual(response["status"], "error")
+        self.assertFalse(self.muted)
+
+    async def test_explicit_mute_without_callback_reports_unavailable(self):
+        response = await self._send_command({"command": "set_mute", "muted": False})
+        self.assertEqual(response["status"], "unavailable")
+
     async def test_unknown_command(self):
         resp = await self._send_command({"command": "unknown_xyz"})
         self.assertEqual(resp.get("status"), "error")
@@ -136,6 +159,7 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace as NS
 
         socket_path = Path(self.temp_dir.name) / "agent_test.sock"
+        engines = []
 
         class MockEngine:
             def __init__(self, *args, **kwargs):
@@ -145,6 +169,8 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
                 self.async_input_queue = asyncio.Queue()
                 self.c_output_queue = __import__('queue').SimpleQueue()
                 self.on_state_change = None
+                self.mute_changes = []
+                engines.append(self)
 
             def start(self, source, sink):
                 pass
@@ -153,6 +179,7 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
                 pass
 
             def set_muted(self, state):
+                self.mute_changes.append(state)
                 self.muted = state
 
             def set_reconnect_buffering(self, enabled: bool):
@@ -211,6 +238,16 @@ class TestJarvisIPCServer(unittest.IsolatedAsyncioTestCase):
             await writer.wait_closed()
             self.assertEqual(resp.get("status"), "ok")
             self.assertEqual(resp.get("model"), "test-model")
+            for requested in (False, False, True, True, False):
+                reader, writer = await asyncio.open_unix_connection(str(socket_path))
+                writer.write((json.dumps({"command": "set_mute", "muted": requested}) + "\n").encode())
+                await writer.drain()
+                response = json.loads(await reader.readline())
+                writer.close()
+                await writer.wait_closed()
+                self.assertEqual(response, {"status": "ok", "muted": requested})
+            # Repeated explicit commands must not flush active playback again.
+            self.assertEqual(engines[0].mute_changes, [True, False])
             for w in workers:
                 w.close()
             raise asyncio.CancelledError()

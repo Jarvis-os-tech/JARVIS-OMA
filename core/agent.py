@@ -43,6 +43,7 @@ from audio.downstream import DownstreamRouter
 from audio.extension import ExtendedAudioEngine
 from audio.plugins.standby import StandbyController
 from audio.plugins.native_backend import NativeCompanionEngine
+from audio.plugins.pipewire_backend import PipeWireProcessEngine
 from orchestration.groq_tool_router import (
     GroqToolRouter, ROUTER_DECLARATION, configured_groq_api_keys,
     partition_declarations_for_router, is_local_tool)
@@ -158,6 +159,7 @@ class LiveVoice:
         self._memory_assistant = ''
         self._memory_context = ''
         self.has_greeted = False
+        self._diagnostic_voice_requested = asyncio.Event()
         self.greet_on_activation = config.agent.greet_on_activation if config else True
         self._current_transcript_label = None
         self._greeting_memory = None
@@ -747,11 +749,6 @@ class LiveVoice:
             'te': 'Telugu',
             'hi': 'Hindi',
         }.get(lang_code, lang_code)
-        try:
-            boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-        except OSError:
-            boot_id = ''
-
         if self.config and self.config.agent.greeting_prompt:
             prompt = self.config.agent.greeting_prompt
         else:
@@ -778,7 +775,7 @@ class LiveVoice:
                     if type(cooldown) is not int or cooldown < 0:
                         raise ValueError('greeting_cooldown_seconds must be a nonnegative integer')
                     prepared = await memory_work(
-                        self._greeting_memory.prepare, context, current, cooldown, boot_id)
+                        self._greeting_memory.prepare, context, current, cooldown)
                     if prepared['suppressed']:
                         self.has_greeted = True
                         return
@@ -805,11 +802,27 @@ class LiveVoice:
             self.has_greeted = True
             if self._greeting_memory is not None:
                 self._greeting_id = await memory_work(
-                    self._greeting_memory.sent, prepared['key'], current, boot_id)
+                    self._greeting_memory.sent, prepared['key'], current)
         except Exception as error:
             self._response_active = False
             self._response_idle.set()
             log.warning('Could not send initial greeting prompt: %s', type(error).__name__)
+
+    async def send_voice_diagnostics(self, session):
+        """Send an explicit fixed voice check even when OS skills are disabled."""
+        from google.genai import types
+        while True:
+            await self._diagnostic_voice_requested.wait()
+            self._diagnostic_voice_requested.clear()
+            if self.engine is None or self.engine.muted:
+                continue
+            async with self.send_lock:
+                self._response_active = True
+                self._response_idle.clear()
+                await session.send_client_content(
+                    turns=types.Content(role='user', parts=[types.Part(
+                        text='Diagnostic voice check. Say exactly: Jarvis is listening.')]),
+                    turn_complete=True)
 
     async def send_audio(self, session, reader=None):
         from google.genai import types
@@ -1424,6 +1437,7 @@ class LiveVoice:
                     raise SkillError('Groq tool routing is unavailable')
                 command = arguments.get('command', '')
                 self.publish_lifecycle_state('processing', activity='Executing local command')
+                self.tool_router.declarations, _ = partition_declarations_for_router(self.skills.declarations)
                 routed = await self.tool_router.route(command)
                 log.info('Groq routed local command to: %s', ', '.join(item['name'] for item in routed))
                 routed_results = await asyncio.gather(*(
@@ -1701,13 +1715,13 @@ async def recover_audio(engine, source, sink, retries):
     base_engine = engine.base_engine if isinstance(engine, ExtendedAudioEngine) else engine
     engine.handle_barge_in()
     for attempt in range(retries + 1):
-        if isinstance(base_engine, NativeCompanionEngine):
+        if isinstance(base_engine, (NativeCompanionEngine, PipeWireProcessEngine)):
             await engine.aclose()
         else:
             engine.terminate()
         try:
             engine.start(source, sink)
-            if isinstance(base_engine, NativeCompanionEngine):
+            if isinstance(base_engine, (NativeCompanionEngine, PipeWireProcessEngine)):
                 await engine.wait_ready(source, sink)
             return
         except Exception as error:
@@ -1779,11 +1793,14 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
             volume_percent=config.audio.mic_volume_percent,
             noise_suppression=config.audio.noise_suppression)
         loop = asyncio.get_running_loop()
-        engine_factory = NativeCompanionEngine if config.audio.backend == 'native' else NativeAudioEngine
+        engine_factory = {'native': NativeCompanionEngine, 'legacy': NativeAudioEngine,
+                          'pipewire': PipeWireProcessEngine}[config.audio.backend]
         backend_options = ({'native_cushion_s': config.audio.native_cushion_s,
                             'queue_max_seconds': config.audio.queue_max_seconds,
                             'native_webrtc_gain': config.audio.native_webrtc_gain}
-                           if config.audio.backend == 'native' else {})
+                           if config.audio.backend == 'native' else
+                           {'queue_max_seconds': min(60, config.audio.queue_max_seconds)}
+                           if config.audio.backend == 'pipewire' else {})
         base_audio_engine = engine_factory(
             loop,
             **backend_options,
@@ -1809,7 +1826,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
         if config.audio.start_muted:
             audio_engine.set_muted(True)
         audio_engine.start(echo.source, echo.sink)
-        if config.audio.backend == 'native':
+        if config.audio.backend in ('native', 'pipewire'):
             await audio_engine.wait_ready(echo.source, echo.sink)
         skills = (None if getattr(args, 'no_skills', False) or not config.skills.enabled else
                   DesktopSkills(getattr(args, 'skill_dir', None) or None, config=config,
@@ -1908,21 +1925,29 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                 audio_engine.set_muted(not audio_engine.muted)
                 return bool(audio_engine.muted)
 
+            def set_mute_action(muted: bool) -> bool:
+                if bool(audio_engine.muted) != muted:
+                    audio_engine.set_muted(muted)
+                return bool(audio_engine.muted)
+
             def set_vision_mode_action(mode: str) -> dict:
                 new_mode = voice.set_vision_mode(mode)
                 return {'vision_mode': new_mode}
 
             def test_voice_action():
-                voice._queue_notice('Diagnostic voice check. Say exactly: Jarvis is listening.')
+                if audio_engine.muted or not voice.session_state.connected:
+                    return {'status': 'unavailable', 'error': 'Voice is muted or disconnected'}
+                voice._diagnostic_voice_requested.set()
                 return {'status': 'queued'}
 
             ipc_server = JarvisIPCServer(
                 socket_path=Path(socket_arg) if socket_arg else None,
                 status_provider=get_ipc_status,
                 toggle_mute_cb=toggle_mute_action,
+                set_mute_cb=set_mute_action,
                 interrupt_cb=voice.interrupt_audio,
                 set_vision_mode_cb=set_vision_mode_action,
-                test_voice_cb=test_voice_action if skills is not None else None,
+                test_voice_cb=test_voice_action,
             )
             def _broadcast_vision_mode(mode: str) -> None:
                 ipc_server.broadcast_state({'vision_mode': mode})
@@ -1995,7 +2020,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                         audio_sender = (voice.send_audio_after_response(session)
                                         if wake_confirmation or stall_recovery
                                         else voice.send_audio(session))
-                        workers = [audio_sender, voice.receive(session),
+                        workers = [audio_sender, voice.receive(session), voice.send_voice_diagnostics(session),
                                    voice.send_lock.monitor(),
                                    voice.monitor_response_progress(),
                                    audio_engine.monitor_health(),
@@ -2037,7 +2062,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                     # owner before reopening the companion; reusing stale
                     # virtual node names produces the intermittent
                     # "playback: target not found" break.
-                    if config.audio.backend == 'native':
+                    if config.audio.backend in ('native', 'pipewire'):
                         try:
                             await echo.close()
                             await echo.start(
@@ -2127,7 +2152,7 @@ async def run(args, key, *, config=None, semantic_api_keys=None):
                 if audio_engine is not None:
                     try:
                         audio_engine.terminate()
-                        if isinstance(audio_engine.base_engine, NativeCompanionEngine):
+                        if isinstance(audio_engine.base_engine, (NativeCompanionEngine, PipeWireProcessEngine)):
                             await audio_engine.aclose()
                     except Exception as error:
                         log.warning('Audio cleanup failed: %s', type(error).__name__)
@@ -2187,6 +2212,10 @@ def main():
             greeting_prompt=args.greeting_prompt,
             no_interrupt=args.no_interrupt,
         )
+        if cfg.audio.backend == 'pipewire':
+            missing = [name for name in ('pw-record', 'pw-play', 'pw-dump') if shutil.which(name) is None]
+            if missing:
+                raise ValueError('PipeWire audio requires: ' + ', '.join(missing))
         if cfg.audio.backend == 'native':
             from audio.plugins.native_backend import HELPER
             if not HELPER.is_file() or not os.access(HELPER, os.X_OK):

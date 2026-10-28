@@ -285,6 +285,10 @@ async def run_async(argv: list[str]) -> int:
         sys.stderr.write(f"Error communicating with daemon: {exc}\n")
         return 1
 
+    if resp.get("status") in ("error", "unavailable"):
+        sys.stderr.write(f"Error: {resp.get('error', 'Daemon rejected the command')}\n")
+        return 1
+
     if args.subcommand == "status":
         if getattr(args, "json", False):
             print(json.dumps(resp, indent=2))

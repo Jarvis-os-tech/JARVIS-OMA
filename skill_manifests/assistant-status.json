@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "get_assistant_status",
+      "description": "Read the attached JARVIS voice session's real connection, microphone, tool and memory readiness. Never infer readiness from the model's identity.",
+      "adapter": "assistant.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

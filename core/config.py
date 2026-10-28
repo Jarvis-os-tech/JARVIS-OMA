@@ -74,8 +74,8 @@ class AudioConfig:
     fade_ms: int = 10
 
     def validate(self):
-        if self.backend not in ('legacy', 'native'):
-            raise ValueError('audio.backend must be legacy or native')
+        if self.backend not in ('legacy', 'native', 'pipewire'):
+            raise ValueError('audio.backend must be legacy, native or pipewire')
         for name in ('native_webrtc_gain', 'start_muted'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'audio.{name} must be a boolean')
@@ -93,6 +93,10 @@ class AudioConfig:
                 raise ValueError(f'audio.{name} must be a positive integer')
         if self.input_sample_rate < 8000:
             raise ValueError('audio.input_sample_rate must be at least 8000 for speech detection')
+        if self.backend == 'pipewire' and (
+                self.input_sample_rate, self.output_sample_rate,
+                self.input_frame_ms, self.output_frame_ms) != (16000, 24000, 20, 20):
+            raise ValueError('pipewire audio requires 16/24 kHz and 20 ms frames')
         if self.output_sample_rate != 24000:
             raise ValueError('audio.output_sample_rate must be 24000; output resampling is not implemented')
         for direction in ('input', 'output'):

@@ -23,3 +23,5 @@ external/
 *.db
 *.lock
 .genkit/
+# Local quarantined audio snapshots; authoritative sources remain in Git history.
+/issus voice/

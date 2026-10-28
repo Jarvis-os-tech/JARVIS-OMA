@@ -40,8 +40,14 @@ def verified_desktop_action(owner, adapter, arguments):
             after = await system_control._query_active_window()
             target_preserved = ground_truth.same_window(before['window'], after)
             result['post_action_focus_verified'] = target_preserved
-            result['verified'] = False  # Focus/surface change alone is not semantic success.
-            if not target_preserved or result.get('status') != 'effect_observed':
+            if not target_preserved:
+                result['verified'] = False
+                result.update(status='unverified_effect', fallback='use_accessibility_or_cli')
+                result.setdefault('reason', 'target window lost focus during input delivery')
+            elif result.get('status') == 'success':
+                result['verified'] = True
+            elif result.get('status') != 'effect_observed':
+                result['verified'] = False
                 result.update(status='unverified_effect', fallback='use_accessibility_or_cli')
                 result.setdefault('reason', 'input delivery or requested effect could not be proven')
             return result

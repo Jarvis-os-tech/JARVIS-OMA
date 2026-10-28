@@ -423,6 +423,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
         self.on_standby_request = None
 
         # Discover commands dynamically from active adapters
+        self._dependency_excluded = {}
         self._commands = self._discover_commands()
 
         # Graceful degradation: exclude skills with missing commands
@@ -436,21 +437,37 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
             adapter = spec['adapter']
             needed.update(self.ADAPTER_COMMANDS.get(adapter, ()))
 
-        commands = {}
-        for name in sorted(needed):
-            # Check for explicit override first
-            override = self._command_overrides.get(name)
-            if override and os.path.isfile(override) and os.access(override, os.X_OK):
-                commands[name] = override
-            elif name == 'vision_ctrl':
-                local_native = Path(__file__).resolve().parent / 'native' / 'bin' / 'vision_ctrl'
-                if local_native.is_file() and os.access(str(local_native), os.X_OK):
-                    commands[name] = str(local_native)
-                else:
-                    commands[name] = shutil.which(name)
-            else:
-                commands[name] = shutil.which(name)
-        return commands
+        return {name: self._resolve_command(name) for name in sorted(needed)}
+
+    def _resolve_command(self, name):
+        """Use one resolver for startup, readiness and later execution."""
+        override = self._command_overrides.get(name)
+        if override and os.path.isfile(override) and os.access(override, os.X_OK):
+            return override
+        if name == 'vision_ctrl':
+            local_native = Path(__file__).resolve().parent / 'native' / 'bin' / 'vision_ctrl'
+            if local_native.is_file() and os.access(str(local_native), os.X_OK):
+                return str(local_native)
+        return shutil.which(name)
+
+    def refresh_capabilities(self):
+        """Recover late dependencies without re-enabling configuration-disabled tools.
+
+        Only dependency exclusions enter this recovery set. Memory and other
+        configuration exclusions remain authoritative. No adapter is executed.
+        """
+        # Update only missing, unambiguous desktop identifiers so GUI drivers,
+        # verification helpers and connectors inherit the same recovered session.
+        os.environ.update(system_control.recover_desktop_environment(os.environ))
+        for name, path in tuple(self._commands.items()):
+            if name in self._command_overrides or not path or not os.access(path, os.X_OK):
+                self._commands[name] = self._resolve_command(name)
+        for name, spec in tuple(self._dependency_excluded.items()):
+            required = self.ADAPTER_COMMANDS.get(spec['adapter'], ())
+            if all(self._commands.get(command) for command in required):
+                self._skills[name] = spec
+                del self._dependency_excluded[name]
+                log.info('Skill %s recovered: required commands are now available', name)
 
     def _exclude_unavailable_skills(self):
         """Remove skills whose adapter commands are not installed."""
@@ -464,13 +481,14 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
                             skill_name, ', '.join(missing))
                 to_remove.append(skill_name)
         for name in to_remove:
-            del self._skills[name]
+            self._dependency_excluded[name] = self._skills.pop(name)
         if not self._skills:
             raise SkillError('no desktop skills available (all required commands missing)')
 
     @property
     def declarations(self):
         """Function declarations generated from discovered JSON manifests."""
+        self.refresh_capabilities()
         return [
             {'name': spec['name'], 'description': spec['description'],
              'parameters_json_schema': spec['parameters_json_schema']}
@@ -515,6 +533,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
         """Validate a domain request before the shared execution policy sees it."""
         if domain not in DOMAINS or not isinstance(tool_name, str) or tool_name in META_TOOLS:
             raise SkillError('invalid domain tool request')
+        self.refresh_capabilities()
         spec = self._skills.get(tool_name)
         if spec is None or domain_for_tool(tool_name) != domain:
             raise SkillError('tool is not registered in the requested domain')
@@ -681,10 +700,12 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
 
     def availability(self):
         """Per-command availability dictionary for backward compatibility."""
+        self.refresh_capabilities()
         return {name: path is not None for name, path in self._commands.items()}
 
     def capability_context(self):
         """Generate session guidance from tools actually exposed in this run."""
+        self.refresh_capabilities()
         groups = {}
         for name, spec in self._skills.items():
             groups.setdefault(spec['adapter'].split('.')[0], []).append(name)
@@ -708,6 +729,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
 
     async def _adapter_list_capabilities(self, query='', limit=20):
         """Inspect registration and dependencies; never execute an action."""
+        self.refresh_capabilities()
         terms = re.findall(r'[a-z0-9]+', query.casefold())
         matches = []
         for name, spec in self._capability_catalog.items():
@@ -716,13 +738,12 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
             if terms and not score:
                 continue
             required = self.ADAPTER_COMMANDS.get(spec['adapter'], ())
-            missing = [cmd for cmd in required if not (
-                (self._commands.get(cmd) and os.access(self._commands[cmd], os.X_OK)) or shutil.which(cmd))]
+            missing = [cmd for cmd in required if not self._commands.get(cmd)]
             handler = getattr(self, self.ADAPTERS[spec['adapter']], None)
             exposed = name in self._skills
             available = exposed and callable(handler) and not missing
             matches.append((score, {
-                'name': name, 'description': spec['description'],
+                'name': name, 'description': spec['description'], 'domain': domain_for_tool(name),
                 'available': available, 'exposed': exposed,
                 'missing_commands': missing, 'adapter_implemented': callable(handler),
                 'runtime_verified': False,
@@ -738,6 +759,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
 
     def adapter_availability(self):
         """Per-adapter availability dictionary indicating if all required commands are present."""
+        self.refresh_capabilities()
         return {
             adapter_name: (
                 True if not required_cmds else
@@ -748,6 +770,9 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
 
     def _command(self, name):
         path = self._commands.get(name)
+        if name in self._command_overrides or not path or not os.access(path, os.X_OK):
+            path = self._resolve_command(name)
+            self._commands[name] = path
         if not path:
             raise SkillError(f'{name} is not installed on this desktop')
         return path
@@ -764,7 +789,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                limit=64 * 1024, env=sanitized_subprocess_env())
+                limit=64 * 1024, env=system_control._desktop_env())
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
@@ -795,7 +820,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
         try:
             process = await asyncio.create_subprocess_exec(
                 *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-                start_new_session=True, env=sanitized_subprocess_env())
+                start_new_session=True, env=system_control._desktop_env())
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
@@ -845,9 +870,42 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain):
             raise SkillError('skill arguments must be an object')
         if name not in self._skills and name in self.SKILL_ALIASES:
             name = self.SKILL_ALIASES[name]
+        self.refresh_capabilities()
         spec = self._skills.get(name)
         if spec is None:
             raise SkillError(f'unknown skill: {name}')
+
+        # Normalize common argument aliases
+        arguments = dict(arguments)
+        if name == 'focus_window' and 'query' not in arguments:
+            for alias in ('target', 'window', 'app', 'name', 'title'):
+                if alias in arguments:
+                    arguments['query'] = str(arguments[alias])
+                    break
+        elif name == 'open_application' and 'name' not in arguments:
+            for alias in ('app', 'app_name', 'application', 'target'):
+                if alias in arguments:
+                    arguments['name'] = str(arguments[alias])
+                    break
+        elif name == 'open_website' and 'url' not in arguments:
+            for alias in ('website', 'link', 'uri', 'target'):
+                if alias in arguments:
+                    arguments['url'] = str(arguments[alias])
+                    break
+        elif name in ('switch_workspace', 'move_window_to_workspace') and 'workspace' not in arguments:
+            for alias in ('workspace_id', 'number', 'target', 'id'):
+                if alias in arguments:
+                    try:
+                        arguments['workspace'] = int(arguments[alias])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+        elif name == 'control_microphone' and 'action' not in arguments:
+            for alias in ('command', 'state', 'mode'):
+                if alias in arguments:
+                    arguments['action'] = str(arguments[alias])
+                    break
+
         if not self._arguments_match(arguments, spec['parameters_json_schema']):
             raise SkillError(f'invalid arguments for {name}')
         handler = getattr(self, self.ADAPTERS[spec['adapter']])

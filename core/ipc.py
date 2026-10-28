@@ -25,6 +25,7 @@ class JarvisIPCServer:
         interrupt_cb: Optional[Callable[[], None]] = None,
         set_vision_mode_cb: Optional[Callable[[str], dict[str, Any]]] = None,
         test_voice_cb: Optional[Callable[[], dict[str, Any]]] = None,
+        set_mute_cb: Optional[Callable[[bool], bool]] = None,
     ):
         self.socket_path = Path(socket_path) if socket_path else default_socket_path()
         self.status_provider = status_provider or (lambda: {})
@@ -32,6 +33,7 @@ class JarvisIPCServer:
         self.interrupt_cb = interrupt_cb or (lambda: None)
         self.set_vision_mode_cb = set_vision_mode_cb or (lambda mode: {"vision_mode": mode})
         self.test_voice_cb = test_voice_cb
+        self.set_mute_cb = set_mute_cb
         self._server: Optional[asyncio.AbstractServer] = None
         self._subscribers: set[asyncio.StreamWriter] = set()
 
@@ -68,6 +70,18 @@ class JarvisIPCServer:
                 writer.write((json.dumps({"status": "ok", "muted": muted}) + "\n").encode("utf-8"))
                 await writer.drain()
                 self.broadcast_state({"muted": muted})
+            elif cmd == "set_mute":
+                requested = req.get("muted")
+                if type(requested) is not bool:
+                    payload = {"status": "error", "error": "muted must be a boolean"}
+                elif self.set_mute_cb is None:
+                    payload = {"status": "unavailable", "error": "Explicit mute control is unavailable"}
+                else:
+                    muted = self.set_mute_cb(requested)
+                    payload = {"status": "ok", "muted": muted}
+                    self.broadcast_state({"muted": muted})
+                writer.write((json.dumps(payload) + "\n").encode("utf-8"))
+                await writer.drain()
             elif cmd == "test_voice":
                 payload = (self.test_voice_cb() if self.test_voice_cb is not None else
                            {'status': 'unavailable', 'error': 'Voice test is unavailable'})
