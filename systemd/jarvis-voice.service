@@ -1,0 +1,24 @@
+[Unit]
+Description=JARVIS Voice Core — ambient voice assistant
+After=graphical-session.target pipewire.service wireplumber.service
+PartOf=graphical-session.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/jarvis-voice/bin/jarvis-voice run
+WorkingDirectory=%h/.local/share/jarvis-voice
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=XDG_RUNTIME_DIR=%t
+Restart=always
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=8
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

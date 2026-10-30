@@ -1,43 +1,43 @@
 #!/usr/bin/env bash
+# scripts/install.sh — Install JARVIS Voice Core
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+INSTALL_DIR="${HOME}/.local/share/jarvis-voice"
+BIN_DIR="${HOME}/.local/bin"
+SERVICE_DIR="${HOME}/.config/systemd/user"
+CONFIG_DIR="${HOME}/.config/jarvis-voice"
 
-DEST_SHARE="${HOME}/.local/share/pma-voice-only"
-DEST_BIN="${HOME}/.local/bin"
-DEST_CONFIG="${HOME}/.config/pma-voice-only"
-DEST_SYSTEMD="${HOME}/.config/systemd/user"
+echo "Installing JARVIS Voice Core..."
 
-echo "==> Installing PMA Voice Only runtime..."
-mkdir -p "${DEST_SHARE}/bin" "${DEST_BIN}" "${DEST_CONFIG}" "${DEST_SYSTEMD}"
+mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$SERVICE_DIR" "$CONFIG_DIR"
+
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Copy package and bin
-cp -r "${ROOT_DIR}/pma_voice_only" "${DEST_SHARE}/"
-cp "${ROOT_DIR}/bin/omarchy-voice" "${DEST_SHARE}/bin/omarchy-voice"
-chmod +x "${DEST_SHARE}/bin/omarchy-voice"
+cp -r "$REPO_DIR/jarvis_voice" "$INSTALL_DIR/"
+cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
+cp "$REPO_DIR/LICENSE" "$INSTALL_DIR/" 2>/dev/null || true
 
-# Copy metadata
-cp "${ROOT_DIR}/LICENSE" "${DEST_SHARE}/LICENSE"
-cp "${ROOT_DIR}/PROVENANCE.json" "${DEST_SHARE}/PROVENANCE.json"
-cp "${ROOT_DIR}/README.md" "${DEST_SHARE}/README.md"
-
-# Link CLI executable
-ln -sf "${DEST_SHARE}/bin/omarchy-voice" "${DEST_BIN}/omarchy-voice"
-
-# Default configuration if not present
-if [ ! -f "${DEST_CONFIG}/config.toml" ]; then
-    cp "${ROOT_DIR}/config/config.toml.example" "${DEST_CONFIG}/config.toml"
-    chmod 600 "${DEST_CONFIG}/config.toml"
-    echo "    Created default config at ${DEST_CONFIG}/config.toml"
+# Link python virtual environment with required dependencies
+if [[ -d "${REPO_DIR}/.venv" ]]; then
+    ln -sfn "$(readlink -f "${REPO_DIR}/.venv")" "$INSTALL_DIR/.venv"
 fi
 
+# Ensure default config exists
+if [[ ! -f "$CONFIG_DIR/config.toml" && -f "$REPO_DIR/configs/config.toml.example" ]]; then
+    cp "$REPO_DIR/configs/config.toml.example" "$CONFIG_DIR/config.toml"
+fi
+
+chmod +x "$INSTALL_DIR/bin/jarvis-voice"
+
+# Symlink CLI to ~/.local/bin
+ln -sf "$INSTALL_DIR/bin/jarvis-voice" "$BIN_DIR/jarvis-voice"
+
 # Install systemd service
-cp "${ROOT_DIR}/systemd/omarchy-voice.service" "${DEST_SYSTEMD}/omarchy-voice.service"
+cp "$REPO_DIR/systemd/jarvis-voice.service" "$SERVICE_DIR/"
 systemctl --user daemon-reload
 
-echo "==> Installation complete!"
-echo "To start the voice service:"
-echo "    systemctl --user enable --now omarchy-voice.service"
-echo "To check status:"
-echo "    omarchy-voice status"
+echo "Installed to $INSTALL_DIR"
+echo "CLI available at: ~/.local/bin/jarvis-voice"
+echo ""
+echo "To start voice daemon: systemctl --user enable --now jarvis-voice.service"

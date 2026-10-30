@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# bin/jarvis-voice — CLI wrapper
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Prefer project virtualenv with installed dependencies
+if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+    PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+elif [[ -x "${HOME}/Projects/JARVIS-OMA/.venv/bin/python" ]]; then
+    PYTHON="${HOME}/Projects/JARVIS-OMA/.venv/bin/python"
+elif [[ -x "${HOME}/.local/share/jarvis-voice/.venv/bin/python" ]]; then
+    PYTHON="${HOME}/.local/share/jarvis-voice/.venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
+exec "$PYTHON" -m jarvis_voice "$@"
