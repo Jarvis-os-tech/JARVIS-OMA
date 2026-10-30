@@ -86,6 +86,15 @@ def cmd_sync(bridge: MemoryBridge, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clear(bridge: MemoryBridge, args: argparse.Namespace) -> int:
+    res = bridge.clear()
+    if args.json:
+        print(json.dumps(res, indent=2))
+    else:
+        print(f"Memory cleared: {res.get('removed_facts', 0)} facts, {res.get('removed_memories', 0)} structured memories removed.")
+    return 0
+
+
 def cmd_mcp(bridge: MemoryBridge, args: argparse.Namespace) -> int:
     from .mcp_server import main as run_mcp
     return run_mcp()
@@ -125,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     sync_p.add_argument("--vault", type=str, help="Path to Obsidian vault")
     sync_p.set_defaults(func=cmd_sync)
 
+    # clear
+    clear_p = subparsers.add_parser("clear", help="Clear all stored memory facts and structured knowledge")
+    clear_p.set_defaults(func=cmd_clear)
+
     # mcp
     mcp_p = subparsers.add_parser("mcp", help="Run Model Context Protocol stdio server")
     mcp_p.set_defaults(func=cmd_mcp)
@@ -134,7 +147,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
-    cfg = load_config(args.config)
+    config_home = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+    shared_config = config_home / 'jarvis-voice' / 'config.toml'
+    config_path = args.config or (shared_config if shared_config.is_file() else None)
+    cfg = load_config(config_path)
     bridge = MemoryBridge(cfg.memory)
 
     try:

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import logging
 from pathlib import Path
 import sqlite3
@@ -25,6 +27,8 @@ class MemorySkills:
         self._memory_config = getattr(self.config, "memory", MemoryConfig())
         self._memory_api_key = api_key
         self._memory_writes: set[asyncio.Task] = set()
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='jarvis-memory')
+        self._closed = False
         self.memory = MemoryBridge(self._memory_config, api_key=api_key)
 
         # Declarations matching manifest
@@ -43,6 +47,31 @@ class MemorySkills:
             ]
         else:
             self.declarations = []
+        parameters = {
+            'remember_memory': ({'text': {'type': 'string'}}, ['text']),
+            'recall_memory': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, []),
+            'forget_memory': ({'text': {'type': 'string'}}, ['text']),
+            'clear_memory': ({}, []),
+            'update_memory_profile': ({'name': {'type': 'string'}, 'content': {'type': 'string'}}, ['name', 'content']),
+            'index_memory_document': ({'path': {'type': 'string'}}, ['path']),
+            'memory_status': ({}, []),
+            'sync_memory_vault': ({}, []),
+            'correct_memory': ({'memory_id': {'type': 'string'}, 'text': {'type': 'string'}}, ['memory_id', 'text']),
+            'memory_history': ({'memory_id': {'type': 'string'}}, ['memory_id']),
+        }
+        for declaration in self.declarations:
+            properties, required = parameters[declaration['name']]
+            declaration['parameters_json_schema'] = {
+                'type': 'object', 'properties': properties, 'required': required,
+            }
+
+    async def start(self) -> None:
+        await self._memory_operation('start')
+
+    async def context_async(self) -> str:
+        if not self._memory_config.enabled:
+            return ''
+        return (await self._memory_operation('context'))[:self._memory_config.context_max_chars]
 
     def memory_context(self) -> str:
         """Render recent relevant memory context within configured character budget."""
@@ -79,7 +108,10 @@ class MemorySkills:
             fn = getattr(self.memory, method)
             if asyncio.iscoroutinefunction(fn):
                 return await fn(**kwargs)
-            return await asyncio.to_thread(fn, **kwargs)
+            if self._closed:
+                raise SkillError('Memory worker is closed')
+            return await asyncio.get_running_loop().run_in_executor(
+                self._executor, partial(fn, **kwargs))
         except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, ValueError) as error:
             raise SkillError(str(error)) from None
 
@@ -120,8 +152,11 @@ class MemorySkills:
             log.warning("Memory capture backlog full; dropping exchange")
             return
 
+        if self._closed:
+            return
+
         async def _do_record():
-            self.memory.record_exchange(user, assistant)
+            await self._memory_operation('record_exchange', user_text=user, assistant_text=assistant)
 
         task = asyncio.create_task(_do_record())
         self._memory_writes.add(task)
@@ -140,7 +175,12 @@ class MemorySkills:
     async def close_agent_jobs(self) -> None:
         if self._memory_writes:
             await asyncio.gather(*tuple(self._memory_writes), return_exceptions=True)
-        self.memory.close()
+        if not self._closed:
+            try:
+                await self._memory_operation('close')
+            finally:
+                self._closed = True
+                await asyncio.to_thread(self._executor.shutdown, wait=True)
 
 
 # Compatibility alias for tests and legacy callers

@@ -2,10 +2,10 @@
 # scripts/install.sh — Install JARVIS Voice Core
 set -euo pipefail
 
-INSTALL_DIR="${HOME}/.local/share/jarvis-voice"
-BIN_DIR="${HOME}/.local/bin"
-SERVICE_DIR="${HOME}/.config/systemd/user"
-CONFIG_DIR="${HOME}/.config/jarvis-voice"
+INSTALL_DIR="${JARVIS_INSTALL_HOME:-${HOME}}/.local/share/jarvis-voice"
+BIN_DIR="${JARVIS_INSTALL_HOME:-${HOME}}/.local/bin"
+SERVICE_DIR="${JARVIS_INSTALL_HOME:-${HOME}}/.config/systemd/user"
+CONFIG_DIR="${JARVIS_INSTALL_HOME:-${HOME}}/.config/jarvis-voice"
 
 echo "Installing JARVIS Voice Core..."
 
@@ -14,7 +14,7 @@ mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$SERVICE_DIR" "$CONFIG_DIR"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Copy package and bin
-cp -r "$REPO_DIR/jarvis_voice" "$INSTALL_DIR/"
+cp -r "$REPO_DIR/jarvis_voice" "$REPO_DIR/jarvis_memory" "$REPO_DIR/jarvis_control" "$INSTALL_DIR/"
 cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
 cp "$REPO_DIR/LICENSE" "$INSTALL_DIR/" 2>/dev/null || true
 
@@ -28,18 +28,20 @@ if [[ ! -f "$CONFIG_DIR/config.toml" && -f "$REPO_DIR/configs/config.toml.exampl
     cp "$REPO_DIR/configs/config.toml.example" "$CONFIG_DIR/config.toml"
 fi
 
-chmod +x "$INSTALL_DIR/bin/jarvis-voice" "$INSTALL_DIR/bin/jarvis"
+chmod +x "$INSTALL_DIR/bin/jarvis-voice" "$INSTALL_DIR/bin/jarvis" "$INSTALL_DIR/bin/jarvis-memory" "$INSTALL_DIR/bin/jarvis-control"
 
 # Symlink CLIs to ~/.local/bin
 ln -sf "$INSTALL_DIR/bin/jarvis-voice" "$BIN_DIR/jarvis-voice"
 ln -sf "$INSTALL_DIR/bin/jarvis" "$BIN_DIR/jarvis"
+ln -sf "$INSTALL_DIR/bin/jarvis-memory" "$BIN_DIR/jarvis-memory"
+ln -sf "$INSTALL_DIR/bin/jarvis-control" "$BIN_DIR/jarvis-control"
 
 # Install systemd service
 cp "$REPO_DIR/systemd/jarvis-voice.service" "$SERVICE_DIR/"
 systemctl --user daemon-reload
 
 echo "Installed to $INSTALL_DIR"
-echo "CLIs available at: ~/.local/bin/jarvis and ~/.local/bin/jarvis-voice"
+echo "CLIs available at: ~/.local/bin/jarvis, ~/.local/bin/jarvis-voice, ~/.local/bin/jarvis-memory, and ~/.local/bin/jarvis-control"
 echo ""
 echo "Control JARVIS with:"
 echo "  jarvis enable   - Enable and start JARVIS service"

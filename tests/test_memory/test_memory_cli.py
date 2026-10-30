@@ -34,6 +34,13 @@ class MemoryCLITests(unittest.TestCase):
         ret_search = main(["--config", str(self.config_path), "search", "replies"])
         self.assertEqual(ret_search, 0)
 
+    def test_cli_clear(self):
+        main(["--config", str(self.config_path), "store", "Temporary fact"])
+        ret = main(["--config", str(self.config_path), "clear"])
+        self.assertEqual(ret, 0)
+        ret_json = main(["--config", str(self.config_path), "--json", "clear"])
+        self.assertEqual(ret_json, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
