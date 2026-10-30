@@ -6,6 +6,9 @@ from .paths import DEFAULT_CONFIG_DIR, get_config_dir
 from .scanner import InjectionScanner
 from .store import LocalFactStore
 from .chunking import chunk_text, ChunkConfig
+from .knowledge import KnowledgeStore
+from .vector_store import VectorStore
+from .embeddings import get_embedding_provider, GeminiEmbeddingProvider, OllamaEmbeddingProvider
 
 __all__ = [
     "Config",
@@ -17,4 +20,9 @@ __all__ = [
     "LocalFactStore",
     "chunk_text",
     "ChunkConfig",
+    "KnowledgeStore",
+    "VectorStore",
+    "get_embedding_provider",
+    "GeminiEmbeddingProvider",
+    "OllamaEmbeddingProvider",
 ]
