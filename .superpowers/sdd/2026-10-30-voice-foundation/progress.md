@@ -17,8 +17,14 @@ Scan clean. Tasks 1–5 independent. Batching into one implementer dispatch.
 ## Execution
 
 Task 1-5 (batch): complete (commits 4bcf374..63995e0, 24/24 tests pass, review clean)
+Task 6-8 (batch): complete (commits 63995e0..a488dfa, 49/49 tests pass, review clean)
 
-Task 6: Systemd Service, CLI Entry Point, and Installation Script
+Installation to OS:
+- Installed binary: ~/.local/bin/jarvis-voice
+- Installed package: ~/.local/share/jarvis-voice
+- Installed systemd service: ~/.config/systemd/user/jarvis-voice.service
+- Check: `jarvis-voice --check` passed.
+
 
 
 - [x] Tasks 1-5: Core Voice Foundation Modules (Scaffold & Config, IPC, Recovery, Speech Turn Gate & Interruption Continuity, Playback Engine)
