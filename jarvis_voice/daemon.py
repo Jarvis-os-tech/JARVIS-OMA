@@ -89,7 +89,7 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
 
 
 class LiveVoice:
-    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = False):
+    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = False, greet_on_start: bool = True):
         self.player = player
         self.transcripts = transcripts
         self.resume_handle: str | None = None
@@ -97,6 +97,8 @@ class LiveVoice:
         self.connected = False
         self.muted = False
         self.model = ''
+        self.greet_on_start = bool(greet_on_start)
+        self._greeted = False
         self.microphone_rms = 0.0
         self.microphone_frames_sent = 0
         self.provider_audio_bytes = 0
@@ -177,6 +179,28 @@ class LiveVoice:
         log.info('Local barge-in accepted (count=%d)', self.local_interruptions)
         if process is not None:
             asyncio.create_task(stop_process(process))
+
+    async def send_greeting(self, session):
+        """Send an initial user turn prompt on session start so JARVIS greets the user out loud."""
+        from google.genai import types
+
+        if not self.greet_on_start or self._greeted:
+            return
+        self._greeted = True
+        self._reply_authorized = self._waiting = True
+        self._reply_started = self._drop_response = self._model_active = False
+        self._last_progress = time.monotonic()
+        log.info('Triggering realtime startup greeting...')
+        try:
+            await asyncio.sleep(0.15)
+            await session.send_client_content(
+                turns=[types.Content(role='user', parts=[types.Part.from_text(
+                    text='You are booting up on JARVIS OS. Greet the user warmly and concisely in one short sentence as JARVIS, and let them know you are online and listening.'
+                )])],
+                turn_complete=True,
+            )
+        except Exception as exc:
+            log.warning('Failed to send startup greeting: %s', exc)
 
     async def handle(self, event, session=None):
         update = getattr(event, 'session_resumption_update', None)
@@ -377,7 +401,12 @@ async def run(args, key: str):
     device = getattr(args, 'device', None) or config.device
 
     player = Playback(sink=device or 'default')
-    voice = LiveVoice(player, transcripts=getattr(args, 'transcripts', False), barge_in=config.barge_in)
+    voice = LiveVoice(
+        player,
+        transcripts=getattr(args, 'transcripts', False),
+        barge_in=config.barge_in,
+        greet_on_start=getattr(config, 'greet_on_start', True),
+    )
     voice.model = model
 
     ipc = ControlServer(
@@ -417,6 +446,8 @@ async def run(args, key: str):
                         microphone = await asyncio.create_subprocess_exec(
                             *mic_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                             env=audio_environment())
+
+                        asyncio.create_task(voice.send_greeting(session))
 
                         await asyncio.gather(
                             voice.send_audio(session, microphone.stdout),

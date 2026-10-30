@@ -114,3 +114,29 @@ async def test_live_voice_handle_audio_and_turn():
     )
     await voice.handle(complete_event)
     assert not voice._reply_authorized
+
+
+@pytest.mark.asyncio
+async def test_live_voice_send_greeting():
+    """send_greeting triggers an initial user turn prompt on session start."""
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+
+    player = Playback(sink='default')
+    voice = LiveVoice(player, greet_on_start=True)
+    assert not voice._greeted
+
+    sent_turns = []
+    fake_session = AsyncMock()
+    fake_session.send_client_content = AsyncMock(side_effect=lambda turns, turn_complete: sent_turns.extend(turns))
+
+    await voice.send_greeting(fake_session)
+    assert voice._greeted is True
+    assert voice._reply_authorized is True
+    fake_session.send_client_content.assert_awaited_once()
+    assert len(sent_turns) == 1
+    assert 'booting up on JARVIS OS' in sent_turns[0].parts[0].text
+
+    # Subsequent calls must not trigger duplicate greeting
+    await voice.send_greeting(fake_session)
+    assert fake_session.send_client_content.await_count == 1

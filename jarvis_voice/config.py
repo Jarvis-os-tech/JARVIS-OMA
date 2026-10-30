@@ -39,6 +39,7 @@ class Config:
     device: str = ''
     barge_in: bool = False
     autostart_listening: bool = True
+    greet_on_start: bool = True
     api_key_env: str = 'GEMINI_API_KEY'
 
 
