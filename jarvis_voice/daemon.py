@@ -30,10 +30,14 @@ CAPTURE_QUEUE_FRAMES = 200
 
 def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = True) -> dict:
     instruction = (
-        'You are JARVIS, the personal voice assistant for JARVIS OS. '
-        'Speak concisely, naturally, and warmly. '
-        'Only speak in response to the user. '
-        'Give one concise reply per turn, then wait silently.'
+        'You are JARVIS, a personal voice conversational companion on JARVIS OS. '
+        'Speak concisely, naturally, and directly. '
+        'STRICT OPERATIONAL BOUNDARIES & ANTI-HALLUCINATION RULES:\n'
+        '1. You currently operate in pure voice conversation mode with ZERO system tools attached.\n'
+        '2. You CANNOT open apps, move or tile windows, adjust volume or brightness, browse the web, read or modify files, or run system/terminal commands.\n'
+        '3. NEVER claim, promise, or pretend to perform any computer action or system task. If the user asks you to control the computer, open an app, or run a command, state plainly and concisely: "I do not have desktop control tools connected yet; I am currently in voice conversation mode."\n'
+        '4. Only answer questions from knowledge, converse, or brainstorm.\n'
+        '5. Speak only in response to the user. Give one concise reply per turn, then wait silently.'
     )
     config = {
         'response_modalities': ['AUDIO'],
@@ -160,8 +164,14 @@ class LiveVoice:
             incoming = getattr(content, 'input_transcription', None)
             if incoming is not None and getattr(incoming, 'text', None):
                 self.recognized_input_events += 1
+                if self._reply_authorized:
+                    self._user_text += incoming.text
                 if self._reply_authorized and not self._reply_started:
                     self._waiting = True
+
+            outgoing = getattr(content, 'output_transcription', None)
+            if outgoing is not None and getattr(outgoing, 'text', None) and self._reply_authorized and not self._barge_turn:
+                self._assistant_text += outgoing.text
 
             if getattr(content, 'interrupted', False):
                 self.provider_interruptions += 1
@@ -188,6 +198,12 @@ class LiveVoice:
                             self.player.enqueue(blob.data)
 
             if getattr(content, 'turn_complete', False):
+                if self._user_text.strip():
+                    log.info('User: "%s"', self._user_text.strip())
+                if self._assistant_text.strip():
+                    log.info('JARVIS: "%s"', self._assistant_text.strip())
+                self._user_text = ''
+                self._assistant_text = ''
                 self.player.finish_reply()
                 self._drop_response = self._model_active = False
                 self._waiting = False
