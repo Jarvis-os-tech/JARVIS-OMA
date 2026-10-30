@@ -26,6 +26,7 @@ from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, Ga
 log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
+ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
 
 def build_instruction(tools: list | None = None) -> str:
@@ -68,7 +69,7 @@ def build_instruction(tools: list | None = None) -> str:
     )
 
 
-def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = True, tools: list | None = None) -> dict:
+def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = False, tools: list | None = None) -> dict:
     config = {
         'response_modalities': ['AUDIO'],
         'system_instruction': build_instruction(tools),
@@ -88,7 +89,7 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
 
 
 class LiveVoice:
-    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = True):
+    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = False):
         self.player = player
         self.transcripts = transcripts
         self.resume_handle: str | None = None
@@ -244,6 +245,7 @@ class LiveVoice:
 
     async def _capture_audio(self, reader, queue):
         activity_open = False
+        held_frames = 0
         try:
             while True:
                 try:
@@ -251,9 +253,25 @@ class LiveVoice:
                 except asyncio.IncompleteReadError:
                     raise EOFError('Microphone stream ended')
                 samples = struct.unpack('<320h', chunk)
-                self.microphone_rms = 0.0 if self.muted else (sum(x * x for x in samples) / 320) ** 0.5 / 32768
                 now = time.monotonic()
-                occupied = self.player.busy or (self._reply_authorized and not self.gate.active)
+                playing = self.player.is_playing(ECHO_TAIL_SECONDS)
+
+                # Half-duplex holdoff: while the assistant's voice is in the room/speakers,
+                # suppress microphone input to prevent self-interruption and echo loops.
+                held = not self.barge_in_enabled and playing
+                if held:
+                    held_frames += 1
+                    self.microphone_rms = 0.0
+                    self.gate.process(chunk, now=now, blocked=True)
+                    self.barge_gate.reset()
+                    continue
+
+                if held_frames:
+                    log.info('Microphone held %d frames while assistant was speaking', held_frames)
+                    held_frames = 0
+
+                self.microphone_rms = 0.0 if self.muted else (sum(x * x for x in samples) / 320) ** 0.5 / 32768
+                occupied = playing or (self._reply_authorized and not self.gate.active)
                 frame = None
                 if (self.barge_in_enabled and occupied and not self.muted and not self._drop_response
                         and not self._barge_pending):
@@ -300,7 +318,7 @@ class LiveVoice:
                 stale = generation != self.player.generation
                 chunk = frame.pcm
                 async with self.send_lock:
-                    blocked = self.muted or self.player.busy or self._drop_response or stale
+                    blocked = self.muted or self.player.is_playing(ECHO_TAIL_SECONDS) or self._drop_response or stale
                     if blocked:
                         chunk = bytes(len(chunk))
                     elif frame.opened:
@@ -344,11 +362,10 @@ class LiveVoice:
                 self._barge_pending = self._barge_turn = False
                 raise ConnectionError('Barge-in acknowledgement timeout')
             if (self._reply_authorized and not self.gate.active and not self.player.busy
-                    and time.monotonic() - self._last_progress > 20):
-                log.warning('No response from provider in 20s, resetting session')
-                self.resume_handle = None
+                    and time.monotonic() - self._last_progress > 15):
+                log.info('Turn wait timeout after 15s; settling back to idle')
                 self._reply_authorized = self._reply_started = self._waiting = False
-                raise ConnectionError('Provider response timeout')
+                self._drop_response = False
 
 
 async def run(args, key: str):
@@ -375,16 +392,16 @@ async def run(args, key: str):
     recovery = ConnectionRecovery(retry_budget=getattr(args, 'retries', 5))
 
     try:
-        async with genai.Client(api_key=key).aio as client:
-            while True:
-                started = time.monotonic()
-                session_opened = False
-                attempted_resume = bool(voice.resume_handle)
-                microphone = None
-                try:
-                    log.info('Connecting to %s (voice=%s)%s', model, voice_name,
-                             ' [resuming]' if voice.resume_handle else '')
-                    session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle, barge_in=voice.barge_in_enabled)
+        while True:
+            started = time.monotonic()
+            session_opened = False
+            attempted_resume = bool(voice.resume_handle)
+            microphone = None
+            try:
+                log.info('Connecting to %s (voice=%s)%s', model, voice_name,
+                         ' [resuming]' if voice.resume_handle else '')
+                session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle, barge_in=voice.barge_in_enabled)
+                async with genai.Client(api_key=key).aio as client:
                     async with client.live.connect(model=model, config=session_cfg) as session:
                         session_opened = True
                         voice.connected = True
@@ -408,21 +425,21 @@ async def run(args, key: str):
                             voice.publish_status(),
                             voice.monitor_response(),
                         )
-                except Exception as error:
-                    decision = recovery.decide(
-                        error, attempted_resume=attempted_resume,
-                        session_opened=session_opened, session_seconds=time.monotonic() - started)
-                    if decision.fresh_session:
-                        voice.resume_handle = None
-                    if decision.fatal:
-                        raise RuntimeError(f'Fatal voice error: {error}') from error
-                    log.warning('Voice session disconnected (%s), retry in %.2fs', error, decision.delay)
-                    await asyncio.sleep(decision.delay)
-                finally:
-                    voice.connected = False
-                    if microphone is not None:
-                        await stop_process(microphone)
-                    await player.interrupt()
+            except Exception as error:
+                decision = recovery.decide(
+                    error, attempted_resume=attempted_resume,
+                    session_opened=session_opened, session_seconds=time.monotonic() - started)
+                if decision.fresh_session:
+                    voice.resume_handle = None
+                if decision.fatal:
+                    raise RuntimeError(f'Fatal voice error: {error}') from error
+                log.warning('Voice session disconnected (%s), retry in %.2fs', error, decision.delay)
+                await asyncio.sleep(decision.delay)
+            finally:
+                voice.connected = False
+                if microphone is not None:
+                    await stop_process(microphone)
+                await player.interrupt()
     finally:
         await ipc.close()
 

@@ -11,7 +11,7 @@ def test_default_config():
     c = Config()
     assert c.model == 'gemini-3.8-live'
     assert c.voice == 'Aoede'
-    assert c.barge_in is True
+    assert c.barge_in is False
     assert c.autostart_listening is True
     assert c.api_key_env == 'GEMINI_API_KEY'
 

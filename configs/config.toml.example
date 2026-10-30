@@ -1,6 +1,6 @@
 model = "gemini-3.8-live"
 voice = "Aoede"
 device = ""
-barge_in = true
+barge_in = false
 autostart_listening = true
 api_key_env = "GEMINI_API_KEY"

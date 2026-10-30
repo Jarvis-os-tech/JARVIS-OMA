@@ -68,10 +68,13 @@ class Playback:
         self._arrival = asyncio.Event()
         self.reply_complete = False
 
+    def is_playing(self, tail: float = 0.0) -> bool:
+        return ((self._writing and self._writing_generation == self.generation)
+                or not self.queue.empty() or time.monotonic() < self.playback_until + tail)
+
     @property
     def busy(self):
-        return ((self._writing and self._writing_generation == self.generation)
-                or not self.queue.empty() or time.monotonic() < self.playback_until)
+        return self.is_playing(0.0)
 
     def enqueue(self, data):
         if len(data) % 2:

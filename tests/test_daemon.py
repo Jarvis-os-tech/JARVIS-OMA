@@ -42,7 +42,7 @@ def test_live_voice_status():
     assert status['state'] in ('connecting', 'speaking', 'listening', 'thinking', 'idle')
     assert 'muted' in status
     assert 'model' in status
-    assert status['automatic_barge_in'] is True
+    assert status['automatic_barge_in'] is False
 
 
 def test_live_voice_mute_and_interrupt():

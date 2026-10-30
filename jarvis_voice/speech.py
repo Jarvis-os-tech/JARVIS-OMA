@@ -204,9 +204,9 @@ class SpokenInterruption:
         self._frames.append(pcm)
 
         rms = float(np.sqrt(np.mean(samples * samples))) / 32768
-        if rms < .004:
-            # Fix 5: Still update the detector for state continuity, but
-            # don't promote to an interruption.
+        if rms < .025:
+            # Below 0.025 RMS is room tone or laptop speaker chassis bleed;
+            # real user speech interrupting over speakers is significantly louder.
             if self.detector is not None:
                 self.detector(pcm)
             self._positives = self._voiced_frames = 0
@@ -218,18 +218,18 @@ class SpokenInterruption:
             raise RuntimeError('Interruption detector returned an invalid probability')
         correlation = self.reference.correlation(self._microphone, now)
         self.last_correlation = correlation if correlation is not None else 1.0
-        if correlation is not None and correlation >= .75:
+        if correlation is not None and correlation >= .35:
             self.rejected_echo_frames += 1
             self._positives = self._voiced_frames = 0
             self._frames.clear()
             return None
-        if probability < .8:
+        if probability < .88:
             self._positives = self._voiced_frames = 0
             return None
         self._voiced_frames += 1
         if getattr(self.detector, 'fresh_prediction', True):
             self._positives += 1
-        if self._voiced_frames < 6 or self._positives < 4 or correlation is None:
+        if self._voiced_frames < 8 or self._positives < 6 or correlation is None:
             return None
         frame = GateFrame(b''.join(self._frames), opened=True, barge_in=True)
         self.reset()

@@ -60,3 +60,29 @@ async def test_cancel_pending_clears_queue():
     player.cancel_pending()
     assert player.queued_bytes == 0
     assert player.queue.empty()
+
+
+@pytest.mark.asyncio
+async def test_is_playing_with_echo_tail():
+    """is_playing honors echo tail duration for acoustic reflection holdoff."""
+    import time
+    from jarvis_voice.playback import Playback
+
+    player = Playback(sink='default')
+    assert not player.is_playing()
+
+    # Simulate active playback ending 0.1s from now
+    now = time.monotonic()
+    player.playback_until = now + 0.1
+
+    assert player.is_playing(tail=0.0)
+    assert player.is_playing(tail=0.35)
+
+    # Fast forward past playback_until but within tail
+    player.playback_until = now - 0.05
+    assert not player.is_playing(tail=0.0)
+    assert player.is_playing(tail=0.35)
+
+    # Past tail
+    player.playback_until = now - 0.40
+    assert not player.is_playing(tail=0.35)

@@ -37,7 +37,7 @@ class Config:
     model: str = 'gemini-3.8-live'
     voice: str = 'Aoede'
     device: str = ''
-    barge_in: bool = True
+    barge_in: bool = False
     autostart_listening: bool = True
     api_key_env: str = 'GEMINI_API_KEY'
 

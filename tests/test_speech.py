@@ -129,3 +129,56 @@ def test_speech_turn_closes_on_silence():
             break
 
     assert closed is True
+
+
+def test_speech_turn_gate_blocked_by_playback_holdoff():
+    """SpeechTurnGate blocks turn admission and suppresses frames when blocked=True."""
+    from jarvis_voice.speech import SpeechTurnGate
+
+    detector = FakeDetector(scores=[0.9, 0.9, 0.9])
+    gate = SpeechTurnGate(detector=detector, trigger_frames=2, tail_seconds=0.35)
+
+    speech = make_speech_frame()
+    # While blocked (e.g. assistant speaking), gate must return silence and stay inactive
+    f1 = gate.process(speech, now=0.0, blocked=True)
+    f2 = gate.process(speech, now=0.02, blocked=True)
+
+    assert f1.opened is False
+    assert f2.opened is False
+    assert gate.active is False
+    assert f1.pcm == bytes(640)
+    assert f2.pcm == bytes(640)
+    assert gate.suppressed_frames == 2
+
+
+def test_spoken_interruption_rejects_speaker_bleed_low_rms():
+    """SpokenInterruption rejects low-RMS acoustic speaker bleed (rms < 0.025)."""
+    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+
+    ref = PlaybackReference()
+    detector = FakeDetector(scores=[0.95] * 10)
+    interrupt = SpokenInterruption(reference=ref, detector=detector)
+
+    # Moderate amplitude speaker bleed (~0.015 RMS, amp=500)
+    bleed = make_pcm_frame(amplitude=500)
+    for i in range(10):
+        res = interrupt.process(bleed, now=float(i) * 0.02)
+        assert res is None, "Speaker bleed below 0.025 RMS must not trigger barge-in"
+
+
+def test_spoken_interruption_rejects_echo_correlation():
+    """SpokenInterruption rejects frames with correlation >= 0.35 against playback reference."""
+    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+
+    ref = PlaybackReference()
+    # Mock high correlation to simulate speaker audio matching reference
+    ref.correlation = lambda mic, now: 0.50
+
+    detector = FakeDetector(scores=[0.95] * 10)
+    interrupt = SpokenInterruption(reference=ref, detector=detector)
+
+    loud_speech = make_pcm_frame(amplitude=12000)
+    for i in range(10):
+        res = interrupt.process(loud_speech, now=float(i) * 0.02)
+        assert res is None, "Audio correlating >= 0.35 with playback reference must be rejected as echo"
+    assert interrupt.rejected_echo_frames > 0
