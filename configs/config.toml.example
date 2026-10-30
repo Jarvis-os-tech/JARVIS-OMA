@@ -3,4 +3,25 @@ voice = "Aoede"
 device = ""
 barge_in = false
 autostart_listening = true
+greet_on_start = true
 api_key_env = "GEMINI_API_KEY"
+
+[memory]
+enabled = true
+path = ""                               # Bridge default: $XDG_STATE_HOME/jarvis/memory
+max_facts = 1000                         # Positive integer
+context_max_chars = 6000                 # Positive integer
+record_sessions = true                  # Continuous text memory
+auto_capture = false                    # Requires a nonempty extraction_model
+extraction_model = ""                   # Optional local Ollama model
+extraction_url = "http://127.0.0.1:11434"
+obsidian_vault = ""                     # Existing Obsidian vault path
+obsidian_auto_sync = true               # Sync changes to linked Markdown notes
+obsidian_timezone = "Asia/Kolkata"       # Calendar date/day for daily conversation reports
+structured_capture = true               # Capture explicit user preferences/decisions/tasks locally
+semantic_retrieval = false              # Opt in after choosing an embedding model/provider
+semantic_provider = "gemini"            # Reuses GEMINI_API_KEY
+semantic_model = ""                     # Example: text-embedding-004
+semantic_url = "http://127.0.0.1:11434" # Used only when provider = "ollama"
+semantic_dimension = 768                 # Must match the selected embedding model
+semantic_min_score = 0.55               # Reject weak semantic-only matches
