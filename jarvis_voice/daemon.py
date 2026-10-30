@@ -28,20 +28,50 @@ INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
 
 
-def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = True) -> dict:
-    instruction = (
-        'You are JARVIS, a personal voice conversational companion on JARVIS OS. '
-        'Speak concisely, naturally, and directly. '
-        'STRICT OPERATIONAL BOUNDARIES & ANTI-HALLUCINATION RULES:\n'
-        '1. You currently operate in pure voice conversation mode with ZERO system tools attached.\n'
-        '2. You CANNOT open apps, move or tile windows, adjust volume or brightness, browse the web, read or modify files, or run system/terminal commands.\n'
-        '3. NEVER claim, promise, or pretend to perform any computer action or system task. If the user asks you to control the computer, open an app, or run a command, state plainly and concisely: "I do not have desktop control tools connected yet; I am currently in voice conversation mode."\n'
-        '4. Only answer questions from knowledge, converse, or brainstorm.\n'
-        '5. Speak only in response to the user. Give one concise reply per turn, then wait silently.'
+def build_instruction(tools: list | None = None) -> str:
+    """Build dynamically grounded system instruction reflecting currently loaded capabilities."""
+    active_tools = []
+    if tools:
+        for t in tools:
+            if isinstance(t, dict):
+                fns = t.get('function_declarations', [])
+                active_tools.extend(fn.get('name') for fn in fns if 'name' in fn)
+            elif hasattr(t, 'function_declarations'):
+                for fn in t.function_declarations:
+                    name = getattr(fn, 'name', None) or (fn.get('name') if isinstance(fn, dict) else '')
+                    if name:
+                        active_tools.append(name)
+            elif isinstance(t, str):
+                active_tools.append(t)
+
+    if active_tools:
+        tool_status = (
+            f"CURRENT ATTACHED OS TOOLS ({len(active_tools)} available): {', '.join(active_tools)}.\n"
+            "You CAN and SHOULD invoke these declared functions when the user asks for actions they support."
+        )
+    else:
+        tool_status = (
+            "CURRENT OS TOOLS: None attached yet (Foundational Voice Phase).\n"
+            "Desktop control and external actuators are currently being integrated step-by-step."
+        )
+
+    return (
+        "You are JARVIS, the sovereign voice-first AI operating system companion on JARVIS OS.\n"
+        "Speak concisely, naturally, and directly.\n\n"
+        f"{tool_status}\n\n"
+        "GROUNDING & CAPABILITY SELF-AWARENESS RULES:\n"
+        "1. Your real-world capabilities are strictly bounded by your declared tools in this session.\n"
+        "2. If you have a tool for a requested action, call that tool to execute it.\n"
+        "3. If the user asks for a capability or action that is NOT among your declared tools (for example, window manipulation, systemctl services, file editing, or live web search when no matching tool exists), be completely truthful: state clearly that this specific capability is not yet connected to your session.\n"
+        "4. NEVER hallucinate or pretend an action succeeded on the computer without a successful tool invocation.\n"
+        "5. Speak only in response to the user. Give one concise reply per turn, then wait silently."
     )
+
+
+def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = True, tools: list | None = None) -> dict:
     config = {
         'response_modalities': ['AUDIO'],
-        'system_instruction': instruction,
+        'system_instruction': build_instruction(tools),
         'speech_config': {'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}},
         'input_audio_transcription': {},
         'output_audio_transcription': {},
@@ -52,6 +82,8 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
     }
     if resume_handle:
         config['session_resumption'] = {'handle': resume_handle}
+    if tools:
+        config['tools'] = tools
     return config
 
 

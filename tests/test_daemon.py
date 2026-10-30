@@ -19,6 +19,16 @@ def test_live_config_produces_valid_dict():
     assert 'realtime_input_config' in config
     assert config['realtime_input_config']['automatic_activity_detection']['disabled'] is True
     assert config['speech_config']['voice_config']['prebuilt_voice_config']['voice_name'] == 'Aoede'
+    assert 'None attached yet' in config['system_instruction']
+
+
+def test_live_config_dynamic_capabilities_with_tools():
+    from jarvis_voice.daemon import live_config
+    tools = [{'function_declarations': [{'name': 'set_volume'}, {'name': 'tile_window'}]}]
+    config = live_config(voice='Puck', tools=tools)
+    assert config['tools'] == tools
+    assert 'set_volume, tile_window' in config['system_instruction']
+    assert 'CURRENT ATTACHED OS TOOLS (2 available)' in config['system_instruction']
 
 
 def test_live_voice_status():
