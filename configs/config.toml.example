@@ -1,0 +1,21 @@
+# PMA Voice Only Configuration (~/.config/pma-voice-only/config.toml)
+# Pure voice-first Linux runtime for Omarchy.
+
+# Live streaming voice model (default: gemini-3.8-live)
+model = "gemini-3.8-live"
+
+# Prebuilt voice name (e.g. Puck, Charon, Kore, Fenrir, Aoede)
+voice = "Puck"
+
+# Audio capture/playback device (empty for PipeWire default)
+device = ""
+
+# Spoken barge-in: cancel current playback when user speaks.
+# Note: Keep false when using speakers without hardware AEC/headphones to prevent self-triggering.
+barge_in = false
+
+# Automatically begin listening on service startup
+autostart_listening = true
+
+# Environment variable containing the API key
+api_key_env = "GEMINI_API_KEY"

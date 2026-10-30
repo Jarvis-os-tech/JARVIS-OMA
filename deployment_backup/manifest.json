@@ -1,0 +1,46 @@
+{
+  "before": {
+    "/home/g0pi/.config/systemd/user/omarchy-voice.service": {
+      "state": {
+        "missing": true
+      }
+    },
+    "/home/g0pi/.local/bin/omarchy-voice": {
+      "state": {
+        "missing": true
+      }
+    },
+    "/home/g0pi/.config/pma-voice-only/config.toml": {
+      "state": {
+        "missing": true
+      }
+    },
+    "/home/g0pi/.config/hypr/bindings.lua": {
+      "state": {
+        "sha256": "e149c4d8d33acb7ccb01e65b549eeea5894220cd4d45e10360acb685d3135f97",
+        "mode": 420
+      },
+      "backup": "files/.config/hypr/bindings.lua"
+    }
+  },
+  "runtime": "/home/g0pi/.local/share/pma-voice-only",
+  "service": "omarchy-voice.service",
+  "service_before": "ActiveState=inactive\nUnitFileState=\n",
+  "after": {
+    "/home/g0pi/.config/systemd/user/omarchy-voice.service": {
+      "sha256": "e3ef4d34593f9cf2fdf65e03f5769c98f8d3ff73c7ba97a5993efe0bde91cc8d",
+      "mode": 420
+    },
+    "/home/g0pi/.local/bin/omarchy-voice": {
+      "link": "/home/g0pi/.local/share/pma-voice-only/bin/omarchy-voice"
+    },
+    "/home/g0pi/.config/pma-voice-only/config.toml": {
+      "sha256": "aeee5863d4db526f648560f5301f3874faf75b2ae6bf126bb137e876852ccccc",
+      "mode": 384
+    },
+    "/home/g0pi/.config/hypr/bindings.lua": {
+      "sha256": "fae74cf9030234d7bd9ba6934d9cc4fa31718e5defa228c2a6e5c53e84697f46",
+      "mode": 420
+    }
+  }
+}

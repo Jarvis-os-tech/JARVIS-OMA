@@ -1,0 +1,26 @@
+[Unit]
+Description=PMA Voice Only — Omarchy Voice-First Linux Runtime
+Documentation=https://github.com/wombatoperator/omarchy-voice#readme
+After=graphical-session.target pipewire.service wireplumber.service
+PartOf=graphical-session.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/pma-voice-only/bin/omarchy-voice run
+WorkingDirectory=%h/.local/share/pma-voice-only
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=8
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

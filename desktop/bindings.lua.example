@@ -1,0 +1,7 @@
+-- Hyprland Keybinding for PMA Voice Only in Omarchy Linux
+-- Add to ~/.config/hypr/bindings.lua:
+
+-- BEGIN pma-voice-only
+-- Voice conversation only: no desktop actions or other assistant features.
+o.bind("SUPER + SHIFT + V", "PMA voice: toggle listening", os.getenv("HOME") .. "/.local/bin/omarchy-voice listen toggle")
+-- END pma-voice-only

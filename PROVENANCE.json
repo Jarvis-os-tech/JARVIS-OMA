@@ -1,0 +1,27 @@
+{
+  "audio_symbols": [
+    {
+      "source": "Oma Jarvis/voice/pma/engines/openai_realtime/realtime.py",
+      "symbol": "frame_level",
+      "start": 87,
+      "end": 107,
+      "sha256": "167ab0007e3f138a1c9ae933e789cff0614c27a05e7701de6ed709115334be2d"
+    },
+    {
+      "source": "Oma Jarvis/voice/pma/engines/openai_realtime/realtime.py",
+      "symbol": "Speaker",
+      "start": 268,
+      "end": 401,
+      "sha256": "26ad95ccd7ce06e71f5b170fad58ed3e7e546b6131101c31d219c3dbdf319908"
+    },
+    {
+      "source": "Oma Jarvis/voice/pma/engines/openai_realtime/realtime.py",
+      "symbol": "_terminate",
+      "start": 1334,
+      "end": 1352,
+      "sha256": "7c82bb5ff2ff928f276f6384e748795cc01241734ea91b8ab47e863931970617"
+    }
+  ],
+  "session": "unchanged controls/session.py",
+  "derivative": "New voice-only session and CLI; no tools, browser, tasks, camera or planner imports"
+}

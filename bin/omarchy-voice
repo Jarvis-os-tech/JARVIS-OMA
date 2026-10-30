@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""PMA Voice Only CLI & Daemon Runner for Omarchy Linux."""
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+
+# Add parent directory of pma_voice_only package to sys.path
+bin_dir = Path(__file__).resolve().parent
+# Support both in-tree running (repo/pma_voice_only/bin) and installed running (~/.local/share/pma-voice-only/bin)
+candidates = [bin_dir.parent, bin_dir.parents[1]]
+for candidate in candidates:
+    if (candidate / "pma_voice_only" / "__init__.py").exists() or (candidate / "__init__.py").exists():
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+        break
+else:
+    sys.path.insert(0, str(bin_dir.parent))
+
+from pma_voice_only.__main__ import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

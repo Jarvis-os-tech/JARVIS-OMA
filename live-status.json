@@ -1,0 +1,26 @@
+{
+  "mode": "voice-only",
+  "provider": "gemini",
+  "model": "gemini-3.8-live",
+  "voice": "Puck",
+  "listening": true,
+  "connected": true,
+  "requested_listening": true,
+  "tools_enabled": false,
+  "features": [
+    "microphone",
+    "speech",
+    "playback",
+    "interruptions"
+  ],
+  "microphone_pid": 112691,
+  "playback_pid": 0,
+  "barge_in": false,
+  "error": "",
+  "input_bytes": 24,
+  "output_bytes": 0,
+  "blocked_tool_calls": 0,
+  "interruptions": 0,
+  "connections": 1,
+  "last_audio_at": 0
+}

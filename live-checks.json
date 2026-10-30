@@ -1,0 +1,35 @@
+{
+  "microphone_streaming": true,
+  "mute_closes_capture_and_connection": true,
+  "service_pid_preserved_on_mute": true,
+  "resume_reconnects": true,
+  "spoken_response_reached_playback": true,
+  "voice_hotkey_present": true,
+  "jarvis_still_masked": true,
+  "final_status": {
+    "mode": "voice-only",
+    "provider": "gemini",
+    "model": "gemini-3.8-live",
+    "voice": "Puck",
+    "listening": true,
+    "connected": true,
+    "requested_listening": true,
+    "tools_enabled": false,
+    "features": [
+      "microphone",
+      "speech",
+      "playback",
+      "interruptions"
+    ],
+    "microphone_pid": 115060,
+    "playback_pid": 115092,
+    "barge_in": false,
+    "error": "",
+    "input_bytes": 2741186,
+    "output_bytes": 396484,
+    "blocked_tool_calls": 0,
+    "interruptions": 0,
+    "connections": 2,
+    "last_audio_at": 1793364050.479626
+  }
+}
