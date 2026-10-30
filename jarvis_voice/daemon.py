@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .config import load as load_config, load_env
 from .ipc import ControlServer
-from .playback import Playback, stop_process, audio_environment
+from .playback import Playback, MicrophoneBacklogError, stop_process, audio_environment
 from .recovery import ConnectionRecovery
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
 
@@ -27,6 +27,19 @@ log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
+
+
+async def supervise(*workers):
+    """Stop and await every session worker when any worker exits or fails."""
+    tasks = [asyncio.create_task(worker) for worker in workers]
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def build_instruction(tools: list | None = None) -> str:
@@ -56,9 +69,13 @@ def build_instruction(tools: list | None = None) -> str:
             "Desktop control and external actuators are currently being integrated step-by-step."
         )
 
-    return (
+    inst = (
         "You are JARVIS, the sovereign voice-first AI operating system companion on JARVIS OS.\n"
-        "Speak concisely, naturally, and directly.\n\n"
+        "Speak clearly in a warm, relaxed conversational voice. Use natural contractions.\n"
+        "Answer the main point first, usually in one or two short sentences; expand when asked.\n"
+        "Match the user's language and pace. Ask one brief question if clarification is needed.\n"
+        "Avoid repeated greetings, filler, and reading lists or formatting aloud.\n"
+        "Be honest that you are an AI if asked; never claim to be human.\n\n"
         f"{tool_status}\n\n"
         "GROUNDING & CAPABILITY SELF-AWARENESS RULES:\n"
         "1. Your real-world capabilities are strictly bounded by your declared tools in this session.\n"
@@ -67,12 +84,29 @@ def build_instruction(tools: list | None = None) -> str:
         "4. NEVER hallucinate or pretend an action succeeded on the computer without a successful tool invocation.\n"
         "5. Speak only in response to the user. Give one concise reply per turn, then wait silently."
     )
+    return inst
 
 
-def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = False, tools: list | None = None) -> dict:
-    config = {
+def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in: bool = False, tools: list | None = None, skills=None, config=None) -> dict:
+    instruction = build_instruction(tools)
+    if skills is not None and hasattr(skills, 'memory_context'):
+        memory_config = getattr(config, 'memory', None)
+        if memory_config is None or memory_config.enabled:
+            instruction += (
+                '\nJARVIS has persistent memory. Use recall_memory and memory_status before answering '
+                'questions about previous conversations or claiming no memory exists. '
+                'Conversation text is retained continuously across restarts when continuous_history '
+                'is enabled; provider connections do not reset that memory. Only relevant recent data '
+                'is included here; search recall_memory for older context. Do not invent memories '
+                'or assume that unsaved conversations can be recovered.'
+            )
+        mem_ctx = skills.memory_context()
+        if mem_ctx:
+            instruction += f"\n\nActive Memory Context:\n{mem_ctx}"
+
+    cfg = {
         'response_modalities': ['AUDIO'],
-        'system_instruction': build_instruction(tools),
+        'system_instruction': instruction,
         'speech_config': {'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}},
         'input_audio_transcription': {},
         'output_audio_transcription': {},
@@ -82,14 +116,14 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
         },
     }
     if resume_handle:
-        config['session_resumption'] = {'handle': resume_handle}
+        cfg['session_resumption'] = {'handle': resume_handle}
     if tools:
-        config['tools'] = tools
-    return config
+        cfg['tools'] = tools
+    return cfg
 
 
 class LiveVoice:
-    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = False, greet_on_start: bool = True):
+    def __init__(self, player: Playback, *, transcripts: bool = False, speech_gate: SpeechTurnGate | None = None, barge_in: bool = False, greet_on_start: bool = True, skills=None, config=None):
         self.player = player
         self.transcripts = transcripts
         self.resume_handle: str | None = None
@@ -99,6 +133,10 @@ class LiveVoice:
         self.model = ''
         self.greet_on_start = bool(greet_on_start)
         self._greeted = False
+        self.skills = skills
+        self.config = config
+        self._memory_user = ''
+        self._memory_assistant = ''
         self.microphone_rms = 0.0
         self.microphone_frames_sent = 0
         self.provider_audio_bytes = 0
@@ -116,10 +154,13 @@ class LiveVoice:
         self._last_progress = time.monotonic()
         self._speech_opened_at: float | None = None
         self._speech_closed_at: float | None = None
+        self.response_first_audio_ms: int | None = None
         self.broadcast = None
         self.gate = speech_gate or SpeechTurnGate(silence_frames=20)
         self.barge_in_enabled = bool(barge_in)
-        self.barge_gate = SpokenInterruption(player.reference, detector=self.gate.detector)
+        ref = getattr(player, 'reference', None)
+        detector = getattr(self.gate, 'detector', None) if self.gate else None
+        self.barge_gate = SpokenInterruption(ref, detector=detector) if ref else None
         self._user_text = ''
         self._assistant_text = ''
         self._capture_queue: asyncio.Queue | None = None
@@ -143,6 +184,10 @@ class LiveVoice:
             'provider_interruptions': self.provider_interruptions,
             'local_interruptions': self.local_interruptions,
             'accepted_speech_turns': self.gate.accepted_turns,
+            'latency': {
+                'speech_end_to_first_audio_ms': self.response_first_audio_ms,
+                'first_audio_chunk_to_write_ms': self.player.first_chunk_write_ms,
+            },
         }
 
     def set_muted(self, muted: bool) -> bool:
@@ -155,7 +200,8 @@ class LiveVoice:
 
     def interrupt(self):
         self._barge_pending = self._barge_turn = False
-        self.barge_gate.reset()
+        if self.barge_gate is not None:
+            self.barge_gate.reset()
         suppress = self._waiting or self._model_active
         process = self.player.cancel_pending()
         self._drop_response = suppress
@@ -221,14 +267,17 @@ class LiveVoice:
             incoming = getattr(content, 'input_transcription', None)
             if incoming is not None and getattr(incoming, 'text', None):
                 self.recognized_input_events += 1
+                self._memory_user = (self._memory_user + incoming.text)[-16000:]
                 if self._reply_authorized:
                     self._user_text += incoming.text
                 if self._reply_authorized and not self._reply_started:
                     self._waiting = True
 
             outgoing = getattr(content, 'output_transcription', None)
-            if outgoing is not None and getattr(outgoing, 'text', None) and self._reply_authorized and not self._barge_turn:
-                self._assistant_text += outgoing.text
+            if outgoing is not None and getattr(outgoing, 'text', None):
+                self._memory_assistant = (self._memory_assistant + outgoing.text)[-16000:]
+                if self._reply_authorized and not self._barge_turn:
+                    self._assistant_text += outgoing.text
 
             if getattr(content, 'interrupted', False):
                 self.provider_interruptions += 1
@@ -249,19 +298,31 @@ class LiveVoice:
                         if not self.muted and not self._drop_response and self._reply_authorized:
                             self._barge_turn = False
                             if not self._reply_started:
+                                if self._speech_closed_at is not None:
+                                    self.response_first_audio_ms = max(0, round(
+                                        (time.monotonic() - self._speech_closed_at) * 1000))
                                 self.player.begin_reply()
                             self._reply_started = True
                             self._last_progress = time.monotonic()
                             self.player.enqueue(blob.data)
 
             if getattr(content, 'turn_complete', False):
+                memory_config = getattr(self.config, 'memory', None)
+                if self.skills is not None and memory_config and memory_config.enabled and (
+                        memory_config.record_sessions or memory_config.auto_capture or
+                        memory_config.structured_capture):
+                    if hasattr(self.skills, 'queue_memory_exchange'):
+                        self.skills.queue_memory_exchange(self._memory_user, self._memory_assistant)
+                    self._memory_user = ''
+                    self._memory_assistant = ''
                 if self._user_text.strip():
                     log.info('User: "%s"', self._user_text.strip())
                 if self._assistant_text.strip():
                     log.info('JARVIS: "%s"', self._assistant_text.strip())
                 self._user_text = ''
                 self._assistant_text = ''
-                self.player.finish_reply()
+                if hasattr(self.player, 'finish_reply'):
+                    self.player.finish_reply()
                 self._drop_response = self._model_active = False
                 self._waiting = False
                 self._reply_authorized = self._reply_started = False
@@ -287,7 +348,8 @@ class LiveVoice:
                     held_frames += 1
                     self.microphone_rms = 0.0
                     self.gate.process(chunk, now=now, blocked=True)
-                    self.barge_gate.reset()
+                    if self.barge_gate is not None:
+                        self.barge_gate.reset()
                     continue
 
                 if held_frames:
@@ -297,17 +359,20 @@ class LiveVoice:
                 self.microphone_rms = 0.0 if self.muted else (sum(x * x for x in samples) / 320) ** 0.5 / 32768
                 occupied = playing or (self._reply_authorized and not self.gate.active)
                 frame = None
-                if (self.barge_in_enabled and occupied and not self.muted and not self._drop_response
+                if (self.barge_in_enabled and self.barge_gate is not None and occupied and not self.muted and not self._drop_response
                         and not self._barge_pending):
                     frame = self.barge_gate.process(chunk, now)
                     if frame is not None:
                         self._accept_interruption()
-                else:
+                elif self.barge_gate is not None:
                     self.barge_gate.reset()
                 if frame is None:
                     frame = self.gate.process(chunk, now=now, blocked=self.muted or occupied or self._drop_response)
                 if frame.opened:
                     self._speech_opened_at = now
+                    self._speech_closed_at = None
+                    self.response_first_audio_ms = None
+                    self._user_text = self._assistant_text = ''
                     self._reply_authorized = self._waiting = True
                     self._reply_started = self._drop_response = self._model_active = False
                     self._last_progress = now
@@ -323,44 +388,45 @@ class LiveVoice:
                 try:
                     queue.put_nowait((frame, self.player.generation))
                 except asyncio.QueueFull:
-                    pass
+                    raise MicrophoneBacklogError(
+                        'Active microphone backlog exceeded four seconds') from None
                 if frame.closed:
                     activity_open = False
         except asyncio.CancelledError:
             raise
 
     async def send_audio(self, session, reader):
-        from google.genai import types
-
         queue = asyncio.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
         self._capture_queue = queue
-        capture = asyncio.create_task(self._capture_audio(reader, queue))
-        activity_open = False
         try:
-            while True:
-                frame, generation = await queue.get()
-                stale = generation != self.player.generation
-                chunk = frame.pcm
-                async with self.send_lock:
-                    blocked = self.muted or self.player.is_playing(ECHO_TAIL_SECONDS) or self._drop_response or stale
-                    if blocked:
-                        chunk = bytes(len(chunk))
-                    elif frame.opened:
-                        if activity_open:
-                            await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
-                            activity_open = False
-                        await asyncio.wait_for(session.send_realtime_input(activity_start=types.ActivityStart()), 3)
-                        activity_open = True
-                    await asyncio.wait_for(session.send_realtime_input(
-                        audio=types.Blob(data=chunk, mime_type='audio/pcm;rate=16000')), 3)
-                    self.microphone_frames_sent += len(chunk) // INPUT_BYTES
-                    if activity_open and (frame.closed or blocked):
+            await supervise(self._capture_audio(reader, queue), self._send_frames(session, queue))
+        finally:
+            self._capture_queue = None
+
+    async def _send_frames(self, session, queue):
+        from google.genai import types
+
+        activity_open = False
+        while True:
+            frame, generation = await queue.get()
+            stale = generation != self.player.generation
+            chunk = frame.pcm
+            async with self.send_lock:
+                blocked = self.muted or self.player.is_playing(ECHO_TAIL_SECONDS) or self._drop_response or stale
+                if blocked:
+                    chunk = bytes(len(chunk))
+                elif frame.opened:
+                    if activity_open:
                         await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
                         activity_open = False
-        finally:
-            capture.cancel()
-            await asyncio.gather(capture, return_exceptions=True)
-            self._capture_queue = None
+                    await asyncio.wait_for(session.send_realtime_input(activity_start=types.ActivityStart()), 3)
+                    activity_open = True
+                await asyncio.wait_for(session.send_realtime_input(
+                    audio=types.Blob(data=chunk, mime_type='audio/pcm;rate=16000')), 3)
+                self.microphone_frames_sent += len(chunk) // INPUT_BYTES
+                if activity_open and (frame.closed or blocked):
+                    await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
+                    activity_open = False
 
     async def receive(self, session):
         while True:
@@ -400,7 +466,7 @@ async def run(args, key: str):
     voice_name = getattr(args, 'voice', None) or config.voice
     device = getattr(args, 'device', None) or config.device
 
-    player = Playback(sink=device or 'default')
+    player = Playback(sink=config.output_device or 'default')
     voice = LiveVoice(
         player,
         transcripts=getattr(args, 'transcripts', False),
@@ -426,6 +492,7 @@ async def run(args, key: str):
             session_opened = False
             attempted_resume = bool(voice.resume_handle)
             microphone = None
+            retry_delay = 0.0
             try:
                 log.info('Connecting to %s (voice=%s)%s', model, voice_name,
                          ' [resuming]' if voice.resume_handle else '')
@@ -447,9 +514,12 @@ async def run(args, key: str):
                             *mic_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                             env=audio_environment())
 
-                        asyncio.create_task(voice.send_greeting(session))
+                        async def greet_and_wait():
+                            await voice.send_greeting(session)
+                            await asyncio.Event().wait()
 
-                        await asyncio.gather(
+                        await supervise(
+                            greet_and_wait(),
                             voice.send_audio(session, microphone.stdout),
                             voice.receive(session),
                             player.run(),
@@ -465,12 +535,20 @@ async def run(args, key: str):
                 if decision.fatal:
                     raise RuntimeError(f'Fatal voice error: {error}') from error
                 log.warning('Voice session disconnected (%s), retry in %.2fs', error, decision.delay)
-                await asyncio.sleep(decision.delay)
+                retry_delay = decision.delay
             finally:
                 voice.connected = False
                 if microphone is not None:
                     await stop_process(microphone)
+                voice._reply_authorized = voice._reply_started = voice._waiting = False
+                voice._drop_response = voice._model_active = False
+                voice._barge_pending = voice._barge_turn = False
+                voice._user_text = voice._assistant_text = ''
+                voice._speech_closed_at = None
+                voice.gate.reset()
+                voice.barge_gate.reset()
                 await player.interrupt()
+            await asyncio.sleep(retry_delay)
     finally:
         await ipc.close()
 

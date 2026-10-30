@@ -16,6 +16,10 @@ from .embeddings import (
     StaticEmbeddingProvider,
     DeterministicFakeEmbeddingProvider,
 )
+from .bridge import MemoryBridge, MemoryError
+from .skills import MemorySkills, DesktopSkills, SkillError
+from .service_facade import UniversalMemoryService
+from .importers import SiblingSessionImporter
 
 __all__ = [
     "Config",
@@ -35,4 +39,11 @@ __all__ = [
     "OllamaEmbeddingProvider",
     "StaticEmbeddingProvider",
     "DeterministicFakeEmbeddingProvider",
+    "MemoryBridge",
+    "MemoryError",
+    "MemorySkills",
+    "DesktopSkills",
+    "SkillError",
+    "UniversalMemoryService",
+    "SiblingSessionImporter",
 ]
