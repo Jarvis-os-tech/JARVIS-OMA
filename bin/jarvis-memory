@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# bin/jarvis-memory — Sovereign Memory CLI wrapper for JARVIS OS
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+    PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+elif [[ -x "${HOME}/Projects/JARVIS-OMA/.venv/bin/python" ]]; then
+    PYTHON="${HOME}/Projects/JARVIS-OMA/.venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
+exec "$PYTHON" -m jarvis_memory "$@"

@@ -86,3 +86,67 @@ async def test_is_playing_with_echo_tail():
     # Past tail
     player.playback_until = now - 0.40
     assert not player.is_playing(tail=0.35)
+
+
+@pytest.mark.asyncio
+async def test_fragmented_reply_keeps_pcm_intact_with_continuity_buffer():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock, patch
+    from jarvis_voice.playback import Playback
+
+    process = SimpleNamespace(returncode=None, stdin=SimpleNamespace(
+        write=Mock(), drain=AsyncMock(), close=Mock()))
+    player = Playback('default')
+
+    async def until(predicate):
+        async with asyncio.timeout(1):
+            while not predicate():
+                await asyncio.sleep(0)
+
+    with patch('jarvis_voice.playback.asyncio.create_subprocess_exec',
+               AsyncMock(return_value=process)) as spawn:
+        worker = asyncio.create_task(player.run())
+        try:
+            player.enqueue(b'\x01\x00')
+            await until(lambda: player._writing)
+            process.stdin.write.assert_not_called()
+            rest = b'\x02\x00' * 3000
+            player.enqueue(rest)
+            player.finish_reply()
+            await until(lambda: sum(len(c.args[0]) for c in process.stdin.write.call_args_list) == 2 + len(rest))
+            assert b''.join(c.args[0] for c in process.stdin.write.call_args_list) == b'\x01\x00' + rest
+            args = spawn.call_args.args
+            assert args[args.index('--latency') + 1] == '80ms'
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_buffering_discards_old_audio_and_flushes_short_reply():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock, patch
+    from jarvis_voice.playback import Playback
+
+    process = SimpleNamespace(returncode=None, stdin=SimpleNamespace(
+        write=Mock(), drain=AsyncMock(), close=Mock()))
+    player = Playback('default')
+
+    async def until(predicate):
+        async with asyncio.timeout(1):
+            while not predicate():
+                await asyncio.sleep(0)
+
+    with patch('jarvis_voice.playback.asyncio.create_subprocess_exec', AsyncMock(return_value=process)):
+        worker = asyncio.create_task(player.run())
+        try:
+            player.enqueue(b'\x01\x00')
+            await until(lambda: player._writing)
+            player.cancel_pending()
+            player.enqueue(b'\x02\x00')
+            player.finish_reply()
+            await until(lambda: process.stdin.write.called)
+            assert [c.args[0] for c in process.stdin.write.call_args_list] == [b'\x02\x00']
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)

@@ -9,6 +9,11 @@ import time
 
 from .speech import PlaybackReference
 
+PLAYBACK_LATENCY = '80ms'
+PLAYBACK_LEAD_SECONDS = .12
+PRIME_BYTES = 3840  # 80 ms of 24 kHz mono PCM16
+PRIME_WAIT_SECONDS = .04  # Bound startup delay without reducing the device buffer
+
 OUTPUT_BYTES = 960  # 20 ms at 24 kHz mono PCM16
 PLAYBACK_MAX_BYTES = 48000 * 60  # 60 seconds
 
@@ -113,9 +118,9 @@ class Playback:
 
     async def _prime(self, generation, first_bytes):
         """Absorb short provider gaps without waiting for an entire response."""
-        deadline = time.monotonic() + .12
+        deadline = time.monotonic() + PRIME_WAIT_SECONDS
         while (generation == self.generation and not self.reply_complete
-               and first_bytes + self.queued_bytes < 3840):
+               and first_bytes + self.queued_bytes < PRIME_BYTES):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -137,7 +142,7 @@ class Playback:
             if self.process is None:
                 process = await asyncio.create_subprocess_exec(
                     'pw-play', '--rate', '24000', '--channels', '1', '--format', 's16',
-                    '--latency', '40ms', '--target', self.sink, '-a', '-',
+                    '--latency', PLAYBACK_LATENCY, '--target', self.sink, '-a', '-',
                     stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                     env=audio_environment())
                 if generation != self.generation:
@@ -188,4 +193,4 @@ class Playback:
                 self.playback_until = max(self.playback_until, now) + len(data) / 48000
             finally:
                 self._writing = False
-            await asyncio.sleep(max(0.0, self.playback_until - time.monotonic() - 0.08))
+            await asyncio.sleep(max(0.0, self.playback_until - time.monotonic() - PLAYBACK_LEAD_SECONDS))

@@ -36,7 +36,8 @@ def load_env():
 class Config:
     model: str = 'gemini-3.8-live'
     voice: str = 'Aoede'
-    device: str = ''
+    device: str = ''  # Microphone source only
+    output_device: str = ''  # Speaker sink; empty uses the system default
     barge_in: bool = False
     autostart_listening: bool = True
     greet_on_start: bool = True

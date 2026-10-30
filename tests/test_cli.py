@@ -83,3 +83,14 @@ def test_cli_systemd_commands(monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'enable'])
     assert main() == 0
     assert calls[-1] == ['systemctl', '--user', 'enable', '--now', 'jarvis-voice.service']
+
+
+def test_run_honors_configured_model_unless_overridden(monkeypatch):
+    from jarvis_voice.__main__ import main
+
+    monkeypatch.delenv('GEMINI_LIVE_MODEL', raising=False)
+    with patch('jarvis_voice.daemon.main', return_value=0) as run:
+        assert main(['run']) == 0
+        assert run.call_args.args[0].model is None
+        assert main(['run', '--model', 'explicit-model']) == 0
+        assert run.call_args.args[0].model == 'explicit-model'

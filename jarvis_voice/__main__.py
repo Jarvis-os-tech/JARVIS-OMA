@@ -75,7 +75,7 @@ def main(argv=None):
         choices=['run', 'status', 'listen', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
         help='Command to execute (default: run)')
     parser.add_argument('action', nargs='?', help='Action for listen command')
-    parser.add_argument('--model', default=os.getenv('GEMINI_LIVE_MODEL', 'gemini-3.8-live'))
+    parser.add_argument('--model', default=os.getenv('GEMINI_LIVE_MODEL'))
     parser.add_argument('--voice', default=None, help='Gemini voice name')
     parser.add_argument('--check', action='store_true',
         help='Check dependencies without opening audio or network')
@@ -110,9 +110,9 @@ def main(argv=None):
         try:
             from jarvis_voice.daemon import main as daemon_main
             return daemon_main(args)
-        except ImportError:
-            print('jarvis-voice: daemon start requires full implementation (Task 7)')
-            return 0
+        except ImportError as error:
+            print(f'Voice dependency unavailable: {error}', file=sys.stderr)
+            return 1
 
     return 0
 

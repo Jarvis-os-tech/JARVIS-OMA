@@ -106,6 +106,7 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
 
     cfg = {
         'response_modalities': ['AUDIO'],
+        'thinking_config': {'thinking_budget': 0},
         'system_instruction': instruction,
         'speech_config': {'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}},
         'input_audio_transcription': {},
@@ -155,8 +156,10 @@ class LiveVoice:
         self._speech_opened_at: float | None = None
         self._speech_closed_at: float | None = None
         self.response_first_audio_ms: int | None = None
+        self.activity_end_sent_at: float | None = None
+        self.provider_first_audio_ms: int | None = None
         self.broadcast = None
-        self.gate = speech_gate or SpeechTurnGate(silence_frames=20)
+        self.gate = speech_gate or SpeechTurnGate(silence_frames=15, tail_seconds=.20)
         self.barge_in_enabled = bool(barge_in)
         ref = getattr(player, 'reference', None)
         detector = getattr(self.gate, 'detector', None) if self.gate else None
@@ -187,6 +190,10 @@ class LiveVoice:
             'latency': {
                 'speech_end_to_first_audio_ms': self.response_first_audio_ms,
                 'first_audio_chunk_to_write_ms': self.player.first_chunk_write_ms,
+                'activity_end_to_first_audio_ms': self.provider_first_audio_ms,
+                'speech_active': self.gate.active,
+                'speech_probability': self.gate.last_probability,
+                'capture_queue_frames': self._capture_queue.qsize() if self._capture_queue else 0,
             },
         }
 
@@ -298,6 +305,13 @@ class LiveVoice:
                         if not self.muted and not self._drop_response and self._reply_authorized:
                             self._barge_turn = False
                             if not self._reply_started:
+                                if self.activity_end_sent_at is not None:
+                                    self.provider_first_audio_ms = max(0, round(
+                                        (time.monotonic() - self.activity_end_sent_at) * 1000))
+                                log.info('First response audio: local_end_ms=%s provider_ms=%s',
+                                         None if self._speech_closed_at is None else round(
+                                             (time.monotonic() - self._speech_closed_at) * 1000),
+                                         self.provider_first_audio_ms)
                                 if self._speech_closed_at is not None:
                                     self.response_first_audio_ms = max(0, round(
                                         (time.monotonic() - self._speech_closed_at) * 1000))
@@ -372,6 +386,8 @@ class LiveVoice:
                     self._speech_opened_at = now
                     self._speech_closed_at = None
                     self.response_first_audio_ms = None
+                    self.activity_end_sent_at = None
+                    self.provider_first_audio_ms = None
                     self._user_text = self._assistant_text = ''
                     self._reply_authorized = self._waiting = True
                     self._reply_started = self._drop_response = self._model_active = False
@@ -380,6 +396,8 @@ class LiveVoice:
                     log.info('Accepted local speech turn id=%d', self.gate.accepted_turns)
                 if frame.closed:
                     self._speech_closed_at = now
+                    log.info('Local speech closed after %.0f ms',
+                             (now - self._speech_opened_at) * 1000 if self._speech_opened_at else 0)
                     self._last_progress = now
                 if not activity_open:
                     continue
@@ -426,6 +444,8 @@ class LiveVoice:
                 self.microphone_frames_sent += len(chunk) // INPUT_BYTES
                 if activity_open and (frame.closed or blocked):
                     await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
+                    self.activity_end_sent_at = time.monotonic()
+                    log.info('Speech uploaded; waiting for provider audio')
                     activity_open = False
 
     async def receive(self, session):

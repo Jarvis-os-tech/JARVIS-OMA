@@ -51,3 +51,15 @@ def test_runtime_paths():
     assert RUNTIME_DIR.name == 'jarvis'
     assert SOCKET_PATH.name == 'control.sock'
     assert STATE_FILE.name == 'state.json'
+
+
+def test_input_and_output_devices_are_independent(tmp_path, monkeypatch):
+    from jarvis_voice.config import load
+
+    monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path))
+    directory = tmp_path / 'jarvis-voice'
+    directory.mkdir()
+    (directory / 'config.toml').write_text('device = "microphone"\noutput_device = "speakers"\n')
+    config = load()
+    assert config.device == 'microphone'
+    assert config.output_device == 'speakers'
