@@ -8,7 +8,14 @@ from .store import LocalFactStore
 from .chunking import chunk_text, ChunkConfig
 from .knowledge import KnowledgeStore
 from .vector_store import VectorStore
-from .embeddings import get_embedding_provider, GeminiEmbeddingProvider, OllamaEmbeddingProvider
+from .embeddings import (
+    EmbeddingError,
+    EmbeddingProvider,
+    GeminiEmbeddingProvider,
+    OllamaEmbeddingProvider,
+    StaticEmbeddingProvider,
+    DeterministicFakeEmbeddingProvider,
+)
 
 __all__ = [
     "Config",
@@ -22,7 +29,10 @@ __all__ = [
     "ChunkConfig",
     "KnowledgeStore",
     "VectorStore",
-    "get_embedding_provider",
+    "EmbeddingError",
+    "EmbeddingProvider",
     "GeminiEmbeddingProvider",
     "OllamaEmbeddingProvider",
+    "StaticEmbeddingProvider",
+    "DeterministicFakeEmbeddingProvider",
 ]

@@ -12,7 +12,7 @@ import math
 import tempfile
 import unittest
 
-from config import MemoryConfig
+from jarvis_memory.config import MemoryConfig
 from jarvis_memory.bridge import MemoryBridge
 
 
