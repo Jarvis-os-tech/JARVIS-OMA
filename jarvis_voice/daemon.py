@@ -337,7 +337,7 @@ async def run(args, key: str):
                     log.info('Connecting to %s (voice=%s)%s', model, voice_name,
                              ' [resuming]' if voice.resume_handle else '')
                     session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle, barge_in=voice.barge_in_enabled)
-                    async with client.aio.live.connect(model=model, config=session_cfg) as session:
+                    async with client.live.connect(model=model, config=session_cfg) as session:
                         session_opened = True
                         voice.connected = True
                         log.info('Connected to Gemini Live — streaming audio')
