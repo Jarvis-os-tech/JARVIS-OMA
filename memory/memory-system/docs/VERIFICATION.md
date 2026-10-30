@@ -1,0 +1,90 @@
+# File provenance
+
+Source: https://github.com/open-jarvis/OpenJarvis
+Commit: `ccf02ec7bdda2e2b344eeb8dd986d742ff458acc` (2026-10-12)
+
+Every file below is a copy. Most are byte-identical to upstream; verify with:
+
+```bash
+sha256sum -c docs/SHA256SUMS   # from the upstream clone root
+```
+
+Files carrying a fix are listed under **Modified** below. The fixes are also
+shipped as reviewable patches in `patches/`, and post-fix copies end in
+`.fixed`.
+
+## Added by this study (not upstream)
+
+- `tests/test_trust_gate.py` — pins the trust invariant; 10 tests, see `docs/DEFECT-FIXES.md`
+
+## Modified
+
+None — all files match upstream.
+
+## Not covered by the sums
+
+- `99-support/config-memory-excerpt.py` — synthesized (lifts memory classes out of `core/config.py`)
+- `*.fixed` files — post-fix copies
+- `patches/*.patch` — unified diffs
+
+## Files
+
+```
+378afcbb84f5ae7a46cb01f04ae01d824e92b5c84eeae1ae835f8c3875bd2ed0  01-facts/python/__init__.py  <-  src/openjarvis/memory/__init__.py
+6891e82c6c491ae692ec671932d0289fc4657faa817e77f4ebbeb849cf85aab6  01-facts/python/extractor.py  <-  src/openjarvis/memory/extractor.py
+bde99c3b221c3e4ea2597eb9dcb9f69a8c491f367469481cf41ab1d70c79dfb3  01-facts/python/service.py  <-  src/openjarvis/memory/service.py
+068f8014063d46a651993c36bc2e4ed14e753b6e0d2aa5814214f00a99f56d98  01-facts/python/store.py  <-  src/openjarvis/memory/store.py
+c44eceb48b5362085109ea1e0d58854c25c64990b87b48138580fa8eb9be5eb7  02-document-store/python/__init__.py  <-  src/openjarvis/tools/storage/__init__.py
+cfb68155405afdf15bcdea08846faded09c764507987726f418c653535d112d3  02-document-store/python/_stubs.py  <-  src/openjarvis/tools/storage/_stubs.py
+fcd4e654de60448e797849694597b6bed34af1fbfb630979bd43aa3203cba887  02-document-store/python/bm25.py  <-  src/openjarvis/tools/storage/bm25.py
+1ffbe6784c97950a6756852220fd7aa51391a6549de09dcc8ff09442d523e492  02-document-store/python/chunking.py  <-  src/openjarvis/tools/storage/chunking.py
+f4d4412099e4033dfecbc2367b7d1213aa492371f1a6791cc79203247500f922  02-document-store/python/colbert_backend.py  <-  src/openjarvis/tools/storage/colbert_backend.py
+db402d337bef6823adb22d6a54f997912a870006e315ad98a045454264d5e8dd  02-document-store/python/dense.py  <-  src/openjarvis/tools/storage/dense.py
+f419666b9a656d45d31e7f8862eb8d5f49b564a7ac6995bcb7bc6360771ea044  02-document-store/python/embeddings.py  <-  src/openjarvis/tools/storage/embeddings.py
+eead1632bf7f47a3a35d652bff2655291957047bcdc623525cc1fa8baf55efb4  02-document-store/python/faiss_backend.py  <-  src/openjarvis/tools/storage/faiss_backend.py
+c56893869071b6e901999e44fa76d92d1252ed92c39769e765da58dc6b530eb7  02-document-store/python/hybrid.py  <-  src/openjarvis/tools/storage/hybrid.py
+fbba3e7b38df167ae7042b747022bc0256a96b76d0ef30fbb7ab3e12456e93c2  02-document-store/python/ingest.py  <-  src/openjarvis/tools/storage/ingest.py
+a63cb7d3e0cb4c42269a761994611997f516b7db9dc1b51c4f769e0ac877da81  02-document-store/python/knowledge_graph.py  <-  src/openjarvis/tools/storage/knowledge_graph.py
+7f07b0298b8fdb42105290527df353dda69ff76ceb2ef77c1c855b4a7a25603d  02-document-store/python/sqlite.py  <-  src/openjarvis/tools/storage/sqlite.py
+e02839be0ed9228c82811553a7edd8986641f42d7cd7df57447e2c6a3be02752  02-document-store/rust/bm25.rs  <-  rust/crates/openjarvis-tools/src/storage/bm25.rs
+a3b0ecf5d389ce68e99974f614a505f98261a1b0d8f2d8b0345a4df13d81c51c  02-document-store/rust/colbert.rs  <-  rust/crates/openjarvis-tools/src/storage/colbert.rs
+b4db8e47416fe9315702cea67356421d1206ec8ad1fec48caf2f0749112e0119  02-document-store/rust/faiss.rs  <-  rust/crates/openjarvis-tools/src/storage/faiss.rs
+c87276a2be3f484ffec412d527af1f03b1a8f43210f50daccd64d3372c5af7e5  02-document-store/rust/hybrid.rs  <-  rust/crates/openjarvis-tools/src/storage/hybrid.rs
+9816c2a4cb6dcb1b68629b122b4dd917f7b9eef00d3ddeaaf7ce2c196b455c35  02-document-store/rust/knowledge_graph.rs  <-  rust/crates/openjarvis-tools/src/storage/knowledge_graph.rs
+857f50b6bcdeb4ab9327d6d7ab32613cdf6db8aa98f1fe93196d81b65e270a05  02-document-store/rust/mod.rs  <-  rust/crates/openjarvis-tools/src/storage/mod.rs
+e5937364aafa107da4755bda818a626f32933a3ac5ee817b96c47b787ea4d3d5  02-document-store/rust/sqlite.rs  <-  rust/crates/openjarvis-tools/src/storage/sqlite.rs
+94a57b229472791628b468e26828f6c5a557f4cffcfc02a0dfd10cc9ff3584a4  02-document-store/rust/traits.rs  <-  rust/crates/openjarvis-tools/src/storage/traits.rs
+122a18b7ff3779bc7e113aaf38c766515836387d9bb66a4217c106abc9e9296a  03-context-injection/python/context.py  <-  src/openjarvis/tools/storage/context.py
+f163a922ad04dfe84dc5ffedd8a3e35d5c8db3337e6d434d7c126c48020dff34  04-prompt-files/python/builder.py  <-  src/openjarvis/prompt/builder.py
+75d035a22a40e8e4be86d382a6592958915fcf3f4b161b1c159f1578ed6ddc84  04-prompt-files/python/memory_manage.py  <-  src/openjarvis/tools/memory_manage.py
+92fefc22fa0f0ef5cae17ed378867188c9695d642b426b67a8478f7730c27f47  05-sessions/python/__init__.py  <-  src/openjarvis/sessions/__init__.py
+281d15a025576b58feff844969f3132c0b1c0a320ef5fa52104721e2fea7af1d  05-sessions/python/compression.py  <-  src/openjarvis/sessions/compression.py
+99795fb580e5b85d935f433df88c0648a8345fe0ff5458f0429eb2f39c3bc182  05-sessions/python/session.py  <-  src/openjarvis/sessions/session.py
+6ffe20ad65d44899820d7b6cfe3d6806eacc55de409146250d07c57c8c0ac940  05-sessions/rust_sessions.rs  <-  rust/crates/openjarvis-sessions/src/lib.rs
+92b5040f8d0f91c3671399c31b75d27b049058d60387ed9f220aaf6af01e598a  06-trust-gate/python/injection_scanner.py  <-  src/openjarvis/security/injection_scanner.py
+b115ecb07f2a940c1d76bd409ab664477cc4bc6601cdca6027b8fc46eb7c1480  06-trust-gate/python/types.py  <-  src/openjarvis/security/types.py
+324baab3703f5d34c2cd89b8bd3b24973a49b67c258993b674b3641e49b39989  06-trust-gate/rust_injection.rs  <-  rust/crates/openjarvis-security/src/injection.rs
+bec1c79e5fda69ba9f91b94d4e99cb2b2acbb73776de8ce1628db513f36ca568  06-trust-gate/rust_types.rs  <-  rust/crates/openjarvis-security/src/types.rs
+15aeb80324ec58f6a4a638fc2353a2ab6ffc9ff290c51f7463c133666c9cfe33  07-cli/python/memory_cmd.py  <-  src/openjarvis/cli/memory_cmd.py
+2e54c24a0ac9dbc832411e8804d423b2e80c96dc9db13be1722846219f7508ac  99-support/events.py  <-  src/openjarvis/core/events.py
+637192ccd7e28cf52b07ccf878ba0170249c82e1c0efae4cad99ab7c06604913  99-support/knowledge_tools.py  <-  src/openjarvis/tools/knowledge_tools.py
+0c30b38fa49457a48d0c4ca4e9ab70a1fe1eb7230416d4b29a015dec06ead925  99-support/registry.py  <-  src/openjarvis/core/registry.py
+faeb89866ce3e1a801b1682c89b450a77a305a0073c668397b3f4b2f7c8d9415  tests/test_bm25.py  <-  tests/memory/test_bm25.py
+4d2d4a45f6149961492360b4857294d5962734c4ef533a5233d05bee932fd04c  tests/test_chunking.py  <-  tests/memory/test_chunking.py
+190f408ede3694881bef886b201966f22391bbc4cfbacdc0e0bb9c27d8e3e616  tests/test_colbert.py  <-  tests/memory/test_colbert.py
+e44e1646b4c4e5088e6ab13b0b05c22655719f3b988286801d8b2279c8de5228  tests/test_context.py  <-  tests/memory/test_context.py
+0973126297e4d9b2153d7c0e237a3c6cf83a9bb7fc2c3213b2760f5d7e46a7bb  tests/test_embeddings.py  <-  tests/memory/test_embeddings.py
+9083159825debaf8b7e324235f62c8983fdcbaf50bbb3bc53f464f219bdf2cbf  tests/test_fact_extractor.py  <-  tests/memory/test_fact_extractor.py
+75a2d215b0c5e4d9258b826b0eb4ba62b504b0bc377cb2bde51e7473aa37f5c9  tests/test_fact_store.py  <-  tests/memory/test_fact_store.py
+809c0a128d13221b694523e8ea6a3e8bd94fce59af90e06dc59829cec57f55d6  tests/test_faiss.py  <-  tests/memory/test_faiss.py
+944faa8889ac17dcf493f8a3cf6927624b402050cdf91b4598c71e107ffd06d7  tests/test_hybrid.py  <-  tests/memory/test_hybrid.py
+3e219837f7f2cb2372b6b8fc8d196522e850a1b783ea59f28ad386b0cf415620  tests/test_ingest.py  <-  tests/memory/test_ingest.py
+d444fc73bebe4d5f13b0e3cac1ae4de0b65cc071cb5fca753be090d036c4569b  tests/test_memory_cmd.py  <-  tests/cli/test_memory_cmd.py
+040566a9960f841bdaa36e924dd242edd3f06d8b9ed9f42e5644d9b1507b0445  tests/test_memory_manage.py  <-  tests/tools/test_memory_manage.py
+dc4871fc0380c0ebc006dd878486eee645910a9e2c74d90ed0596be9677811c3  tests/test_memory_service.py  <-  tests/memory/test_memory_service.py
+5d93486da283d2a8dd4857387c7de6962abed9eb57d7653f32f29fb0dd6c5630  tests/test_retrieval_quality.py  <-  tests/memory/test_retrieval_quality.py
+0e1b186b10d16638501c1ad611843072ed87d487c27c9cb6c58bd25c4f8431cf  tests/test_sqlite.py  <-  tests/memory/test_sqlite.py
+46bbbdfe7dbef8540bcfccdee0d248343e07f968d676f698c774f06f8fbc9db0  tests/test_storage_stubs.py  <-  tests/tools/test_storage_stubs.py
+e31125cad5362b234e45ce9737443f6f94fd770e86817e6028262fe0a0ff003c  tests/test_storage_suite.py  <-  tests/memory/test_storage_suite.py
+cb29b997b0e2115ceaf4738a22aa466eea2b0aed0d30f7b85793f9d1720e6939  tests/test_storage_tools.py  <-  tests/tools/test_storage_tools.py
+```

@@ -1,0 +1,11 @@
+---
+aliases: ["standing"]
+tags: [jarvis-memory, topic]
+---
+<!-- jarvis-oma-memory-generated:v1 -->
+
+# standing
+
+
+
+[[JARVIS-OMA Memory/Topics]]

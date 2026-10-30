@@ -1,0 +1,46 @@
+diff --git i/docs/architecture/memory.md w/docs/architecture/memory.md
+index cac0930..d088c69 100644
+--- i/docs/architecture/memory.md
++++ w/docs/architecture/memory.md
+@@ -61,7 +61,7 @@ class RetrievalResult:
+ | Backend | Registry Key | Index Type | Extra Dependencies | GPU Required | Quality | Speed | Persistence |
+ |---------|-------------|-----------|-------------------|-------------|---------|-------|-------------|
+ | **SQLite/FTS5** | `sqlite` | Full-text (BM25) | None | No | Good | Fast | Disk (SQLite) |
+-| **FAISS** | `faiss` | Dense vector | `faiss-cpu`, `sentence-transformers` | Optional | Very Good | Fast | In-memory |
++| **FAISS** | `faiss` | Dense vector | `faiss-cpu`, `sentence-transformers` | Optional | Very Good | Fast | Disk (`faiss_documents`) |
+ | **ColBERTv2** | `colbert` | Late interaction | `colbert-ai`, `torch` | Optional | Excellent | Slower | In-memory |
+ | **BM25** | `bm25` | Term-frequency | `rank-bm25` | No | Good | Fast | In-memory |
+ | **Hybrid** | `hybrid` | RRF fusion | Depends on sub-backends | Depends | Best | Moderate | Depends |
+@@ -81,8 +81,8 @@ Dense retrieval using Facebook AI Similarity Search. Documents are embedded into
+ 
+ - **Index type:** `IndexFlatIP` (inner-product, equivalent to cosine similarity when vectors are L2-normalized)
+ - **Embedding model:** `all-MiniLM-L6-v2` by default (384-dim, ~22 MB)
+-- **Deletion:** Soft-delete (documents are marked as deleted but remain in the index)
+-- **Persistence:** In-memory only -- data is lost on restart
++- **Persistence:** Document text and vectors are written to a SQLite table named `faiss_documents` in the configured `db_path`, so data survives a restart. Pass `db_path=":memory:"` for a genuinely ephemeral index.
++- **Deletion:** Hard delete -- `DELETE FROM faiss_documents WHERE id = ?1`. Deleted documents do not remain in the index.
+ 
+ ### ColBERTv2
+ 
+diff --git i/docs/user-guide/memory.md w/docs/user-guide/memory.md
+index 2fdd23e..122d434 100644
+--- i/docs/user-guide/memory.md
++++ w/docs/user-guide/memory.md
+@@ -76,7 +76,7 @@ backend.close()
+ Dense neural retrieval using Facebook AI Similarity Search. Embeds documents and queries into dense vectors and retrieves by cosine similarity.
+ 
+ - **Scoring:** Cosine similarity via inner-product search on L2-normalized vectors
+-- **Persistence:** In-memory only (data is lost on restart)
++- **Persistence:** Documents are stored in a `faiss_documents` SQLite table at the configured `db_path` and survive a restart. Use `db_path=":memory:"` if you want an index that is discarded on exit.
+ - **Dependencies:** `faiss-cpu` (or `faiss-gpu`), `sentence-transformers`
+ 
+ ```bash
+@@ -195,7 +195,7 @@ The hybrid backend over-fetches (3x `top_k`) from each sub-backend before applyi
+ | Backend     | Search Type       | Persistence | Dependencies         | Quality  | Speed    |
+ |-------------|-------------------|-------------|----------------------|----------|----------|
+ | SQLite/FTS5 | Keyword (BM25)    | Yes         | None                 | Good     | Fast     |
+-| FAISS       | Dense (cosine)    | No          | faiss, transformers  | Better   | Fast     |
++| FAISS       | Dense (cosine)    | Yes         | faiss, transformers  | Better   | Fast     |
+ | ColBERTv2   | Late interaction  | No          | colbert-ai, torch    | Best     | Slower   |
+ | BM25        | Keyword (Okapi)   | No          | rank-bm25            | Good     | Fast     |
+ | Hybrid      | Fusion (RRF)      | Mixed       | Sub-backend deps     | Better   | Medium   |

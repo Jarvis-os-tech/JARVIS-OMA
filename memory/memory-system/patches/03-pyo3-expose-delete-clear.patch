@@ -1,0 +1,59 @@
+diff --git i/rust/crates/openjarvis-python/src/storage.rs w/rust/crates/openjarvis-python/src/storage.rs
+index b8a98cb..0e68262 100644
+--- i/rust/crates/openjarvis-python/src/storage.rs
++++ w/rust/crates/openjarvis-python/src/storage.rs
+@@ -132,6 +132,18 @@ impl PyBM25Memory {
+             .count()
+             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+     }
++
++    fn delete(&self, doc_id: &str) -> PyResult<bool> {
++        self.inner
++            .delete(doc_id)
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
++
++    fn clear(&self) -> PyResult<()> {
++        self.inner
++            .clear()
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
+ }
+ 
+ #[pyclass(name = "FAISSMemory")]
+@@ -333,6 +345,18 @@ impl PyHybridMemory {
+             .count()
+             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+     }
++
++    fn delete(&self, doc_id: &str) -> PyResult<bool> {
++        self.inner
++            .delete(doc_id)
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
++
++    fn clear(&self) -> PyResult<()> {
++        self.inner
++            .clear()
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
+ }
+ 
+ #[pyclass(name = "KnowledgeGraphMemory")]
+@@ -379,4 +403,16 @@ impl PyKnowledgeGraphMemory {
+             .count()
+             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+     }
++
++    fn delete(&self, doc_id: &str) -> PyResult<bool> {
++        self.inner
++            .delete(doc_id)
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
++
++    fn clear(&self) -> PyResult<()> {
++        self.inner
++            .clear()
++            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
++    }
+ }

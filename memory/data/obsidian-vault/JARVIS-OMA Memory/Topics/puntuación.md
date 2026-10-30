@@ -1,0 +1,11 @@
+---
+aliases: ["puntuación"]
+tags: [jarvis-memory, topic]
+---
+<!-- jarvis-oma-memory-generated:v1 -->
+
+# puntuación
+
+
+
+[[JARVIS-OMA Memory/Topics]]
