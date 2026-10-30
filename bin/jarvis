@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# bin/jarvis — Primary system control CLI for JARVIS OS
+set -euo pipefail
+
+SERVICE="jarvis-voice.service"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+show_help() {
+    cat << 'EOF'
+JARVIS OS System Control CLI
+
+Usage:
+  jarvis restart       Restart the JARVIS service
+  jarvis disable       Disable and stop the JARVIS service
+  jarvis enable        Enable and start the JARVIS service
+  jarvis status        Show service status and live voice metrics
+  jarvis start         Start the JARVIS service
+  jarvis stop          Stop the JARVIS service
+  jarvis logs [-f]     View JARVIS systemd logs
+  jarvis listen [cmd]  Control voice listening (toggle|start|stop|cancel)
+
+EOF
+}
+
+cmd="${1:-}"
+
+case "$cmd" in
+    restart)
+        echo "Restarting JARVIS..."
+        systemctl --user restart "$SERVICE"
+        sleep 0.5
+        active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
+        if [[ "$active" == "active" ]]; then
+            echo "JARVIS is active and running."
+        else
+            echo "JARVIS restart initiated. Status: ${active:-unknown}"
+        fi
+        ;;
+    disable|disanble)
+        echo "Disabling JARVIS service..."
+        systemctl --user disable --now "$SERVICE"
+        echo "JARVIS service disabled and stopped."
+        ;;
+    enable)
+        echo "Enabling JARVIS service..."
+        systemctl --user enable --now "$SERVICE"
+        sleep 0.5
+        active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
+        if [[ "$active" == "active" ]]; then
+            echo "JARVIS service enabled and active."
+        else
+            echo "JARVIS service enabled. Status: ${active:-inactive}"
+        fi
+        ;;
+    status)
+        active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
+        enabled=$(systemctl --user is-enabled "$SERVICE" 2>/dev/null || true)
+        echo "Service state: ${active:-inactive} (enabled: ${enabled:-no})"
+        if [[ "$active" == "active" ]]; then
+            if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
+                "${SCRIPT_DIR}/bin/jarvis-voice" status || true
+            elif command -v jarvis-voice >/dev/null 2>&1; then
+                jarvis-voice status || true
+            fi
+        fi
+        ;;
+    start)
+        echo "Starting JARVIS..."
+        systemctl --user start "$SERVICE"
+        sleep 0.5
+        active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
+        echo "Status: ${active:-inactive}"
+        ;;
+    stop)
+        echo "Stopping JARVIS..."
+        systemctl --user stop "$SERVICE"
+        active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
+        echo "Status: ${active:-inactive}"
+        ;;
+    logs)
+        shift || true
+        journalctl --user -u "$SERVICE" "$@"
+        ;;
+    listen)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
+            exec "${SCRIPT_DIR}/bin/jarvis-voice" listen "$@"
+        else
+            exec jarvis-voice listen "$@"
+        fi
+        ;;
+    help|--help|-h|"")
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $cmd" >&2
+        show_help >&2
+        exit 1
+        ;;
+esac

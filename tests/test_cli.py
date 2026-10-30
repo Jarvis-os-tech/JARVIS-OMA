@@ -64,3 +64,22 @@ def test_cli_status_json_socket(tmp_path, monkeypatch):
     rc = main()
     assert rc == 0
     t.join()
+
+
+def test_cli_systemd_commands(monkeypatch):
+    """Test that restart, disable, and enable call systemctl with correct args."""
+    calls = []
+    monkeypatch.setattr('subprocess.call', lambda cmd: calls.append(cmd) or 0)
+
+    from jarvis_voice.__main__ import main
+    monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'restart'])
+    assert main() == 0
+    assert calls[-1] == ['systemctl', '--user', 'restart', 'jarvis-voice.service']
+
+    monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'disable'])
+    assert main() == 0
+    assert calls[-1] == ['systemctl', '--user', 'disable', '--now', 'jarvis-voice.service']
+
+    monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'enable'])
+    assert main() == 0
+    assert calls[-1] == ['systemctl', '--user', 'enable', '--now', 'jarvis-voice.service']

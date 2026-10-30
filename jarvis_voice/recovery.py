@@ -66,7 +66,8 @@ class ConnectionRecovery:
         if resuming and code in (400, 1008):
             self._failed_resume_attempts = 0
             self._failures += 1
-            return RecoveryDecision(0.0, True, False, code)
+            delay = 2.0 if code == 1008 else 0.0
+            return RecoveryDecision(delay, True, False, code)
 
         transient = self._is_transient(error, code)
 

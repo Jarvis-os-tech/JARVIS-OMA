@@ -28,16 +28,21 @@ if [[ ! -f "$CONFIG_DIR/config.toml" && -f "$REPO_DIR/configs/config.toml.exampl
     cp "$REPO_DIR/configs/config.toml.example" "$CONFIG_DIR/config.toml"
 fi
 
-chmod +x "$INSTALL_DIR/bin/jarvis-voice"
+chmod +x "$INSTALL_DIR/bin/jarvis-voice" "$INSTALL_DIR/bin/jarvis"
 
-# Symlink CLI to ~/.local/bin
+# Symlink CLIs to ~/.local/bin
 ln -sf "$INSTALL_DIR/bin/jarvis-voice" "$BIN_DIR/jarvis-voice"
+ln -sf "$INSTALL_DIR/bin/jarvis" "$BIN_DIR/jarvis"
 
 # Install systemd service
 cp "$REPO_DIR/systemd/jarvis-voice.service" "$SERVICE_DIR/"
 systemctl --user daemon-reload
 
 echo "Installed to $INSTALL_DIR"
-echo "CLI available at: ~/.local/bin/jarvis-voice"
+echo "CLIs available at: ~/.local/bin/jarvis and ~/.local/bin/jarvis-voice"
 echo ""
-echo "To start voice daemon: systemctl --user enable --now jarvis-voice.service"
+echo "Control JARVIS with:"
+echo "  jarvis enable   - Enable and start JARVIS service"
+echo "  jarvis disable  - Disable and stop JARVIS service"
+echo "  jarvis restart  - Restart JARVIS service"
+echo "  jarvis status   - Check status"

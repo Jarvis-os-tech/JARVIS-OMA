@@ -2,7 +2,38 @@
 import argparse
 import os
 import shutil
+import subprocess
 import sys
+
+
+def _systemd_command(action: str) -> int:
+    """Manage the jarvis-voice systemd user service."""
+    service = 'jarvis-voice.service'
+    if action == 'restart':
+        print('Restarting JARVIS...')
+        rc = subprocess.call(['systemctl', '--user', 'restart', service])
+        if rc == 0:
+            print('JARVIS is active and running.')
+        return rc
+    elif action in ('disable', 'disanble'):
+        print('Disabling JARVIS service...')
+        rc = subprocess.call(['systemctl', '--user', 'disable', '--now', service])
+        if rc == 0:
+            print('JARVIS service disabled and stopped.')
+        return rc
+    elif action == 'enable':
+        print('Enabling JARVIS service...')
+        rc = subprocess.call(['systemctl', '--user', 'enable', '--now', service])
+        if rc == 0:
+            print('JARVIS service enabled and active.')
+        return rc
+    elif action == 'start':
+        print('Starting JARVIS...')
+        return subprocess.call(['systemctl', '--user', 'start', service])
+    elif action == 'stop':
+        print('Stopping JARVIS...')
+        return subprocess.call(['systemctl', '--user', 'stop', service])
+    return 1
 
 
 def _ipc_command(args):
@@ -41,7 +72,7 @@ def main(argv=None):
         prog='jarvis-voice',
         description='JARVIS Voice Core — sovereign voice foundation')
     parser.add_argument('command', nargs='?', default='run',
-        choices=['run', 'status', 'listen'],
+        choices=['run', 'status', 'listen', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
         help='Command to execute (default: run)')
     parser.add_argument('action', nargs='?', help='Action for listen command')
     parser.add_argument('--model', default=os.getenv('GEMINI_LIVE_MODEL', 'gemini-3.8-live'))
@@ -68,6 +99,9 @@ def main(argv=None):
         except Exception as e:
             print(f'Config error: {e}', file=sys.stderr)
             return 1
+
+    if args.command in ('restart', 'disable', 'disanble', 'enable', 'start', 'stop'):
+        return _systemd_command(args.command)
 
     if args.command in ('status', 'listen'):
         return _ipc_command(args)
