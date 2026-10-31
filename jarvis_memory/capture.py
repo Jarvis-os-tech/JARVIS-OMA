@@ -64,16 +64,22 @@ def extract_memories(user_text: str, assistant_text: str = "") -> list[dict]:
             kind, slot = 'preference', 'preference:language'
         elif agent:
             kind, slot = 'preference', 'preference:coding_agent'
+        elif re.match(r"^(?:my name is|call me)\s+\S", statement, re.I):
+            kind, slot = 'identity', 'identity:name'
         elif re.match(r"^I (?:now )?prefer\s+\S", statement, re.I):
+            kind = 'preference'
+        elif re.match(r"^I (?:really )?(?:like|love|dislike|hate)\s+\S", statement, re.I):
             kind = 'preference'
         elif re.match(r"^(?:I|we) (?:have )?decided (?:to|on|that)\s+\S", statement, re.I):
             kind = 'decision'
-        elif re.match(r"^(?:I am|I'm|we are|we're) (?:currently )?(?:working on|building|developing)\s+\S", statement, re.I):
-            kind = 'project'
-        elif re.match(r"^(?:please )?remember (?:that\s+)?\S", statement, re.I):
-            kind = 'fact'
         elif re.match(r"^(?:(?:please )?(?:help me|can you|could you) (?:build|implement|fix|finish|add|create|complete)|(?:I|we) (?:still )?(?:need|want) to (?:build|implement|fix|finish|add|create|complete)|(?:please |let['’]?s |lets )?(?:build|implement|fix|finish|add|create|complete))\s+\S", statement, re.I):
             kind, confidence = 'task', 0.8
+        elif re.match(r"^(?:I|we) (?:want|need|require)\s+\S", statement, re.I):
+            kind = 'requirement'
+        elif re.match(r"^(?:I am|I'm|we are|we're) (?:currently )?(?:working on|building|developing)\s+\S", statement, re.I):
+            kind = 'project'
+        elif re.match(r"^(?:please )?(?:remember|note|keep in mind)(?: that)?\s+\S", statement, re.I):
+            kind = 'fact'
         if kind is None:
             continue
         normalized = ' '.join(text.casefold().split())

@@ -143,3 +143,23 @@ class MemoryIntegrationTests(unittest.IsolatedAsyncioTestCase):
             root.mkdir()
             (root / 'memory_facts.jsonl').write_text('[]\n{"text":"bad timestamp","created_at":[]}\ninvalid\n', encoding='utf-8')
             self.assertEqual(skills.memory.recall()['facts'], [])
+
+    async def test_recall_conversation_tool_and_wildcard_recall(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config, skills = self.make_skills(directory)
+            skills.memory.start()
+            try:
+                skills.memory.record_exchange("Yesterday we planned the voice deployment.", "Understood, noted.")
+                wildcard = skills.memory.recall("*")
+                self.assertGreaterEqual(wildcard["count"], 1)
+                self.assertTrue(any("planned" in c.get("text", "") for c in wildcard["conversation"]))
+
+                conv_result = await skills.execute("recall_conversation", {"query": "deployment"})
+                self.assertGreaterEqual(conv_result["count"], 1)
+                self.assertTrue(any("deployment" in m.get("text", "") for m in conv_result["messages"]))
+
+                status = await skills.execute("memory_status", {})
+                self.assertGreaterEqual(status["conversation_messages"], 2)
+                self.assertTrue(status["continuous_memory"])
+            finally:
+                skills.memory.close()

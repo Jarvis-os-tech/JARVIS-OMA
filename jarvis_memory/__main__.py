@@ -20,6 +20,7 @@ def cmd_stats(bridge: MemoryBridge, args: argparse.Namespace) -> int:
         sm = status.get('structured_memory', {})
         print("=== JARVIS OS Sovereign Memory Status ===")
         print(f"Directory:           {status.get('path', 'N/A')}")
+        print(f"Continuous History:  {status.get('conversation_messages', 0)} messages stored")
         print(f"Total Facts:         {status.get('facts', 0)}")
         print(f"Structured Active:   {sm.get('active', 0)}")
         print(f"Structured Total:    {sm.get('total', 0)}")
@@ -40,10 +41,17 @@ def cmd_search(bridge: MemoryBridge, args: argparse.Namespace) -> int:
     facts = results.get("facts", [])
     docs = results.get("documents", [])
     memories = results.get("memories", [])
+    conversation = results.get("conversation", [])
 
-    print(f"Found {len(facts)} facts, {len(docs)} documents, {len(memories)} structured memories for '{query}':\n")
+    print(f"Found {len(facts)} facts, {len(docs)} documents, {len(memories)} structured memories, {len(conversation)} conversation turns for '{query}':\n")
+    if conversation:
+        print("--- Conversation History ---")
+        for c in conversation:
+            role = c.get('role', 'unknown').upper()
+            txt = c.get('content', c.get('text', ''))
+            print(f"• [{role}] {txt[:200]}")
     if facts:
-        print("--- Facts ---")
+        print("\n--- Facts ---")
         for f in facts:
             score = f.get("score", "")
             sc_str = f" [score: {score:.3f}]" if isinstance(score, (int, float)) else ""
@@ -56,6 +64,20 @@ def cmd_search(bridge: MemoryBridge, args: argparse.Namespace) -> int:
         print("\n--- Documents ---")
         for d in docs:
             print(f"• {d.get('path', '')}: {d.get('snippet', '')[:100]}...")
+    return 0
+
+
+def cmd_history(bridge: MemoryBridge, args: argparse.Namespace) -> int:
+    query = " ".join(args.query) if getattr(args, "query", None) else ""
+    turns = bridge.recall_history(query=query, limit=args.limit)
+    if args.json:
+        print(json.dumps(turns, indent=2))
+        return 0
+    print(f"=== Continuous Conversation History ({len(turns)} turns) ===")
+    for turn in turns:
+        role = turn.get('role', 'unknown').upper()
+        content = turn.get('content', turn.get('text', ''))
+        print(f"[{role}]: {content}\n")
     return 0
 
 
@@ -123,6 +145,17 @@ def main(argv: list[str] | None = None) -> int:
     search_p.add_argument("query", nargs="+", help="Query string")
     search_p.add_argument("--limit", "-n", type=int, default=10, help="Max results to return")
     search_p.set_defaults(func=cmd_search)
+
+    # history / conversations
+    hist_p = subparsers.add_parser("history", help="Show continuous conversation history")
+    hist_p.add_argument("query", nargs="*", default=[], help="Optional filter string")
+    hist_p.add_argument("--limit", "-n", type=int, default=20, help="Max turns to return")
+    hist_p.set_defaults(func=cmd_history)
+
+    conv_p = subparsers.add_parser("conversations", help="Alias for history")
+    conv_p.add_argument("query", nargs="*", default=[], help="Optional filter string")
+    conv_p.add_argument("--limit", "-n", type=int, default=20, help="Max turns to return")
+    conv_p.set_defaults(func=cmd_history)
 
     # store
     store_p = subparsers.add_parser("store", help="Store a fact in memory")

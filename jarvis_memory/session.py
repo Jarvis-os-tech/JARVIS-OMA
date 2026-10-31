@@ -69,8 +69,8 @@ class SessionStore:
         self,
         db_path: Union[str, Path] = DEFAULT_CONFIG_DIR / "sessions.db",
         *,
-        max_age_hours: float = 24.0,
-        consolidation_threshold: int = 100,
+        max_age_hours: float = float("inf"),
+        consolidation_threshold: int = 0,
     ) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +107,20 @@ class SessionStore:
         """)
         self._conn.commit()
 
+    def count_messages(self, user_id: Optional[str] = None) -> int:
+        """Count total conversation messages across continuous history."""
+        if user_id:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM session_messages m "
+                "JOIN sessions s ON s.session_id = m.session_id "
+                "WHERE s.user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if row and row[0] > 0:
+                return row[0]
+        row = self._conn.execute("SELECT COUNT(*) FROM session_messages").fetchone()
+        return row[0] if row else 0
+
     def get_or_create(
         self,
         user_id: str,
@@ -127,16 +141,17 @@ class SessionStore:
 
         if row:
             session_id = row[0]
-            # Check age
-            age_hours = (time.time() - (row[5] or 0)) / 3600
-            if age_hours > self._max_age_hours:
-                # Session expired, create new
-                return self._create_session(
-                    user_id,
-                    channel,
-                    channel_user_id,
-                    display_name,
-                )
+            # Check age only if finite max_age_hours explicitly configured
+            if self._max_age_hours < float("inf"):
+                age_hours = (time.time() - (row[5] or 0)) / 3600
+                if age_hours > self._max_age_hours:
+                    # Session expired, create new
+                    return self._create_session(
+                        user_id,
+                        channel,
+                        channel_user_id,
+                        display_name,
+                    )
 
             channel_ids = json.loads(row[3]) if row[3] else {}
             if channel and channel_user_id:
@@ -267,7 +282,9 @@ class SessionStore:
 
     def decay(self, max_age_hours: Optional[float] = None) -> int:
         """Remove sessions older than max_age_hours. Returns count removed."""
-        age = max_age_hours or self._max_age_hours
+        age = max_age_hours if max_age_hours is not None else self._max_age_hours
+        if age == float("inf"):
+            return 0
         cutoff = time.time() - (age * 3600)
         cur = self._conn.execute(
             "SELECT session_id FROM sessions WHERE last_activity < ?",

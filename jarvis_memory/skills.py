@@ -35,7 +35,8 @@ class MemorySkills:
         if self._memory_config.enabled:
             self.declarations = [
                 {"name": "remember_memory", "description": "Save a verified user preference or fact."},
-                {"name": "recall_memory", "description": "Search active memory facts and profiles."},
+                {"name": "recall_memory", "description": "Search persistent continuous memory across all past conversations, dialogue history, facts, user preferences, and profile notes."},
+                {"name": "recall_conversation", "description": "Recall past conversation turns and dialogue history across continuous memory. Use this to remember what the user and assistant discussed yesterday, earlier, or in previous interactions."},
                 {"name": "forget_memory", "description": "Remove a memory fact."},
                 {"name": "clear_memory", "description": "Clear all memory facts."},
                 {"name": "update_memory_profile", "description": "Update core profile notes."},
@@ -50,6 +51,7 @@ class MemorySkills:
         parameters = {
             'remember_memory': ({'text': {'type': 'string'}}, ['text']),
             'recall_memory': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, []),
+            'recall_conversation': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, []),
             'forget_memory': ({'text': {'type': 'string'}}, ['text']),
             'clear_memory': ({}, []),
             'update_memory_profile': ({'name': {'type': 'string'}, 'content': {'type': 'string'}}, ['name', 'content']),
@@ -89,6 +91,7 @@ class MemorySkills:
         adapter_map = {
             "remember_memory": self._adapter_remember_memory,
             "recall_memory": self._adapter_recall_memory,
+            "recall_conversation": self._adapter_recall_conversation,
             "forget_memory": self._adapter_forget_memory,
             "clear_memory": self._adapter_clear_memory,
             "update_memory_profile": self._adapter_update_memory_profile,
@@ -119,7 +122,20 @@ class MemorySkills:
         return await self._memory_operation("remember", text=text)
 
     async def _adapter_recall_memory(self, query: str = "", limit: int = 20) -> dict[str, Any]:
-        return await self._memory_operation("recall", query=query, limit=limit)
+        res = await self._memory_operation("recall", query=query, limit=limit)
+        status = await self._memory_operation("status")
+        res["total_stored_messages"] = status.get("conversation_messages", 0)
+        return res
+
+    async def _adapter_recall_conversation(self, query: str = "", limit: int = 20) -> dict[str, Any]:
+        turns = await self._memory_operation("recall_history", query=query, limit=limit)
+        status = await self._memory_operation("status")
+        return {
+            "count": len(turns),
+            "total_stored_messages": status.get("conversation_messages", len(turns)),
+            "messages": turns,
+            "summary": f"Retrieved {len(turns)} conversation turns from continuous memory.",
+        }
 
     async def _adapter_forget_memory(self, text: str) -> dict[str, Any]:
         return await self._memory_operation("forget", text=text)
@@ -157,6 +173,7 @@ class MemorySkills:
 
         async def _do_record():
             await self._memory_operation('record_exchange', user_text=user, assistant_text=assistant)
+            log.info("Continuous memory saved exchange (user=%d chars, assistant=%d chars)", len(user), len(assistant))
 
         task = asyncio.create_task(_do_record())
         self._memory_writes.add(task)

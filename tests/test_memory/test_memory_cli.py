@@ -41,6 +41,12 @@ class MemoryCLITests(unittest.TestCase):
         ret_json = main(["--config", str(self.config_path), "--json", "clear"])
         self.assertEqual(ret_json, 0)
 
+    def test_cli_history(self):
+        ret = main(["--config", str(self.config_path), "history"])
+        self.assertEqual(ret, 0)
+        ret_json = main(["--config", str(self.config_path), "--json", "history"])
+        self.assertEqual(ret_json, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

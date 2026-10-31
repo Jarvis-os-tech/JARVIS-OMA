@@ -10,6 +10,7 @@ from dataclasses import asdict
 from hashlib import sha256
 from itertools import islice
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,8 @@ import tempfile
 import threading
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler
+
+log = logging.getLogger('jarvis_memory')
 
 from .store import LocalFactStore, _cross_process_lock
 from .scanner import InjectionScanner
@@ -161,6 +164,8 @@ class MemoryBridge:
         self._require()
         if not isinstance(query, str) or len(query) > 500 or type(limit) is not int or not 1 <= limit <= 50:
             raise MemoryError('invalid memory query or limit')
+        query_norm = query.strip()
+        search_query = "" if query_norm.lower() in ("*", "all", "everything", "recent", "history") else query_norm
         entries = self.knowledge.list(active_only=False)
         retired = {entry['text'].casefold() for entry in entries if entry['status'] != 'active'}
         active = {entry['text'].casefold() for entry in entries if entry['status'] == 'active'}
@@ -168,18 +173,18 @@ class MemoryBridge:
                                   memory_id=entry['id'], source_type='memory')
                              for entry in entries if entry['status'] == 'active'
                              and self.scanner.scan(entry['text']).is_clean]
-        memories = rank_all(query, memory_candidates, limit)
+        memories = rank_all(search_query, memory_candidates, limit)
         facts = [asdict(fact) for fact in reversed(self.store.list())
                  if fact.trusted_for_recall and self.scanner.scan(fact.text).is_clean
                  and (fact.text.casefold() not in retired or fact.text.casefold() in active)]
         for fact in facts:
             fact['canonical_key'] = 'fact:' + sha256(fact['text'].casefold().encode()).hexdigest()
             fact['source_type'] = 'fact'
-        ranked_facts = rank_all(query, facts, limit)
-        documents = self._search_documents(query, limit)
+        ranked_facts = rank_all(search_query, facts, limit)
+        documents = self._search_documents(search_query, limit)
         conversation = self.recall_history(query, limit)
-        if query and self.semantic_enabled:
-            semantic = self._semantic_search(query, memory_candidates, facts)
+        if search_query and self.semantic_enabled:
+            semantic = self._semantic_search(search_query, memory_candidates, facts)
             memories = fuse_results(memories, semantic['memory'], limit, self.config.semantic_min_score)
             ranked_facts = fuse_results(ranked_facts, semantic['fact'], limit, self.config.semantic_min_score)
             documents = fuse_results(documents, semantic['document'], limit, self.config.semantic_min_score)
@@ -189,7 +194,8 @@ class MemoryBridge:
                     item['content'] = item['text'][:4000]
         return {'facts': ranked_facts, 'memories': memories, 'documents': documents,
                 'conversation': conversation,
-                'count': len(ranked_facts) + len(memories), 'truncated': len(facts) > limit,
+                'count': len(ranked_facts) + len(memories) + len(conversation),
+                'truncated': len(facts) > limit,
                 'retrieval_backend': ('local-hybrid-semantic-lexical' if self._semantic_state == 'available'
                                       else 'local-ranked-lexical-concept')}
 
@@ -256,28 +262,43 @@ class MemoryBridge:
             return []
         connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
         try:
-            if not query:
+            clean_q = query.strip() if isinstance(query, str) else ""
+            if clean_q.lower() in ("*", "all", "everything", "recent", "history"):
+                clean_q = ""
+            if not clean_q:
                 rows = connection.execute(
-                    'SELECT m.role,m.content,m.timestamp FROM session_messages m '
-                    'JOIN sessions s ON s.session_id=m.session_id WHERE s.user_id=? '
-                    'ORDER BY m.id DESC LIMIT ?', ('local-user', limit)).fetchall()
-                return [{'role': role, 'content': content[:4000], 'timestamp': timestamp}
-                        for role, content, timestamp in reversed(rows) if self.scanner.scan(content).is_clean]
+                    'SELECT m.id, m.role, m.content, m.timestamp FROM session_messages m '
+                    'WHERE m.role IN ("user", "assistant") '
+                    'ORDER BY m.id DESC LIMIT ?', (limit,)).fetchall()
+                return [{'role': role, 'content': content[:4000], 'timestamp': timestamp,
+                         'text': content[:4000], 'message_id': identifier,
+                         'canonical_key': f'conversation:{identifier}', 'source_type': 'conversation',
+                         'source': 'conversation'}
+                        for identifier, role, content, timestamp in reversed(rows) if self.scanner.scan(content).is_clean]
             cursor = connection.execute(
-                'SELECT m.id,m.role,m.content,m.timestamp FROM session_messages m '
-                'JOIN sessions s ON s.session_id=m.session_id WHERE s.user_id=? ORDER BY m.id',
-                ('local-user',))
+                'SELECT m.id, m.role, m.content, m.timestamp FROM session_messages m '
+                'WHERE m.role IN ("user", "assistant") ORDER BY m.id'
+            )
             best = []
+            all_candidates = []
             while rows := cursor.fetchmany(256):
-                candidates = [{'id': identifier, 'canonical_key': 'conversation:' + str(identifier),
-                               'source_type': 'conversation', 'role': role, 'text': content,
-                               'timestamp': timestamp, 'source': 'conversation'} for identifier, role, content, timestamp in rows
-                              if self.scanner.scan(content).is_clean]
-                best = rank_candidates(query, [*best, *candidates], limit)
+                batch = [{'id': identifier, 'canonical_key': f'conversation:{identifier}',
+                          'source_type': 'conversation', 'role': role, 'text': content,
+                          'timestamp': timestamp, 'source': 'conversation'}
+                         for identifier, role, content, timestamp in rows
+                         if self.scanner.scan(content).is_clean]
+                all_candidates.extend(batch)
+                best = rank_candidates(clean_q, [*best, *batch], limit)
+            if not best and all_candidates:
+                for c in all_candidates[-limit:]:
+                    c_copy = dict(c)
+                    c_copy['score'] = 0.001
+                    c_copy['match_reason'] = 'recent continuous history'
+                    best.append(c_copy)
             return [{'role': item['role'], 'content': item['text'][:4000], 'timestamp': item['timestamp'],
                      'text': item['text'][:4000], 'message_id': item['id'],
                      'canonical_key': item['canonical_key'], 'source_type': 'conversation',
-                     'source': 'conversation', 'score': item['score'], 'match_reason': item['match_reason']}
+                     'source': 'conversation', 'score': item.get('score', 0.0), 'match_reason': item.get('match_reason', '')}
                     for item in best]
         finally:
             connection.close()
@@ -401,9 +422,11 @@ class MemoryBridge:
                     text = stream.read(10000)
                 if self.scanner.scan(text).is_clean:
                     data['profiles'][name] = text
-        recent = self.recall_history(query, 6)
+        recent = self.recall_history(query, 10)
         if recent:
             data['recent_conversation'] = recent
+        if self.sessions:
+            data['total_continuous_messages'] = self.sessions.count_messages()
         if not any(data.values()):
             return ''
         # Budget the serialized data, never slice JSON into an invalid fragment.
@@ -433,26 +456,43 @@ class MemoryBridge:
             return
         if self.service:
             self.service.submit(user_text[:16000], '')
+        total_saved = 0
         if self.sessions:
             for role, text in [('user', user_text), ('assistant', assistant_text)]:
                 if text:
                     self.sessions.save_message(self.session.session_id, role, text[:16000], channel='voice')
                     self.session.add_message(role, text[:16000], channel='voice')
             self.session.messages = self.session.messages[-100:]
+            total_saved = self.sessions.count_messages()
         if self.config.structured_capture and self.scanner.scan(user_text).is_clean:
             for item in extract_memories(user_text[:16000], assistant_text[:16000]):
                 if self.scanner.scan(item['text']).is_clean:
                     self.knowledge.upsert(item['text'], kind=item['kind'], key=item.get('key', ''),
                         source='user-conversation', evidence={'role': 'user', 'quote': item['evidence']},
                         confidence=item['confidence'])
+        log.info('Continuous memory saved exchange (user=%d chars, assistant=%d chars, total_stored=%d)',
+                 len(user_text), len(assistant_text), total_saved)
 
     def status(self):
-        return {'enabled': self.enabled, 'path': str(self.root), 'facts': self.store.count(),
+        total_messages = 0
+        sessions_path = self.root / 'sessions.db'
+        if sessions_path.is_file():
+            try:
+                conn = sqlite3.connect(sessions_path.as_uri() + '?mode=ro', uri=True)
+                total_messages = conn.execute("SELECT count(*) FROM session_messages").fetchone()[0]
+                conn.close()
+            except Exception:
+                pass
+        facts_count = self.store.count()
+        return {'enabled': self.enabled, 'path': str(self.root), 'facts': facts_count,
+                'conversation_messages': total_messages,
                 'record_sessions': self.config.record_sessions,
                 'continuous_history': self.config.record_sessions,
+                'continuous_memory': True,
                 'auto_capture_running': bool(self.service and self.service.is_running),
                 'structured_capture': self.config.structured_capture,
                 'structured_memory': self.knowledge.stats(),
+                'status_summary': f"Continuous memory active with {total_messages} conversation messages and {facts_count} facts stored permanently across restarts.",
                 'retrieval_backend': ('local-hybrid-semantic-lexical' if self.semantic_enabled
                                       else 'local-ranked-lexical-concept'),
                 'semantic_status': self._semantic_state,
