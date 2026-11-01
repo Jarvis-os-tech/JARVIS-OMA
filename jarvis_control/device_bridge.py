@@ -44,7 +44,7 @@ class DeviceBridge:
     async def forward(self, payload):
         reader, writer = await asyncio.open_unix_connection(str(self.socket_path), limit=2**20)
         try:
-            writer.write(json.dumps(payload).encode() + b'\n')
+            writer.write(json.dumps(payload, ensure_ascii=False).encode() + b'\n')
             await writer.drain()
             result = await asyncio.wait_for(reader.readline(), 180)
             return json.loads(result)
@@ -115,7 +115,7 @@ class DeviceBridge:
                         raise ValueError('Invalid tool request')
                     self.requests.append(now)
                     status, result = 200, await self.forward({**payload, 'command': 'tool_call'})
-                elif method == 'POST' and path in ('/v1/sync', '/v1/memory'):
+                elif method == 'POST' and path in ('/v1/sync', '/v1/memory', '/v1/memory/exchange'):
                     length = int(headers.get('content-length', '0'))
                     if not 0 < length <= 131072:
                         raise ValueError('Invalid body size')
@@ -123,7 +123,8 @@ class DeviceBridge:
                         raise ValueError('JSON required')
                     payload = json.loads(await asyncio.wait_for(reader.readexactly(length), 5))
                     self.requests.append(now)
-                    status, result = 200, await self.forward({**payload, 'command': 'sync_memory'})
+                    command = 'companion_memory' if path.endswith('/exchange') else 'sync_memory'
+                    status, result = 200, await self.forward({**payload, 'command': command})
                 else:
                     status, result = 404, {'error': 'Unknown device endpoint'}
         except (ConnectionError, FileNotFoundError, asyncio.TimeoutError) as e:

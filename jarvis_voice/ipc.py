@@ -30,6 +30,7 @@ class ControlServer:
         tools_provider: Optional[Callable] = None,
         tool_call_cb: Optional[Callable] = None,
         record_memory_cb: Optional[Callable] = None,
+        sync_companion_cb: Optional[Callable] = None,
     ):
         self.socket_path = Path(socket_path) if socket_path else SOCKET_PATH
         self.status_provider = status_provider or (lambda: {})
@@ -46,6 +47,7 @@ class ControlServer:
         self.tools_provider = tools_provider
         self.tool_call_cb = tool_call_cb
         self.record_memory_cb = record_memory_cb
+        self.sync_companion_cb = sync_companion_cb
         self._server = None
         self._owns_socket = False
         self._legacy_symlink: Optional[Path] = None
@@ -68,7 +70,7 @@ class ControlServer:
                 await writer.wait_closed()
                 raise RuntimeError('JARVIS voice is already running')
         self._server = await asyncio.start_unix_server(
-            self._handle_client, path=str(self.socket_path))
+            self._handle_client, path=str(self.socket_path), limit=262144)
         self._owns_socket = True
         self.socket_path.chmod(0o600)
         log.info('IPC listening on %s', self.socket_path)
@@ -131,6 +133,11 @@ class ControlServer:
 
     async def _handle_json_command(self, req: dict) -> str:
         cmd = req.get('command')
+        if cmd == 'companion_memory':
+            if not self.sync_companion_cb:
+                return json.dumps({'error': 'Continuous memory unavailable'}) + '\n'
+            result = await self.sync_companion_cb(req.get('records', []))
+            return json.dumps(result) + '\n'
         if cmd == 'tools':
             return json.dumps({'device': 'pc', 'tools': self.tools_provider() if self.tools_provider else []}) + '\n'
         if cmd == 'tool_call':

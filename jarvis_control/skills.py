@@ -273,7 +273,13 @@ class UnifiedSkills:
     async def background_events(self) -> list[dict]:
         events = await self.control.background_events() if self.control else []
         agents = getattr(self.desktop, '_task_agents', None)
+        if agents is None and self.desktop and hasattr(self.desktop, '_personal_agents'):
+            # Discover persisted native goals after a voice restart, before any
+            # new command needs to instantiate the orchestration adapter.
+            agents = self.desktop._personal_agents()
         if agents is not None:
+            if hasattr(agents, 'refresh'):
+                await agents.refresh()
             for job in agents.jobs.values():
                 if job['state'] in {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'} and not job.get('notice_acknowledged'):
                     from orchestration.task_names import task_name
@@ -296,6 +302,11 @@ class UnifiedSkills:
         if self._memory_skills and hasattr(self._memory_skills, "context_async"):
             return await self._memory_skills.context_async()
         return ""
+
+    async def sync_companion(self, records):
+        if not self._memory_skills:
+            raise ValueError('Continuous memory unavailable')
+        return await self._memory_skills.sync_companion(records)
 
     def queue_memory_exchange(self, user_text: str, assistant_text: str, device: str = "pc") -> None:
         if self._memory_skills and hasattr(self._memory_skills, "queue_memory_exchange"):

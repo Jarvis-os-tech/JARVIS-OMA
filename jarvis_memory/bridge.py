@@ -325,7 +325,7 @@ class MemoryBridge:
                 sql = (
                     f'SELECT m.id, m.role, m.content, m.timestamp, m.channel FROM session_messages m '
                     f'WHERE m.role IN ("user", "assistant"){filter_sql} '
-                    f'ORDER BY m.id DESC LIMIT ?'
+                    f'ORDER BY m.timestamp DESC, m.id DESC LIMIT ?'
                 )
                 rows = connection.execute(sql, (*params, limit)).fetchall()
                 return [{'role': role, 'content': content[:4000], 'timestamp': timestamp,
@@ -336,7 +336,7 @@ class MemoryBridge:
                         for identifier, role, content, timestamp, channel in reversed(rows) if self.scanner.scan(content).is_clean]
             sql = (
                 f'SELECT m.id, m.role, m.content, m.timestamp, m.channel FROM session_messages m '
-                f'WHERE m.role IN ("user", "assistant"){filter_sql} ORDER BY m.id'
+                f'WHERE m.role IN ("user", "assistant"){filter_sql} ORDER BY m.timestamp, m.id'
             )
             cursor = connection.execute(sql, tuple(params))
             best = []
@@ -513,20 +513,50 @@ class MemoryBridge:
         result = prefix + json.dumps(data, ensure_ascii=False)
         return result if any(data.values()) and len(result) <= self.config.context_max_chars else ''
 
-    def record_exchange(self, user_text, assistant_text, device="pc"):
+    def sync_companion(self, records):
+        if not self.enabled or not self.sessions:
+            raise ValueError('Continuous memory is disabled on the PC')
+        if not isinstance(records, list) or len(records) > 12:
+            raise ValueError('Send at most 12 memory records')
+        # Validate the whole batch before acknowledging any record.
+        for record in records:
+            if (not isinstance(record, dict) or
+                    not isinstance(record.get('id'), str) or
+                    not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', record['id']) or
+                    record.get('role') not in ('user', 'model', 'assistant') or
+                    not isinstance(record.get('content'), str) or
+                    not 0 < len(record['content']) <= 16000 or
+                    type(record.get('timestamp')) not in (int, float) or
+                    not 0 <= record['timestamp'] <= time.time() * 1000 + 86400000):
+                raise ValueError('Invalid memory record')
+        acknowledged = []
+        for record in records:
+            role = record['role']
+            self.record_exchange(record['content'] if role == 'user' else '',
+                                 record['content'] if role != 'user' else '', device='mobile',
+                                 external_id='mobile:' + record['id'],
+                                 timestamp=record['timestamp'] / 1000)
+            acknowledged.append(record['id'])
+        return {'status': 'ok', 'acknowledged': acknowledged,
+                'context': self.context(), 'history': self.recall_history('', 100)}
+
+    def record_exchange(self, user_text, assistant_text, device="pc", external_id='', timestamp=None):
         if not self.enabled or (not user_text.strip() and not assistant_text.strip()):
             return
         clean_dev = 'mobile' if str(device).lower().strip() in ('mobile', 'phone', 'android') else 'pc'
-        if self.service:
-            self.service.submit(user_text[:16000], '')
         total_saved = 0
         if self.sessions:
             for role, text in [('user', user_text), ('assistant', assistant_text)]:
                 if text:
-                    self.sessions.save_message(self.session.session_id, role, text[:16000], channel=clean_dev)
+                    saved = self.sessions.save_message(self.session.session_id, role, text[:16000],
+                        channel=clean_dev, external_id=external_id, timestamp=timestamp)
+                    if not saved:
+                        return
                     self.session.add_message(role, text[:16000], channel=clean_dev)
             self.session.messages = self.session.messages[-100:]
             total_saved = self.sessions.count_messages()
+        if self.service:
+            self.service.submit(user_text[:16000], '')
         if self.config.structured_capture and self.scanner.scan(user_text).is_clean:
             for item in extract_memories(user_text[:16000], assistant_text[:16000]):
                 if self.scanner.scan(item['text']).is_clean:

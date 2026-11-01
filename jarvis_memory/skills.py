@@ -70,6 +70,9 @@ class MemorySkills:
     async def start(self) -> None:
         await self._memory_operation('start')
 
+    async def sync_companion(self, records):
+        return await self._memory_operation('sync_companion', records=records)
+
     async def context_async(self) -> str:
         if not self._memory_config.enabled:
             return ''

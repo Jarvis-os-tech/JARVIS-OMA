@@ -15,7 +15,7 @@ async def test_memory_writes_leave_audio_loop_free_and_keep_order(tmp_path):
     entered, release = threading.Event(), threading.Event()
     writes, threads = [], []
     loop_thread = threading.get_ident()
-    def record(user_text, assistant_text):
+    def record(user_text, assistant_text, *args, **kwargs):
         threads.append(threading.get_ident())
         entered.set()
         assert release.wait(2)

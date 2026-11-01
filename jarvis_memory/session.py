@@ -104,6 +104,9 @@ class SessionStore:
                 ON session_messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_user
                 ON sessions(user_id);
+            CREATE TABLE IF NOT EXISTS companion_message_ids (
+                external_id TEXT PRIMARY KEY
+            );
         """)
         self._conn.commit()
 
@@ -219,27 +222,34 @@ class SessionStore:
         *,
         channel: str = "",
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
+        external_id: str = "",
+        timestamp: Optional[float] = None,
+    ) -> bool:
         """Persist a message to a session."""
-        self._conn.execute(
-            "INSERT INTO session_messages"
-            " (session_id, role, content,"
-            " channel, timestamp, metadata) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                role,
-                content,
-                channel,
-                time.time(),
-                json.dumps(metadata or {}),
-            ),
-        )
-        self._conn.execute(
-            "UPDATE sessions SET last_activity = ? WHERE session_id = ?",
-            (time.time(), session_id),
-        )
-        self._conn.commit()
+        with self._conn:
+            if external_id:
+                inserted = self._conn.execute(
+                    "INSERT OR IGNORE INTO companion_message_ids VALUES (?)", (external_id,))
+                if not inserted.rowcount:
+                    return False
+            self._conn.execute(
+                "INSERT INTO session_messages"
+                " (session_id, role, content,"
+                " channel, timestamp, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    role,
+                    content,
+                    channel,
+                    timestamp if timestamp is not None else time.time(),
+                    json.dumps(metadata or {}),
+                ),
+            )
+            self._conn.execute(
+                "UPDATE sessions SET last_activity = ? WHERE session_id = ?",
+                (time.time(), session_id),
+            )
 
         # Check if consolidation is needed
         count = self._conn.execute(
@@ -248,6 +258,7 @@ class SessionStore:
         ).fetchone()[0]
         if self._consolidation_threshold > 0 and count > self._consolidation_threshold:
             self.consolidate(session_id)
+        return True
 
     def consolidate(self, session_id: str) -> None:
         """Consolidate old messages: summarize oldest half, keep recent half."""
