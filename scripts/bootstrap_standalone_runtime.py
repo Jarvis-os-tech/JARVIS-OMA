@@ -41,14 +41,7 @@ def setup_standalone_venv(venv_dir: Path, source_venv: Path) -> None:
         src = source_site[0]
         dst = target_site[0]
         log.info("Copying site-packages from %s to %s...", src, dst)
-        for item in src.iterdir():
-            target_item = dst / item.name
-            if target_item.exists():
-                continue
-            if item.is_dir():
-                shutil.copytree(item, target_item, symlinks=True)
-            else:
-                shutil.copy2(item, target_item)
+        subprocess.run(["cp", "-a", "--reflink=auto", f"{src}/.", str(dst)], check=True)
 
     log.info("Standalone virtualenv setup complete.")
 
