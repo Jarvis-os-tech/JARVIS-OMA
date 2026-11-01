@@ -12,8 +12,8 @@ android {
         applicationId = "com.jarvis.os"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 7
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -59,6 +59,8 @@ android {
 }
 
 dependencies {
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     // AndroidX Core & Lifecycle
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -114,4 +116,11 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// A release becomes visible to the phone only after a successful build and unit checks.
+tasks.register<Exec>("publishDebugUpdate") {
+    dependsOn("testDebugUnitTest", "assembleDebug")
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine("python3", "scripts/publish_mobile_update.py")
 }

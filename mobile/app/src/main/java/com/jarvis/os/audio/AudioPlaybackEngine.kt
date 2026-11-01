@@ -2,172 +2,136 @@ package com.jarvis.os.audio
 
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
-import android.os.Build
 import android.util.Log
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.LinkedBlockingQueue
+import kotlin.concurrent.thread
 
-/**
- * Low-latency audio playback engine streaming 24,000 Hz 16-bit mono PCM chunks
- * directly to the audio subsystem, supporting click-free barge-in cancellation.
- */
-class AudioPlaybackEngine(
-    private val sampleRate: Int = SAMPLE_RATE_HZ
-) {
+/** Queues PCM without holding the network reader or blocking cancellation. */
+class AudioPlaybackEngine(private val sampleRate: Int = SAMPLE_RATE_HZ) {
+    private data class Chunk(val generation: Long, val bytes: ByteArray)
+    private val lock = Any()
+    private val queue = LinkedBlockingQueue<Chunk>()
     private var audioTrack: AudioTrack? = null
-    private val isInitialized = AtomicBoolean(false)
-    private val isPlaying = AtomicBoolean(false)
+    private var worker: Thread? = null
+    private var generation = 0L
+    private var queuedBytes = 0L
+    private var writtenFrames = 0L
+    private var drained = true
+    private var paused = false
+    var onPlaybackDrained: (() -> Unit)? = null
 
-    init {
-        initAudioTrack()
+    val hasPendingAudio: Boolean
+        get() = synchronized(lock) { hasPendingAudioLocked() }
+
+    private fun hasPendingAudioLocked(): Boolean {
+        val played = audioTrack?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0L
+        return queuedBytes > 0 || writtenFrames > played
     }
 
-    @Synchronized
-    private fun initAudioTrack() {
-        if (isInitialized.get() && audioTrack != null) return
-
-        val channelConfig = AudioFormat.CHANNEL_OUT_MONO
-        val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-        val minBufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-        val bufferSize = maxOf(minBufferSize, 4096)
-
-        try {
-            val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(audioFormat)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(channelConfig)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(bufferSize)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-            } else {
-                @Suppress("DEPRECATION")
-                AudioTrack(
-                    AudioManager.STREAM_MUSIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormat,
-                    bufferSize,
-                    AudioTrack.MODE_STREAM
-                )
-            }
-
-            if (track.state == AudioTrack.STATE_INITIALIZED) {
-                track.play()
-                audioTrack = track
-                isInitialized.set(true)
-                isPlaying.set(true)
-                Log.i(TAG, "AudioTrack initialized successfully at $sampleRate Hz")
-            } else {
-                Log.e(TAG, "AudioTrack failed to initialize")
-                track.release()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception initializing AudioTrack: ${e.message}", e)
-        }
+    private fun initializeTrack() {
+        if (audioTrack != null) return
+        val minimum = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate)
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setBufferSizeInBytes(maxOf(minimum, 4096))
+            .setTransferMode(AudioTrack.MODE_STREAM).build()
+        check(track.state == AudioTrack.STATE_INITIALIZED) { "Speaker unavailable" }
+        track.play()
+        audioTrack = track
     }
 
-    /**
-     * Play raw 24kHz mono PCM16 audio bytes.
-     */
-    @Synchronized
-    fun playPcm(data: ByteArray): Int {
-        if (!isInitialized.get() || audioTrack == null) {
-            initAudioTrack()
-        }
-
-        val track = audioTrack ?: return -1
-
+    fun playPcm(data: ByteArray): Int = synchronized(lock) {
+        if (data.isEmpty()) return@synchronized 0
         try {
-            if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
-                track.play()
-                isPlaying.set(true)
-            }
-
-            var written = 0
-            while (written < data.size) {
-                val res = track.write(data, written, data.size - written)
-                if (res > 0) {
-                    written += res
-                } else {
-                    Log.e(TAG, "AudioTrack write error: $res")
-                    break
-                }
-            }
-            return written
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception during playPcm: ${e.message}", e)
-            return -1
-        }
-    }
-
-    /**
-     * Instantly halt playback, flush buffers without pops/clicks, and reset state.
-     * Crucial for conversational barge-in responsiveness.
-     */
-    @Synchronized
-    fun cancel() {
-        val track = audioTrack ?: return
-        try {
-            if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                track.pause()
-                track.flush()
-            }
-            isPlaying.set(false)
-            Log.d(TAG, "AudioPlayback cancelled and flushed")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cancelling playback: ${e.message}", e)
-        }
-    }
-
-    @Synchronized
-    fun pause() {
-        try {
-            audioTrack?.pause()
-            isPlaying.set(false)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error pausing playback: ${e.message}", e)
-        }
-    }
-
-    @Synchronized
-    fun resume() {
-        try {
+            initializeTrack()
+            paused = false
             audioTrack?.play()
-            isPlaying.set(true)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error resuming playback: ${e.message}", e)
+            queuedBytes += data.size
+            drained = false
+            queue.offer(Chunk(generation, data))
+            if (worker?.isAlive != true) worker = thread(name = "JarvisPlayback", isDaemon = true) { drainAudio() }
+            data.size
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to queue audio", error)
+            -1
         }
     }
 
-    @Synchronized
-    fun release() {
+    private fun drainAudio() {
         try {
-            audioTrack?.apply {
-                if (playState == AudioTrack.PLAYSTATE_PLAYING) {
-                    stop()
+            while (!Thread.currentThread().isInterrupted) {
+                val chunk = queue.poll(5, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (chunk != null) {
+                    var offset = 0
+                    while (offset < chunk.bytes.size && !Thread.currentThread().isInterrupted) {
+                        val written = synchronized(lock) {
+                            if (chunk.generation != generation) return@synchronized -1
+                            if (paused) return@synchronized 0
+                            val track = audioTrack ?: return@synchronized -1
+                            // At most 10 ms of audio per write; never wait for speaker space under the lock.
+                            val count = track.write(chunk.bytes, offset, minOf(480, chunk.bytes.size - offset), AudioTrack.WRITE_NON_BLOCKING)
+                            if (count > 0) {
+                                queuedBytes -= count
+                                writtenFrames += count / 2
+                            }
+                            count
+                        }
+                        if (written < 0) break
+                        offset += written
+                        if (written == 0) Thread.sleep(3)
+                    }
                 }
-                flush()
-                release()
+                val notify = synchronized(lock) {
+                    if (!drained && !hasPendingAudioLocked()) { drained = true; true } else false
+                }
+                if (notify) onPlaybackDrained?.invoke()
+
+                // If playback is completely drained and no chunks are queued, terminate worker to prevent 200 Hz CPU wakeups in standby
+                val shouldExit = synchronized(lock) {
+                    if (drained && queue.isEmpty()) {
+                        worker = null
+                        true
+                    } else false
+                }
+                if (shouldExit) break
             }
-            audioTrack = null
-            isInitialized.set(false)
-            isPlaying.set(false)
-            Log.i(TAG, "AudioPlaybackEngine released")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing AudioTrack: ${e.message}", e)
+        } catch (_: InterruptedException) {
+            // release() terminates the worker.
+        } catch (error: Exception) {
+            Log.e(TAG, "Playback worker failed", error)
+            cancel()
         }
+    }
+
+    fun cancel() = synchronized(lock) {
+        generation++
+        queue.clear()
+        queuedBytes = 0
+        writtenFrames = 0
+        drained = true
+        paused = false
+        audioTrack?.let { track ->
+            track.pause()
+            track.flush()
+        }
+        Log.i(TAG, "Playback interrupted: queued audio discarded")
+    }
+
+    fun pause() = synchronized(lock) { paused = true; audioTrack?.pause() }
+    fun resume() = synchronized(lock) { paused = false; audioTrack?.play() }
+
+    fun release() = synchronized(lock) {
+        cancel()
+        worker?.interrupt()
+        worker = null
+        audioTrack?.release()
+        audioTrack = null
     }
 
     companion object {

@@ -10,7 +10,9 @@ data class PairingPayload(
     val authToken: String,
     val gcsBucket: String,
     val endpoint: String,
-    val geminiApiKey: String? = null
+    val geminiApiKey: String? = null,
+    val executionEndpoint: String = "http://127.0.0.1:8766",
+    val pairingSession: String = ""
 )
 
 data class MemoryDeltaRecord(
@@ -28,11 +30,13 @@ object SyncPayloads {
             val root = JSONObject(jsonString)
             PairingPayload(
                 version = root.optInt("v", 1),
+                pairingSession = root.optString("pair_session", ""),
                 projectId = root.getString("pid"),
                 deviceId = root.getString("dev"),
                 authToken = root.getString("tok"),
                 gcsBucket = root.optString("bkt", "jarvis-os-508612-memory-sync"),
                 endpoint = root.optString("ep", ""),
+                executionEndpoint = root.optString("exec", "http://127.0.0.1:8766"),
                 geminiApiKey = if (root.has("key") && root.getString("key").isNotBlank()) {
                     root.getString("key")
                 } else {

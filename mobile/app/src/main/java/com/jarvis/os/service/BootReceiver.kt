@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.jarvis.os.sync.CloudMemorySyncWorker
 
 /**
  * BroadcastReceiver responsible for reviving the JARVIS Ambient Voice daemon
@@ -15,10 +16,21 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action
         Log.i(TAG, "BootReceiver triggered with action: $action")
 
+        if (action == "com.jarvis.os.action.SYNC_MEMORY") {
+            Log.i(TAG, "Triggering immediate memory sync from broadcast")
+            CloudMemorySyncWorker.syncNow(context)
+            return
+        }
+
         if (action == Intent.ACTION_BOOT_COMPLETED ||
             action == "android.intent.action.QUICKBOOT_POWERON" ||
             action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
+            // Android 14+ requires a visible app to start microphone capture.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Log.i(TAG, "Open JARVIS after reboot to enable Hey Jarvis")
+                return
+            }
             val serviceIntent = Intent(context, JarvisVoiceService::class.java).apply {
                 this.action = JarvisVoiceService.ACTION_START
             }

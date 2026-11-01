@@ -24,6 +24,8 @@ class GeminiLiveClient(
     private val isConnected = AtomicBoolean(false)
 
     var onAudioReceived: ((ByteArray) -> Unit)? = null
+    var onUserTranscript: ((String) -> Unit)? = null
+    var onAssistantTranscript: ((String) -> Unit)? = null
     var onTurnComplete: (() -> Unit)? = null
     var onInterrupted: (() -> Unit)? = null
     var onToolCall: ((FunctionCall) -> Unit)? = null
@@ -38,9 +40,10 @@ class GeminiLiveClient(
     @Synchronized
     fun connect(
         apiKey: String,
-        model: String = "models/gemini-2.0-flash-exp",
+        model: String = LiveSessionModels.DEFAULT_MODEL,
         voice: String = "Aoede",
-        systemPrompt: String = "You are JARVIS, a helpful and hyper-intelligent autonomous voice assistant."
+        systemPrompt: String = "You are JARVIS, a helpful and hyper-intelligent autonomous voice assistant.",
+        extraTools: org.json.JSONArray = org.json.JSONArray()
     ) {
         if (isConnected.get()) {
             Log.w(TAG, "Already connected to Gemini Live")
@@ -53,14 +56,13 @@ class GeminiLiveClient(
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "Gemini Live WebSocket opened successfully")
-                isConnected.set(true)
-                onConnectionStateChanged?.invoke(true)
 
                 // Transmit setup configuration
                 val setupJson = LiveSessionModels.buildSetupJson(
                     model = model,
                     voice = voice,
-                    systemPrompt = systemPrompt
+                    systemPrompt = systemPrompt,
+                    extraTools = extraTools
                 )
                 webSocket.send(setupJson)
                 Log.d(TAG, "Setup packet transmitted to Gemini Live")
@@ -68,9 +70,22 @@ class GeminiLiveClient(
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
-                    when (val msg = LiveSessionModels.parseServerMessage(text)) {
+                    for (msg in LiveSessionModels.parseServerMessages(text)) when (msg) {
+                        is ServerMessage.SetupComplete -> {
+                            isConnected.set(true)
+                            Log.i(TAG, "Gemini Live session ready")
+                            onConnectionStateChanged?.invoke(true)
+                        }
                         is ServerMessage.AudioData -> {
                             onAudioReceived?.invoke(msg.pcmData)
+                        }
+
+                        is ServerMessage.UserTranscript -> {
+                            onUserTranscript?.invoke(msg.text)
+                        }
+
+                        is ServerMessage.AssistantTranscript -> {
+                            onAssistantTranscript?.invoke(msg.text)
                         }
 
                         is ServerMessage.TurnComplete -> {
@@ -97,6 +112,10 @@ class GeminiLiveClient(
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling incoming Gemini message: ${e.message}", e)
                 }
+            }
+
+            override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+                onMessage(webSocket, bytes.utf8())
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -128,6 +147,16 @@ class GeminiLiveClient(
 
         val payload = LiveSessionModels.buildAudioChunkJson(chunk)
         return ws.send(payload)
+    }
+
+    fun sendText(text: String): Boolean {
+        if (!connected) return false
+        val part = org.json.JSONObject().put("text", text)
+        val turn = org.json.JSONObject().put("role", "user")
+            .put("parts", org.json.JSONArray().put(part))
+        val content = org.json.JSONObject().put("turns", org.json.JSONArray().put(turn))
+            .put("turnComplete", true)
+        return webSocket?.send(org.json.JSONObject().put("clientContent", content).toString()) ?: false
     }
 
     /**

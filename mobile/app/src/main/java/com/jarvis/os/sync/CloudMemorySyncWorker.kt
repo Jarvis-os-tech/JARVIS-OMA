@@ -25,8 +25,8 @@ class CloudMemorySyncWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
     override suspend fun doWork(): Result {
@@ -45,33 +45,43 @@ class CloudMemorySyncWorker(
             return Result.success()
         }
 
-        val endpoint = pairing.endpoint.ifBlank {
-            "https://firestore.googleapis.com/v1/projects/${pairing.projectId}/databases/(default)/documents/sync_mailboxes/${pairing.deviceId}"
+        val endpointsToTry = mutableListOf<String>()
+        // Prioritize local loopback tunnel first for instantaneous zero-latency delivery
+        endpointsToTry.add("http://127.0.0.1:8766/v1/memory")
+        val execEp = pairing.executionEndpoint
+        if (execEp.isNotBlank() && !endpointsToTry.contains(execEp.trimEnd('/') + "/v1/memory")) {
+            endpointsToTry.add(execEp.trimEnd('/') + "/v1/memory")
+        }
+        if (pairing.endpoint.isNotBlank()) {
+            endpointsToTry.add(pairing.endpoint)
         }
 
         val requestBody = pendingJson.toRequestBody("application/json".toMediaType())
-        val request = Request.Builder()
-            .url(endpoint)
-            .addHeader("Authorization", "Bearer ${pairing.authToken}")
-            .addHeader("X-Jarvis-Device", pairing.deviceId)
-            .post(requestBody)
-            .build()
 
-        return try {
-            val response = httpClient.newCall(request).execute()
-            if (response.isSuccessful || response.code == 404) {
-                // Successfully transmitted or accepted by cloud mailbox
-                Log.i(TAG, "Memory sync completed successfully (HTTP ${response.code})")
-                prefs.edit().remove("pending_turns").apply()
-                Result.success()
-            } else {
-                Log.w(TAG, "Memory sync failed with HTTP ${response.code}; will retry")
-                Result.retry()
+        for (endpoint in endpointsToTry) {
+            try {
+                Log.i(TAG, "Attempting memory sync to: $endpoint")
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .addHeader("Authorization", "Bearer ${pairing.authToken}")
+                    .addHeader("X-Jarvis-Device", pairing.deviceId)
+                    .post(requestBody)
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    Log.i(TAG, "Memory sync completed successfully with $endpoint (HTTP ${response.code})")
+                    prefs.edit().remove("pending_turns").apply()
+                    return Result.success()
+                } else {
+                    Log.w(TAG, "Memory sync to $endpoint returned HTTP ${response.code}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Connection failed to $endpoint: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Network exception during memory sync: ${e.message}", e)
-            Result.retry()
         }
+
+        return Result.retry()
     }
 
     companion object {
@@ -99,7 +109,16 @@ class CloudMemorySyncWorker(
         }
 
         /**
-         * Queue a single turn for eventual cloud synchronization.
+         * Trigger an immediate background memory sync attempt.
+         */
+        fun syncNow(context: Context) {
+            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<CloudMemorySyncWorker>()
+                .build()
+            WorkManager.getInstance(context).enqueue(syncRequest)
+        }
+
+        /**
+         * Queue a single turn for eventual cloud/desktop synchronization.
          */
         fun enqueueTurn(context: Context, role: String, content: String) {
             val pairing = QrPairingScanner.getPairingPayload(context)
@@ -112,10 +131,34 @@ class CloudMemorySyncWorker(
             )
 
             val prefs = context.getSharedPreferences("jarvis_turn_queue", Context.MODE_PRIVATE)
+            val existingJson = prefs.getString("pending_turns", null)
+            val existingRecords = mutableListOf<MemoryDeltaRecord>()
+            if (!existingJson.isNullOrBlank()) {
+                try {
+                    val root = org.json.JSONObject(existingJson)
+                    val array = root.optJSONArray("records")
+                    if (array != null) {
+                        for (i in 0 until array.length()) {
+                            val item = array.getJSONObject(i)
+                            existingRecords.add(MemoryDeltaRecord(
+                                id = item.getString("id"),
+                                timestamp = item.getLong("timestamp"),
+                                role = item.getString("role"),
+                                content = item.getString("content"),
+                                deviceId = item.optString("deviceId", deviceId)
+                            ))
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed parsing existing pending turns: ${e.message}")
+                }
+            }
+            existingRecords.add(record)
+
             val bundle = SyncPayloads.buildSyncBundleJson(
                 deviceId = deviceId,
                 authToken = pairing?.authToken ?: "",
-                records = listOf(record)
+                records = existingRecords
             )
             prefs.edit().putString("pending_turns", bundle).apply()
         }

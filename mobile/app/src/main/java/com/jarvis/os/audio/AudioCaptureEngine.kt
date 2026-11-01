@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,11 +18,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class AudioCaptureEngine(
     private val sampleRate: Int = SAMPLE_RATE_HZ,
-    private val chunkByteSize: Int = CHUNK_SIZE_BYTES
+    private val chunkByteSize: Int = CHUNK_SIZE_BYTES,
+    private val audioSource: Int = MediaRecorder.AudioSource.MIC
 ) {
     private val isRecording = AtomicBoolean(false)
     private var captureJob: Job? = null
     private var audioRecord: AudioRecord? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
 
     val isCapturing: Boolean
         get() = isRecording.get()
@@ -44,7 +47,7 @@ class AudioCaptureEngine(
 
         try {
             val record = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                audioSource,
                 sampleRate,
                 channelConfig,
                 audioFormat,
@@ -57,13 +60,20 @@ class AudioCaptureEngine(
                 return false
             }
 
+            if (audioSource == MediaRecorder.AudioSource.VOICE_COMMUNICATION && AcousticEchoCanceler.isAvailable()) {
+                try {
+                    echoCanceler = AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true }
+                } catch (error: Exception) {
+                    Log.w(TAG, "Echo cancellation unavailable: ${error.message}")
+                }
+            }
             record.startRecording()
             audioRecord = record
             isRecording.set(true)
 
             captureJob = scope.launch(Dispatchers.IO) {
                 val buffer = ByteArray(chunkByteSize)
-                Log.i(TAG, "AudioCapture loop started: $sampleRate Hz, $chunkByteSize bytes/frame")
+                Log.i(TAG, "AudioCapture loop started: $sampleRate Hz, $chunkByteSize bytes/frame, source=$audioSource")
 
                 try {
                     while (isActive && isRecording.get()) {
@@ -72,16 +82,17 @@ class AudioCaptureEngine(
                             val read = record.read(
                                 buffer,
                                 bytesRead,
-                                chunkByteSize - bytesRead
+                                chunkByteSize - bytesRead,
+                                AudioRecord.READ_BLOCKING
                             )
                             if (read > 0) {
                                 bytesRead += read
-                            } else if (read == AudioRecord.ERROR_INVALID_OPERATION ||
-                                read == AudioRecord.ERROR_BAD_VALUE ||
-                                read == AudioRecord.ERROR_DEAD_OBJECT
-                            ) {
+                            } else if (read < 0) {
                                 Log.e(TAG, "AudioRecord read error: $read")
+                                kotlinx.coroutines.delay(100)
                                 break
+                            } else {
+                                kotlinx.coroutines.delay(10)
                             }
                         }
 
@@ -115,6 +126,8 @@ class AudioCaptureEngine(
         try {
             captureJob?.cancel()
             captureJob = null
+            echoCanceler?.release()
+            echoCanceler = null
 
             audioRecord?.apply {
                 try {

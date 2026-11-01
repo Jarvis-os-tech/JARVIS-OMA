@@ -8,8 +8,11 @@ import java.util.Base64
  * Parsed server messages from Gemini Live WebSocket.
  */
 sealed class ServerMessage {
+    object SetupComplete : ServerMessage()
     data class AudioData(val pcmData: ByteArray, val mimeType: String) : ServerMessage()
     data class ToolCall(val calls: List<FunctionCall>) : ServerMessage()
+    data class UserTranscript(val text: String) : ServerMessage()
+    data class AssistantTranscript(val text: String) : ServerMessage()
     object TurnComplete : ServerMessage()
     object Interrupted : ServerMessage()
     data class Unknown(val rawJson: String) : ServerMessage()
@@ -18,18 +21,20 @@ sealed class ServerMessage {
 data class FunctionCall(
     val id: String,
     val name: String,
-    val args: Map<String, String>
+    val args: Map<String, Any?>
 )
 
 /**
  * Helpers for framing, serializing, and parsing Gemini Live bidirectional WebSocket payloads.
  */
 object LiveSessionModels {
+    const val DEFAULT_MODEL = "models/gemini-3.8-live"
 
     fun buildSetupJson(
-        model: String = "models/gemini-2.0-flash-exp",
+        model: String = DEFAULT_MODEL,
         voice: String = "Aoede",
-        systemPrompt: String = "You are JARVIS, a helpful and hyper-intelligent autonomous voice assistant."
+        systemPrompt: String = "You are JARVIS, a helpful and hyper-intelligent autonomous voice assistant.",
+        extraTools: JSONArray = JSONArray()
     ): String {
         val root = JSONObject()
         val setup = JSONObject()
@@ -48,6 +53,15 @@ object LiveSessionModels {
         speechConfig.put("voiceConfig", voiceConfig)
         generationConfig.put("speechConfig", speechConfig)
         setup.put("generationConfig", generationConfig)
+        setup.put("inputAudioTranscription", JSONObject())
+        setup.put("outputAudioTranscription", JSONObject())
+        setup.put("realtimeInputConfig", JSONObject()
+            .put("activityHandling", "START_OF_ACTIVITY_INTERRUPTS")
+            .put("automaticActivityDetection", JSONObject()
+                .put("disabled", false)
+                .put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
+                .put("prefixPaddingMs", 80)
+                .put("silenceDurationMs", 500)))
 
         val systemInstruction = JSONObject()
         val parts = JSONArray()
@@ -79,6 +93,7 @@ object LiveSessionModels {
         fillerFunc.put("parameters", params)
 
         funcDecls.put(fillerFunc)
+        for (index in 0 until extraTools.length()) funcDecls.put(extraTools.getJSONObject(index))
         toolObj.put("functionDeclarations", funcDecls)
         tools.put(toolObj)
         setup.put("tools", tools)
@@ -91,12 +106,10 @@ object LiveSessionModels {
         val base64Data = Base64.getEncoder().encodeToString(pcmBytes)
         val root = JSONObject()
         val realtimeInput = JSONObject()
-        val mediaChunks = JSONArray()
         val chunk = JSONObject()
         chunk.put("mimeType", "audio/pcm;rate=16000")
         chunk.put("data", base64Data)
-        mediaChunks.put(chunk)
-        realtimeInput.put("mediaChunks", mediaChunks)
+        realtimeInput.put("audio", chunk)
         root.put("realtimeInput", realtimeInput)
         return root.toString()
     }
@@ -126,8 +139,50 @@ object LiveSessionModels {
         return root.toString()
     }
 
+    /** A packet can include both interruption/audio and end-of-turn events. */
+    fun parseServerMessages(jsonString: String): List<ServerMessage> {
+        val root = JSONObject(jsonString)
+        val content = root.optJSONObject("serverContent") ?: return listOf(parseServerMessage(jsonString))
+        val events = mutableListOf<ServerMessage>()
+
+        val inputTrans = content.optJSONObject("inputTranscription")
+        if (inputTrans != null && inputTrans.has("text")) {
+            val text = inputTrans.getString("text")
+            if (text.isNotBlank()) events.add(ServerMessage.UserTranscript(text))
+        }
+
+        val outputTrans = content.optJSONObject("outputTranscription")
+        if (outputTrans != null && outputTrans.has("text")) {
+            val text = outputTrans.getString("text")
+            if (text.isNotBlank()) events.add(ServerMessage.AssistantTranscript(text))
+        }
+
+        if (content.optBoolean("interrupted")) {
+            events.add(ServerMessage.Interrupted)
+        } else {
+            val parts = content.optJSONObject("modelTurn")?.optJSONArray("parts")
+            if (parts != null) for (index in 0 until parts.length()) {
+                val part = parts.getJSONObject(index)
+                val data = part.optJSONObject("inlineData")
+                if (data != null) {
+                    val mime = data.optString("mimeType", "audio/pcm;rate=24000")
+                    if (mime.startsWith("audio/pcm")) {
+                        events.add(ServerMessage.AudioData(Base64.getDecoder().decode(data.getString("data")), mime))
+                    }
+                }
+                val partText = part.optString("text", "")
+                if (partText.isNotBlank()) {
+                    events.add(ServerMessage.AssistantTranscript(partText))
+                }
+            }
+        }
+        if (content.optBoolean("turnComplete")) events.add(ServerMessage.TurnComplete)
+        return events.ifEmpty { listOf(ServerMessage.Unknown(jsonString)) }
+    }
+
     fun parseServerMessage(jsonString: String): ServerMessage {
         val root = JSONObject(jsonString)
+        if (root.has("setupComplete")) return ServerMessage.SetupComplete
 
         // Check for serverContent
         if (root.has("serverContent")) {
@@ -166,13 +221,13 @@ object LiveSessionModels {
                     val callObj = funcCalls.getJSONObject(i)
                     val id = callObj.getString("id")
                     val name = callObj.getString("name")
-                    val argsMap = mutableMapOf<String, String>()
+                    val argsMap = mutableMapOf<String, Any?>()
                     val argsObj = callObj.optJSONObject("args")
                     if (argsObj != null) {
                         val keys = argsObj.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            argsMap[k] = argsObj.optString(k, "")
+                            argsMap[k] = argsObj.opt(k)
                         }
                     }
                     callsList.add(FunctionCall(id, name, argsMap))

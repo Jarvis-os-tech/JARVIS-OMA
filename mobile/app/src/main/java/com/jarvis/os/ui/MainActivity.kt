@@ -43,9 +43,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,12 +62,17 @@ import com.jarvis.os.overlay.HaloOrb
 import com.jarvis.os.overlay.OverlayUiState
 import com.jarvis.os.service.JarvisVoiceService
 import com.jarvis.os.sync.CloudMemorySyncWorker
+import com.jarvis.os.sync.ApiCredentials
 import com.jarvis.os.sync.QrPairingScanner
+import com.jarvis.os.update.MobileUpdater
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        handleIntent(intent)
 
         setContent {
             JarvisMobileScreen(
@@ -74,6 +81,30 @@ class MainActivity : ComponentActivity() {
                 onStopDaemon = { stopVoiceDaemon() },
                 onRequestOverlay = { requestOverlayPermission() }
             )
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (ApiCredentials.gemini(this).isNotBlank() &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startVoiceDaemon()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == JarvisVoiceService.ACTION_START || intent?.action == "com.jarvis.os.action.START") {
+            startVoiceDaemon()
+        } else if (intent?.action == JarvisVoiceService.ACTION_STOP || intent?.action == "com.jarvis.os.action.STOP") {
+            stopVoiceDaemon()
+        } else if (intent?.action == "com.jarvis.os.action.SYNC_MEMORY") {
+            CloudMemorySyncWorker.syncNow(this)
         }
     }
 
@@ -86,7 +117,7 @@ class MainActivity : ComponentActivity() {
         } else {
             startService(intent)
         }
-        Toast.makeText(this, "JARVIS Voice Daemon started", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Starting Hey Jarvis standby", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopVoiceDaemon() {
@@ -115,9 +146,28 @@ fun JarvisMobileScreen(
     onStopDaemon: () -> Unit,
     onRequestOverlay: () -> Unit
 ) {
+    val voicePrefs = remember { context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE) }
+    val updateScope = rememberCoroutineScope()
+    var updateBusy by remember { mutableStateOf(false) }
+    var updateMessage by remember { mutableStateOf("") }
+    var voiceStatus by remember { mutableStateOf(voicePrefs.getString("voice_status", "Tap Enable Hey Jarvis to begin") ?: "") }
+    var executionStatus by remember { mutableStateOf(voicePrefs.getString("device_execution_status", "Phone · Connect PC to share execution") ?: "") }
+    DisposableEffect(voicePrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "voice_status") voiceStatus = prefs.getString(key, "") ?: ""
+            if (key == "device_execution_status") executionStatus = prefs.getString(key, "") ?: ""
+            if (key == "goodbye_close_requested") (context as? android.app.Activity)?.finishAndRemoveTask()
+        }
+        voicePrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { voicePrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var isPaired by remember { mutableStateOf(QrPairingScanner.isPaired(context)) }
     var pairingInfo by remember { mutableStateOf(QrPairingScanner.getPairingPayload(context)) }
+    var hasVoiceKey by remember { mutableStateOf(ApiCredentials.gemini(context).isNotBlank()) }
+    var credentialSource by remember { mutableStateOf(ApiCredentials.source(context)) }
+    var showSetupDialog by remember { mutableStateOf(!hasVoiceKey) }
     var showPairDialog by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
     var pairInputText by remember { mutableStateOf("") }
     var overlayGranted by remember {
         mutableStateOf(
@@ -133,7 +183,8 @@ fun JarvisMobileScreen(
     }
 
     LaunchedEffect(Unit) {
-        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA,
+            Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -160,7 +211,7 @@ fun JarvisMobileScreen(
                 letterSpacing = 2.sp
             )
             Text(
-                text = "Mobile Voice Companion • Siri Ambient HUD",
+                text = "Say Hey Jarvis. Your assistant is here.",
                 fontSize = 12.sp,
                 color = Color(0xFF00F2FE),
                 modifier = Modifier.padding(top = 4.dp)
@@ -168,11 +219,27 @@ fun JarvisMobileScreen(
 
             Spacer(modifier = Modifier.height(36.dp))
 
+            OutlinedButton(onClick = { showSetupDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (hasVoiceKey) "API keys and setup" else "Set up JARVIS")
+            }
+            Text(if (!hasVoiceKey) "Gemini key required · Scan PC QR or use your own key"
+                else if (credentialSource == "pc") "Voice key: From your PC" else "Voice key: Your Gemini key",
+                color = Color.Gray, fontSize = 12.sp)
+
             // Ambient Halo Orb
             HaloOrb(
                 size = 180.dp,
-                state = OverlayUiState.Listening(rms = 2500f)
+                state = OverlayUiState.Idle
             )
+
+            Text(text = voiceStatus, color = Color(0xFF00F2FE), fontSize = 14.sp,
+                modifier = Modifier.padding(top = 16.dp))
+            Text(text = "Wake with “Hey Jarvis”, pause for the greeting, then ask. Returns to standby after 15 seconds of inactivity.",
+                color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            Text(text = executionStatus, color = Color(0xFF00F2FE), fontSize = 13.sp,
+                modifier = Modifier.padding(top = 12.dp))
+            Text(text = "Say “on my phone” or “on my PC” to choose where an action runs.",
+                color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
 
             Spacer(modifier = Modifier.height(36.dp))
 
@@ -212,7 +279,7 @@ fun JarvisMobileScreen(
 
                     StatusRow(
                         title = "Cloud Memory Sync",
-                        value = "jarvis-os-508612 (Firestore/GCS)",
+                        value = if (isPaired) "Paired PC" else "Optional · PC not paired",
                         active = isPaired
                     )
                 }
@@ -222,7 +289,7 @@ fun JarvisMobileScreen(
 
             // Actions Section
             Button(
-                onClick = { onStartDaemon() },
+                onClick = { if (hasVoiceKey) onStartDaemon() else showSetupDialog = true },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
@@ -230,7 +297,7 @@ fun JarvisMobileScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F2FE))
             ) {
                 Text(
-                    text = "START AMBIENT DAEMON",
+                    text = "ENABLE HEY JARVIS",
                     color = Color.Black,
                     fontWeight = FontWeight.Bold
                 )
@@ -246,7 +313,7 @@ fun JarvisMobileScreen(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
             ) {
-                Text(text = "STOP DAEMON")
+                Text(text = "TURN OFF ASSISTANT")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -268,6 +335,7 @@ fun JarvisMobileScreen(
                 OutlinedButton(
                     onClick = {
                         CloudMemorySyncWorker.schedule(context)
+                        CloudMemorySyncWorker.syncNow(context)
                         Toast.makeText(context, "Memory sync dispatched", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier
@@ -295,7 +363,60 @@ fun JarvisMobileScreen(
                     Text(text = "Enable Floating Siri Overlay", color = Color.White)
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Enable voice navigation", color = Color.White)
+            }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}")))
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Enable brightness control", color = Color.White)
+            }
+            Text("Contacts and calls use this phone. Voice navigation lets JARVIS follow your commands inside apps.",
+                color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = {
+                updateScope.launch {
+                    updateBusy = true
+                    try {
+                        updateMessage = MobileUpdater(context).update { updateMessage = it }
+                    } catch (_: Exception) {
+                        updateMessage = "Update unavailable. Check your internet connection and try again."
+                    } finally { updateBusy = false }
+                }
+            }, enabled = !updateBusy, modifier = Modifier.fillMaxWidth()) {
+                Text(if (updateBusy) "Checking update…" else "Update JARVIS")
+            }
+            Text("Get phone updates over Wi-Fi or mobile data. No PC connection needed.", color = Color.Gray, fontSize = 12.sp)
+            if (updateMessage.isNotBlank()) Text(updateMessage, color = Color.Gray, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 8.dp))
         }
+    }
+
+    if (showSetupDialog) {
+        ApiKeySetupDialog(onDismiss = { showSetupDialog = false }, onScanPc = {
+            showSetupDialog = false
+            showPairDialog = true
+        }, onSave = { gemini, optional ->
+            try {
+                ApiCredentials.savePersonal(context, gemini, optional)
+                androidx.work.WorkManager.getInstance(context).cancelUniqueWork("jarvis_periodic_memory_sync")
+                onStopDaemon()
+                isPaired = false
+                pairingInfo = null
+                hasVoiceKey = true
+                credentialSource = "personal"
+                showSetupDialog = false
+                Toast.makeText(context, "Keys saved. Tap Enable Hey Jarvis to begin.", Toast.LENGTH_LONG).show()
+                null
+            } catch (_: IllegalArgumentException) {
+                "Paste a complete Gemini key. Optional keys may be left blank."
+            } catch (_: Exception) {
+                "Could not save keys securely. Please try again."
+            }
+        })
     }
 
     // Pairing Dialog
@@ -305,16 +426,32 @@ fun JarvisMobileScreen(
             title = { Text(text = "Pair with JARVIS Desktop") },
             text = {
                 Column {
+                    Button(
+                        onClick = {
+                            showPairDialog = false
+                            showQrScanner = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F2FE))
+                    ) {
+                        Text("SCAN QR CODE WITH CAMERA", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        text = "Run 'jarvis pair' on your desktop and paste the terminal JSON payload below:",
-                        fontSize = 13.sp
+                        text = "— or paste JSON payload manually —",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     OutlinedTextField(
                         value = pairInputText,
                         onValueChange = { pairInputText = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("{\"v\":1,\"pid\":\"jarvis-os-508612\"...}") },
+                        placeholder = { Text("Paste your PC pairing payload") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         maxLines = 4
                     )
                 }
@@ -325,6 +462,8 @@ fun JarvisMobileScreen(
                     if (payload != null) {
                         isPaired = true
                         pairingInfo = payload
+                        hasVoiceKey = ApiCredentials.gemini(context).isNotBlank()
+                        credentialSource = ApiCredentials.source(context)
                         showPairDialog = false
                         Toast.makeText(context, "Successfully paired with ${payload.deviceId}!", Toast.LENGTH_SHORT).show()
                     } else {
@@ -338,6 +477,22 @@ fun JarvisMobileScreen(
                 TextButton(onClick = { showPairDialog = false }) {
                     Text("Cancel")
                 }
+            }
+        )
+    }
+
+    // Camera QR Scanner View
+    if (showQrScanner) {
+        QrScannerDialog(
+            onDismissRequest = { showQrScanner = false },
+            onPairingSuccess = { payload ->
+                QrPairingScanner.savePairing(context, payload)
+                isPaired = true
+                pairingInfo = payload
+                hasVoiceKey = ApiCredentials.gemini(context).isNotBlank()
+                credentialSource = ApiCredentials.source(context)
+                showQrScanner = false
+                Toast.makeText(context, "Successfully paired with ${payload.deviceId}!", Toast.LENGTH_SHORT).show()
             }
         )
     }
