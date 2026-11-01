@@ -388,12 +388,18 @@ class ReleaseManager:
 
     def rollback(self, timeout: float = 8.0) -> dict[str, Any]:
         """Roll back to the previous release."""
-        if not self.previous_link.exists():
-            raise RuntimeError("No previous release found for rollback")
+        prev_target: Path | None = None
+        if self.previous_link.exists():
+            prev_target = self.previous_link.resolve()
+        else:
+            # Fall back to the most recent historical release
+            for r in self.list_releases():
+                if not r.get("is_current") and Path(r["path"]).is_dir():
+                    prev_target = Path(r["path"])
+                    break
 
-        prev_target = self.previous_link.resolve()
-        if not prev_target.is_dir():
-            raise RuntimeError(f"Previous target does not exist: {prev_target}")
+        if not prev_target or not prev_target.is_dir():
+            raise RuntimeError("No previous release found for rollback")
 
         curr_target = self.current_link.resolve() if self.current_link.exists() else None
 
