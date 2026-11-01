@@ -891,10 +891,12 @@ class LiveVoice:
             # arrive while the previous answer's interruption boundary drains.
             incoming = getattr(content, 'input_transcription', None)
             if incoming is not None and getattr(incoming, 'text', None):
+                from jarvis_control.nlu import NLUEngine
+                normalized_incoming = NLUEngine.normalize_text(incoming.text)
                 self.recognized_input_events += 1
-                self._memory_user = (self._memory_user + incoming.text)[-16000:]
+                self._memory_user = (self._memory_user + normalized_incoming)[-16000:]
                 if self._reply_authorized:
-                    self._user_text += incoming.text
+                    self._user_text += normalized_incoming
                 if self._reply_authorized and not self._reply_started:
                     self._waiting = True
 
@@ -1022,55 +1024,62 @@ class LiveVoice:
                 signature = None
                 cached = None
                 try:
-                    allowed = {tool['name'] for tool in self.skills.declarations} if self.skills else set()
-                    if name not in allowed:
-                        raise ValueError(f'Tool is not attached: {name}')
-                    if call.args is not None and not isinstance(call.args, dict):
-                        raise ValueError('Tool arguments must be an object')
-                    arguments = dict(call.args or {})
-                    signature = (name, json.dumps(arguments, sort_keys=True))
-                    cached = self._tool_results.get(call_id) if call_id else None
-                    if cached:
-                        old_signature, old_response = cached
-                        if signature != old_signature:
-                            raise ValueError('Tool call ID reused with different arguments; action was not repeated.')
-                        response = dict(old_response, cached=True)
+                    from jarvis_control.nlu import NLUEngine
+                    arguments = dict(call.args or {}) if call.args is not None and isinstance(call.args, dict) else {}
+                    allowed_by_nlu, nlu_guidance = NLUEngine.validate_tool_intent(name, arguments, self._user_text)
+                    if not allowed_by_nlu:
+                        log.info('NLU Gate intercepted tool %s: %s', name, nlu_guidance)
+                        response = {'ok': False, 'status': 'conversational_intent_required',
+                                    'error': nlu_guidance, 'guidance': nlu_guidance}
                     else:
-                        if name == 'confirm_last':
-                            heard = re.sub(r'[^\w]+', ' ', str(arguments.get('heard_phrase', '')).casefold()).strip()
-                            actual = re.sub(r'[^\w]+', ' ', self._user_text.casefold()).strip()
-                            if not heard or heard != actual or self._confirmation_gate_turn == self.gate.accepted_turns:
-                                raise ValueError('Confirmation requires a matching user transcript from a new spoken turn.')
-                        elif name == 'play_local_filler':
-                            self._play_filler_reflex(arguments.get('context_type', 'generic_deep_thought'))
-                        timeout = (90 if name in {'web_search', 'open_page', 'read_page_text', 'read_screen',
-                                                  'browser_task', 'compose_windows', 'run_in_terminal',
-                                                  'api_anything_propose', 'api_anything_learn',
-                                                  'api_anything_call', 'api_anything_search',
-                                                  'api_anything_list_operations'}
-                                   else 30 if name == 'system_control' else 15)
-                        self._tools_in_flight += 1
-                        self._active_tool = name
-                        log.info('Executing tool %s: %s', name, json.dumps(arguments))
-                        try:
-                            result = await asyncio.wait_for(self.skills.execute(name, arguments), timeout=timeout)
-                        finally:
-                            self._tools_in_flight -= 1
-                            self._active_tool = ''
-                            if self._barge_pending and not self._tools_in_flight:
-                                self._barge_started_at = self._last_progress = time.monotonic()
-                        log.info('Tool %s finished in %.2fs', name, time.monotonic() - started)
-                        if isinstance(result, str) and result.startswith('ERROR:'):
-                            detail = result[len('ERROR:'):].strip()
-                            held = 'needs spoken confirmation' in detail
-                            response = {'ok': False, 'status': 'needs_confirmation' if held else 'failed',
-                                        'error': detail, 'result': result}
-                            if held:
-                                self._confirmation_gate_turn = self.gate.accepted_turns
+                        allowed = {tool['name'] for tool in self.skills.declarations} if self.skills else set()
+                        if name not in allowed:
+                            raise ValueError(f'Tool is not attached: {name}')
+                        if call.args is not None and not isinstance(call.args, dict):
+                            raise ValueError('Tool arguments must be an object')
+                        signature = (name, json.dumps(arguments, sort_keys=True))
+                        cached = self._tool_results.get(call_id) if call_id else None
+                        if cached:
+                            old_signature, old_response = cached
+                            if signature != old_signature:
+                                raise ValueError('Tool call ID reused with different arguments; action was not repeated.')
+                            response = dict(old_response, cached=True)
                         else:
-                            response = {'ok': True, 'status': 'completed', 'result': result}
-                            if name == 'enter_standby':
-                                self._drop_response = True
+                            if name == 'confirm_last':
+                                heard = re.sub(r'[^\w]+', ' ', str(arguments.get('heard_phrase', '')).casefold()).strip()
+                                actual = re.sub(r'[^\w]+', ' ', self._user_text.casefold()).strip()
+                                if not heard or heard != actual or self._confirmation_gate_turn == self.gate.accepted_turns:
+                                    raise ValueError('Confirmation requires a matching user transcript from a new spoken turn.')
+                            elif name == 'play_local_filler':
+                                self._play_filler_reflex(arguments.get('context_type', 'generic_deep_thought'))
+                            timeout = (90 if name in {'web_search', 'open_page', 'read_page_text', 'read_screen',
+                                                      'browser_task', 'compose_windows', 'run_in_terminal',
+                                                      'api_anything_propose', 'api_anything_learn',
+                                                      'api_anything_call', 'api_anything_search',
+                                                      'api_anything_list_operations'}
+                                       else 30 if name == 'system_control' else 15)
+                            self._tools_in_flight += 1
+                            self._active_tool = name
+                            log.info('Executing tool %s: %s', name, json.dumps(arguments))
+                            try:
+                                result = await asyncio.wait_for(self.skills.execute(name, arguments), timeout=timeout)
+                            finally:
+                                self._tools_in_flight -= 1
+                                self._active_tool = ''
+                                if self._barge_pending and not self._tools_in_flight:
+                                    self._barge_started_at = self._last_progress = time.monotonic()
+                            log.info('Tool %s finished in %.2fs', name, time.monotonic() - started)
+                            if isinstance(result, str) and result.startswith('ERROR:'):
+                                detail = result[len('ERROR:'):].strip()
+                                held = 'needs spoken confirmation' in detail
+                                response = {'ok': False, 'status': 'needs_confirmation' if held else 'failed',
+                                            'error': detail, 'result': result}
+                                if held:
+                                    self._confirmation_gate_turn = self.gate.accepted_turns
+                            else:
+                                response = {'ok': True, 'status': 'completed', 'result': result}
+                                if name == 'enter_standby':
+                                    self._drop_response = True
                 except TimeoutError:
                     response = {'ok': False, 'status': 'unknown',
                                 'error': 'Tool timed out; outcome is unknown. Inspect current state before retrying any action.'}

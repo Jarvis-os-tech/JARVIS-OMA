@@ -872,5 +872,38 @@ async def test_send_inputs_formats_code_and_image_attachments():
     assert any(getattr(getattr(p, 'inline_data', None), 'mime_type', '') == 'image/png' for p in turn2_content.parts)
 
 
+@pytest.mark.asyncio
+async def test_nlu_gate_intercepts_unwanted_pairing_and_intrusive_tools():
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+
+    skills = SimpleNamespace(
+        declarations=[{'name': 'phone_pair'}, {'name': 'phone_list_contacts'}],
+        execute=AsyncMock(return_value='executed')
+    )
+    voice = LiveVoice(Playback('default'), skills=skills)
+    voice._reply_authorized = True
+    sent_responses = []
+
+    class FakeSession:
+        async def send_tool_response(self, function_responses):
+            sent_responses.extend(function_responses)
+
+    session = FakeSession()
+
+    # User is explaining a connection issue, model tries to call phone_pair
+    voice._user_text = "But it's still showing the PC unavailable connection. The reason why it's showingspot"
+    event = SimpleNamespace(function_calls=[SimpleNamespace(id='call-1', name='phone_pair', args={})])
+    await voice.handle_tools(event, session)
+
+    # phone_pair must NOT be executed by skills
+    skills.execute.assert_not_awaited()
+    assert len(sent_responses) == 1
+    resp = sent_responses[0].response
+    assert resp['status'] == 'conversational_intent_required'
+    assert 'The user did NOT command to open or scan the pairing QR code' in resp['error']
+
+
+
 
 
