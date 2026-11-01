@@ -23,7 +23,49 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.flow.MutableStateFlow
+
+/**
+ * Custom LifecycleOwner, ViewModelStoreOwner, and SavedStateRegistryOwner
+ * required for running Jetpack Compose Views inside a Service WindowManager overlay.
+ */
+class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    private val store = ViewModelStore()
+
+    override val lifecycle: Lifecycle = lifecycleRegistry
+    override val viewModelStore: ViewModelStore = store
+    override val savedStateRegistry: SavedStateRegistry = savedStateRegistryController.savedStateRegistry
+
+    fun onCreate() {
+        savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+    }
+
+    fun onResume() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+    }
+
+    fun onDestroy() {
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        store.clear()
+    }
+}
 
 /**
  * Manages the floating system overlay window (TYPE_APPLICATION_OVERLAY).
@@ -35,6 +77,7 @@ class OverlayWindowManager(
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var composeView: ComposeView? = null
+    private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var isAttached = false
 
     private val overlayStateFlow = MutableStateFlow<OverlayUiState>(OverlayUiState.Idle)
@@ -70,8 +113,19 @@ class OverlayWindowManager(
         }
 
         try {
+            val owner = OverlayLifecycleOwner().apply {
+                onCreate()
+                onResume()
+            }
+            lifecycleOwner = owner
+
             val view = ComposeView(context).apply {
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+
+                setViewTreeLifecycleOwner(owner)
+                setViewTreeViewModelStoreOwner(owner)
+                setViewTreeSavedStateRegistryOwner(owner)
+
                 setContent {
                     val state by overlayStateFlow.collectAsState()
 
@@ -106,7 +160,7 @@ class OverlayWindowManager(
             windowManager.addView(view, layoutParams)
             composeView = view
             isAttached = true
-            Log.i(TAG, "OverlayWindowManager attached successfully")
+            Log.i(TAG, "OverlayWindowManager attached successfully with custom lifecycle")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach overlay window: ${e.message}", e)
         }
@@ -155,6 +209,8 @@ class OverlayWindowManager(
     fun detach() {
         if (!isAttached) return
         try {
+            lifecycleOwner?.onDestroy()
+            lifecycleOwner = null
             composeView?.let { windowManager.removeView(it) }
             composeView = null
             isAttached = false
