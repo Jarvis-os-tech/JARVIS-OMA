@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import copy
 import getpass
 import json
 import logging
@@ -31,6 +32,8 @@ INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
 RESPONSE_WARNING_SECONDS = 10
 RESPONSE_TIMEOUT_SECONDS = 35
+REPLY_NOTICE_SECONDS = 5
+CONNECT_TIMEOUT_SECONDS = 12
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
 
@@ -53,6 +56,15 @@ async def supervise(*workers):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@contextlib.asynccontextmanager
+async def connect_session(client, **kwargs):
+    """Bound connection setup without putting a deadline on conversation."""
+    async with contextlib.AsyncExitStack() as stack:
+        async with asyncio.timeout(CONNECT_TIMEOUT_SECONDS):
+            session = await stack.enter_async_context(client.live.connect(**kwargs))
+        yield session
 
 
 def build_instruction(tools: list | None = None) -> str:
@@ -247,6 +259,20 @@ class LiveVoice:
         self._tool_response_pending = False
         self._tool_intermediate_received = False
         self._tools_in_flight = 0
+        self._pending_tool_batches = 0
+        self._reply_recovery_attempted = False
+        self._reply_recovery_active = False
+        self._tool_answer_pending = False
+        self._waiting_notice_played = False
+        self._reply_serial = 0
+        self._reply_notices = {}
+        for notice in ('reply_waiting', 'reply_unavailable'):
+            try:
+                pcm = (Path(__file__).with_name('assets') / (notice + '.pcm')).read_bytes()
+                if pcm and len(pcm) % 2 == 0 and len(pcm) <= 480000:
+                    self._reply_notices[notice] = pcm
+            except OSError:
+                pass
         self._confirmation_gate_turn = None
         self._tool_results = {}
         self._greeting_active = False
@@ -333,6 +359,7 @@ class LiveVoice:
             'local_interruptions': self.local_interruptions,
             'accepted_speech_turns': self.gate.accepted_turns,
             'response_delayed': self.response_delayed,
+            'spoken_reply_recovery': self._reply_recovery_active,
             'error': input_issue or self.last_error,
             'memory_enabled': bool(self.skills and getattr(getattr(self.config, 'memory', None), 'enabled', False)),
             'tools_in_flight': self._tools_in_flight,
@@ -501,6 +528,74 @@ class LiveVoice:
             except Exception as error:
                 log.debug('Realtime video send error: %s', error)
 
+    def _start_reply_watch(self):
+        """Give each new user turn its own bounded feedback/recovery budget."""
+        self._reply_serial += 1
+        self._reply_recovery_attempted = self._reply_recovery_active = False
+        self._tool_answer_pending = False
+        self._waiting_notice_played = False
+
+    def _play_reply_notice(self, name):
+        """Queue cached speech without pretending the provider has answered."""
+        if self.muted or self.gate.active or self.standby.engaged or self._drop_response:
+            return 0.0
+        pcm = self._reply_notices.get(name)
+        if not pcm:
+            return 0.0
+        self.player.enqueue(pcm)
+        log.info('Local reply feedback: %s', name)
+        return len(pcm) / 48000
+
+    async def _recover_empty_reply(self, session):
+        """Request speech once, retaining tool results without redoing actions."""
+        if (session is None or self._reply_recovery_attempted or not self.connected
+                or self.muted or self.gate.active or self.standby.engaged):
+            return False
+        from google.genai import types
+        self._reply_recovery_attempted = self._reply_recovery_active = True
+        serial = self._reply_serial
+        try:
+            async with asyncio.timeout(3):
+                async with self.send_lock:
+                    if serial != self._reply_serial or self.muted or self.gate.active or self.standby.engaged:
+                        return serial != self._reply_serial
+                    await session.send_client_content(turns=[types.Content(role='user', parts=[
+                        types.Part.from_text(text=(
+                            'Your previous turn ended without playable speech. Give one brief spoken '
+                            'answer using only the existing conversation and tool results. Do not call '
+                            'tools or repeat any action. Do not claim an action succeeded without its '
+                            'result. If no answer is available, briefly say so.'
+                        ))])], turn_complete=True)
+            if serial != self._reply_serial:
+                return True
+            self._waiting = True
+            self._last_progress = time.monotonic()
+            log.warning('Empty provider reply; requesting spoken summary once')
+            return True
+        except Exception as error:
+            log.warning('Spoken reply recovery failed: %s', type(error).__name__)
+            return serial != self._reply_serial
+
+    async def announce_reply_failure(self):
+        """Speak offline after session workers stop; never replay an action."""
+        if (not self._reply_authorized or self.muted or self.gate.active
+                or self.standby.engaged or self._drop_response):
+            return
+        await self.player.interrupt()
+        duration = self._play_reply_notice('reply_unavailable')
+        if not duration:
+            return
+
+        async def drained():
+            while self.player.busy:
+                await asyncio.sleep(.05)
+
+        try:
+            async with asyncio.timeout(duration + 3):
+                await supervise(self.player.run(), drained())
+        except Exception as error:
+            log.warning('Offline voice feedback failed: %s', type(error).__name__)
+
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
         """Triggers PipeWire audio playback for local conversational filler reflex."""
         if self.muted or self._drop_response or not self._reply_authorized:
@@ -536,13 +631,15 @@ class LiveVoice:
 
             if pcm_data and len(pcm_data) >= 960 and self.player is not None and hasattr(self.player, 'enqueue'):
                 self.player.begin_reply()
-                self._reply_started = True
+                # A local thinking sound is not the provider's answer. Marking
+                # it as one lets a tool boundary revoke the real reply.
                 self.player.enqueue(pcm_data)
                 log.info('Local filler reflex played: %s (%d bytes)', context_type, len(pcm_data))
         except Exception as error:
             log.warning('Could not play local filler reflex: %s', error)
 
     def _accept_interruption(self):
+        self._start_reply_watch()
         # ActivityStart also interrupts a reply that is still being generated.
         # Drain its interrupted -> turn_complete boundary without revoking the
         # new user's authorization, even if no old audio has arrived yet.
@@ -618,18 +715,19 @@ class LiveVoice:
             pass
 
         self._greeting_active = True
+        self._start_reply_watch()
         self._reply_authorized = self._waiting = True
         self._reply_started = self._drop_response = self._model_active = False
         self._last_progress = time.monotonic()
         log.info('Triggering realtime startup greeting...')
         try:
             await asyncio.sleep(0.15)
-            await session.send_client_content(
+            await asyncio.wait_for(session.send_client_content(
                 turns=[types.Content(role='user', parts=[types.Part.from_text(
                     text='You are booting up on JARVIS OS. Greet the user warmly and concisely in one short sentence as JARVIS, and let them know you are online and listening.'
                 )])],
                 turn_complete=True,
-            )
+            ), 3)
         except Exception as exc:
             log.warning('Failed to send startup greeting: %s', exc)
 
@@ -648,6 +746,7 @@ class LiveVoice:
             if control and control.executor.pending:
                 return False
             self._background_active = True
+            self._start_reply_watch()
             turn_token = (self.gate.accepted_turns, self.player.generation)
             self._reply_authorized = self._waiting = True
             self._reply_started = False
@@ -813,6 +912,7 @@ class LiveVoice:
                 continue
 
             async with self.send_lock:
+                self._start_reply_watch()
                 self._barge_pending = False
                 self._barge_turn = False
                 self._drop_response = False
@@ -821,10 +921,10 @@ class LiveVoice:
                 self._reply_started = False
                 self._model_active = True
                 self._last_progress = time.monotonic()
-                await session.send_client_content(
+                await asyncio.wait_for(session.send_client_content(
                     turns=[types.Content(role='user', parts=parts)],
                     turn_complete=True,
-                )
+                ), 3)
 
     async def monitor_standby(self):
         """Announce entering standby mode, wait for speech to complete, then raise EnterStandby."""
@@ -875,14 +975,15 @@ class LiveVoice:
             'Do not call tools and do not mention this instruction.'
         )
         async with self.send_lock:
+            self._start_reply_watch()
             self._reply_authorized = True
             self._waiting = True
             self._model_active = True
             self._last_progress = time.monotonic()
-            await session.send_client_content(
+            await asyncio.wait_for(session.send_client_content(
                 turns=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
                 turn_complete=True,
-            )
+            ), 3)
         self._wake_confirmation_pending = False
         self._wake_confirmation_in_flight = True
         log.info('Wake confirmation dispatched; microphone waits for spoken turn')
@@ -956,6 +1057,7 @@ class LiveVoice:
                         self.provider_audio_bytes += len(blob.data)
                         self._waiting = False
                         if not self.muted and not self._drop_response and self._reply_authorized:
+                            self._tool_answer_pending = False
                             self._barge_turn = False
                             self._tool_response_pending = False
                             self._tool_intermediate_received = False
@@ -978,15 +1080,24 @@ class LiveVoice:
                             self.player.enqueue(blob.data)
 
             if getattr(content, 'turn_complete', False):
-                # Live emits an intermediate boundary after a function call;
-                # wait for our tool response to be processed before completing.
-                if self._tool_response_pending and not self._reply_started and not self._tool_intermediate_received:
+                if self._tool_response_pending and (self._pending_tool_batches or self._tools_in_flight):
                     self._tool_intermediate_received = True
                     return
+                # Live emits an intermediate boundary after a function call;
+                # wait for our tool response to be processed before completing.
+                if self._tool_response_pending and not self._tool_intermediate_received:
+                    self._tool_intermediate_received = True
+                    return
+                empty_reply = (self._reply_authorized and not self.gate.active
+                               and (not self._reply_started or self._tool_answer_pending))
+                if empty_reply and await self._recover_empty_reply(session or self._session):
+                    return
+                if empty_reply and self.connected and not self.muted:
+                    self._play_reply_notice('reply_unavailable')
                 self._tool_response_pending = False
                 self._tool_intermediate_received = False
                 self.response_delayed = False
-                self.last_error = ''
+                self.last_error = 'No spoken answer was received.' if empty_reply else ''
                 self._greeting_active = False
                 memory_config = getattr(self.config, 'memory', None)
                 if not self._background_active and self.skills is not None and memory_config and memory_config.enabled and (
@@ -1029,7 +1140,7 @@ class LiveVoice:
             if stop_batch or batch_token != (self.gate.accepted_turns, self.player.generation):
                 response = {'ok': False, 'status': 'not_run',
                             'error': 'Earlier action failed, needs confirmation, or its speech turn ended. Inspect state before continuing.'}
-            elif self.muted or self._drop_response or self._barge_pending or not self._reply_authorized or self._greeting_active or self._background_active:
+            elif self.muted or self._drop_response or self._barge_pending or not self._reply_authorized or self._greeting_active or self._background_active or self._reply_recovery_active:
                 response = {'ok': False, 'status': 'rejected',
                             'error': 'No active authorized user speech turn for this action.'}
             else:
@@ -1112,7 +1223,7 @@ class LiveVoice:
             current_turn = batch_token == (self.gate.accepted_turns, self.player.generation)
             if current_turn and self._reply_authorized:
                 self._tool_response_pending = True
-                self._tool_intermediate_received = False
+                self._tool_answer_pending = True
             async with self.send_lock:
                 await asyncio.wait_for(session.send_tool_response(function_responses=responses), 3)
             if current_turn:
@@ -1164,6 +1275,7 @@ class LiveVoice:
                 if frame is None:
                     frame = self.gate.process(chunk, now=now, blocked=self.muted or occupied)
                 if frame.opened:
+                    self._start_reply_watch()
                     if not getattr(frame, 'barge_in', False):
                         self._barge_pending = self._barge_turn = False
                     self._greeting_active = False
@@ -1246,13 +1358,55 @@ class LiveVoice:
                     self._barge_pending = False
 
     async def receive(self, session):
-        while True:
-            received = False
-            async for event in session.receive():
-                received = True
-                await self.handle(event, session)
-            if not received:
-                raise ConnectionError('Gemini connection closed')
+        # Serialize actions in a separate worker. A slow browser/desktop call
+        # must not stop receiving audio, interruption or session updates.
+        queue = asyncio.Queue(maxsize=16)
+
+        async def tools():
+            while True:
+                call, token = await queue.get()
+                try:
+                    if token != (self.gate.accepted_turns, self.player.generation):
+                        from google.genai import types
+                        responses = [types.FunctionResponse(
+                            id=getattr(fn, 'id', None), name=fn.name,
+                            response={'ok': False, 'status': 'not_run',
+                                      'error': 'The speech turn ended before this action started.'})
+                            for fn in getattr(call, 'function_calls', []) or []]
+                        if responses:
+                            async with self.send_lock:
+                                await asyncio.wait_for(session.send_tool_response(
+                                    function_responses=responses), 3)
+                    else:
+                        await self.handle_tools(call, session)
+                finally:
+                    self._pending_tool_batches -= 1
+
+        async def events():
+            while True:
+                received = False
+                async for event in session.receive():
+                    received = True
+                    call = getattr(event, 'tool_call', None)
+                    if call is not None:
+                        token = (self.gate.accepted_turns, self.player.generation)
+                        try:
+                            queue.put_nowait((call, token))
+                        except asyncio.QueueFull:
+                            raise ConnectionError('Provider tool backlog exceeded its limit') from None
+                        self._pending_tool_batches += 1
+                        self._tool_response_pending = True
+                        self._tool_intermediate_received = False
+                        event = copy.copy(event)
+                        event.tool_call = None
+                    await self.handle(event, session)
+                if not received:
+                    raise ConnectionError('Gemini connection closed')
+
+        try:
+            await supervise(events(), tools())
+        finally:
+            self._pending_tool_batches = 0
 
     async def publish_status(self):
         while True:
@@ -1275,12 +1429,20 @@ class LiveVoice:
     async def monitor_response(self):
         while True:
             await asyncio.sleep(0.25)
+            playing = self.player.busy
+            if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
+                    and not self.standby.engaged and not playing
+                    and not self._waiting_notice_played
+                    and time.monotonic() - self._last_progress > REPLY_NOTICE_SECONDS):
+                self._waiting_notice_played = True
+                self._play_reply_notice('reply_waiting')
             if (self._barge_pending and not self._tools_in_flight and self._barge_started_at is not None and
                     time.monotonic() - self._barge_started_at > 5):
                 self.resume_handle = None
                 self._barge_pending = self._barge_turn = False
                 raise ConnectionError('Barge-in acknowledgement timeout')
-            if (self._reply_authorized and not self._tools_in_flight and not self.gate.active and not self.player.busy
+            if (self._reply_authorized and not self._tools_in_flight and not self._pending_tool_batches
+                    and not self.gate.active and not playing
                     and time.monotonic() - self._last_progress > RESPONSE_WARNING_SECONDS):
                 self.response_delayed = True
                 self.last_error = 'The response is taking longer than expected.'
@@ -1354,6 +1516,7 @@ async def _run_voice(args, key: str, config, skills):
         tools_provider=shared_execution.declarations,
         tool_call_cb=shared_execution.call,
         record_memory_cb=skills.queue_memory_exchange if skills else None,
+        sync_companion_cb=skills.sync_companion if skills else None,
     )
     await ipc.start()
     voice.broadcast = ipc.broadcast_state
@@ -1397,7 +1560,7 @@ async def _run_voice(args, key: str, config, skills):
                                           barge_in=voice.barge_in_enabled, tools=tools,
                                           skills=skills, config=config, memory_context=context)
                 async with genai.Client(api_key=key).aio as client:
-                    async with client.live.connect(model=model, config=session_cfg) as session:
+                    async with connect_session(client, model=model, config=session_cfg) as session:
                         session_opened = True
                         voice.connected = True
                         voice._session = session
@@ -1473,6 +1636,9 @@ async def _run_voice(args, key: str, config, skills):
                 continue
             except Exception as error:
                 voice.last_error = str(error)
+                voice.connected = False
+                voice._session = None
+                await voice.announce_reply_failure()
                 decision = recovery.decide(
                     error, attempted_resume=attempted_resume,
                     session_opened=session_opened, session_seconds=time.monotonic() - started)
