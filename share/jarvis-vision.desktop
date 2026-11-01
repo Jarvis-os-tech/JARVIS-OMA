@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=JARVIS Vision
+Comment=Live camera preview and visual intelligence for JARVIS OS
+Exec=jarvis-vision start
+Icon=camera-video
+Terminal=false
+Categories=AudioVideo;Video;Utility;
+Keywords=JARVIS;camera;vision;AI;

@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "play_local_filler",
+      "description": "Instantly triggers the local PipeWire audio track to play a low-latency conversational filler snippet during deep thinking states or background task preparation.",
+      "adapter": "audio.filler",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "context_type": {
+            "type": "string",
+            "enum": [
+              "generic_deep_thought",
+              "system_mutation",
+              "filesystem_grep",
+              "sub_agent_spawn"
+            ],
+            "description": "The structural context of the pending task to pick the matching voice tone and phrase duration."
+          }
+        },
+        "required": [
+          "context_type"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
