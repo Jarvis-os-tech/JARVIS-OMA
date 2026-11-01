@@ -157,7 +157,7 @@
     },
     {
       "name": "phone_status",
-      "description": "Check the current phone and telephony connection status, including connected phone gateways and active calls.",
+      "description": "Check Bluetooth/OMyPhone TELEPHONY gateways and active calls. This is not Android screen/app control. To check or control the paired Android phone wirelessly, use phone_control with action=status instead. A disconnected calling gateway does not mean wireless Android control is disconnected.",
       "adapter": "phone.status",
       "parameters_json_schema": {
         "type": "object",

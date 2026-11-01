@@ -67,3 +67,27 @@ def test_validate_tool_intent_blocks_intrusive_tools_for_conversational_question
     allowed_media, guidance2 = NLUEngine.validate_tool_intent("system_control_extension", {"action": "list", "category": "media"}, user_text)
     assert allowed_media is False
     assert "The user is asking a conversational question" in guidance2
+
+
+def test_validate_tool_intent_blocks_github_authorize_on_repo_scan():
+    user_text = "Jarvis, to scan the agent's repository and provide the clear report on that."
+    allowed, guidance = NLUEngine.validate_tool_intent("github_authorize", {}, user_text)
+    assert allowed is False
+    assert "Do NOT invoke github_authorize" in guidance
+    assert "local on this PC" in guidance
+
+
+def test_validate_tool_intent_allows_explicit_github_login():
+    user_text = "Please authorize github so we can sync issues"
+    allowed, guidance = NLUEngine.validate_tool_intent("github_authorize", {}, user_text)
+    assert allowed is True
+    assert guidance == ""
+
+
+def test_standby_farewells():
+    for phrase in ["I have to go.", "Goodbye Jarvis", "Bye bye", "See you later", "Chalta hoon"]:
+        res = NLUEngine.analyze(phrase)
+        assert res.category == IntentCategory.STANDBY
+        allowed, _ = NLUEngine.validate_tool_intent("enter_standby", {}, phrase)
+        assert allowed is True
+

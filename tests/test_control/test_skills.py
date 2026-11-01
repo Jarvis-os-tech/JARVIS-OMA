@@ -187,3 +187,23 @@ def test_direct_task_worker_imports_without_compatibility_shim(tmp_path):
     result = subprocess.run([sys.executable, '-c', code], cwd=tmp_path, env=env,
                             text=True, capture_output=True, timeout=10)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.asyncio
+async def test_control_skills_read_url(monkeypatch):
+    skills = ControlSkills(Config())
+    tool_names = {t["name"] for t in skills.declarations}
+    assert "read_url" in tool_names
+
+    monkeypatch.setattr(
+        'jarvis_control.web_text.bounded_page_text',
+        lambda url, timeout=12: "Extracted article text for testing",
+    )
+
+    result = await skills.execute("read_url", {"url": "https://example.com/test"})
+    assert "Extracted article text for testing" in result
+
+    # Invalid URL scheme rejected safely
+    invalid_result = await skills.execute("read_url", {"url": "ftp://example.com"})
+    assert "http or https address" in invalid_result
+

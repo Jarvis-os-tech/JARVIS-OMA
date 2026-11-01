@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,7 +38,8 @@ QUERY_KINDS = {
 
 # Read-only tools still run under --dry-run so the planner can see the desktop.
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
-                   "read_terminal", "list_terminals", "task_list", "task_status", "task_read"}
+                   "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
+                   "read_url", "fetch_web_page"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -602,6 +604,23 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "read_url",
+        "description": (
+            "Fetch, read, and analyze the contents of any public web page or link (URL) "
+            "directly in the background without opening a browser window. Returns clean page text "
+            "and links for summarization, answering questions, or inspecting web content. "
+            "Use this whenever the user sends a link or asks you to read, analyze, or summarize a URL."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The complete http:// or https:// URL to fetch and read."},
+            },
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "read_terminal",
         "description": (
             "Read a terminal's output as EXACT text, through tmux. Use this instead of "
@@ -1028,6 +1047,10 @@ SYSTEM_QUERIES["os"] = _os_report
 
 
 TOOL_SCHEMAS.append(SYSTEM_CONTROL_SCHEMA)
+from .phone_control import SCHEMA as PHONE_CONTROL_SCHEMA
+TOOL_SCHEMAS.append(PHONE_CONTROL_SCHEMA)
+from .mobile_pairing import SCHEMA as PHONE_PAIR_SCHEMA
+TOOL_SCHEMAS.append(PHONE_PAIR_SCHEMA)
 
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
@@ -1299,6 +1322,30 @@ class Executor:
         from .vision import VisionClient
         self.vision = VisionClient(config, session=True)
 
+    def _tool_phone_pair(self):
+        from .mobile_pairing import open_pairing_qr
+        try:
+            return Result(True, open_pairing_qr())
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            return Result(False, 'Phone pairing QR unavailable. Check desktop Gemini configuration and QR image support.')
+
+    def _validate_phone_control(self, action, **args):
+        from .phone_control import PhoneController
+        try:
+            PhoneController.validate(action, **args)
+        except (ValueError, TypeError) as error:
+            return str(error)
+        return None
+
+    def _tool_phone_control(self, action, **args):
+        from .phone_control import PhoneController
+        try:
+            result = PhoneController().execute(action, **args)
+            return Result(True, json.dumps(result, ensure_ascii=False))
+        except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired, ET.ParseError) as error:
+            return Result(False, str(error) if isinstance(error, (ValueError, RuntimeError)) else
+                          'Phone control unavailable; reconnect the paired phone wirelessly')
+
     def _tool_camera_view(self, action, question="", region=None):
         try:
             value = self.vision.call(action, question, region)
@@ -1458,6 +1505,8 @@ class Executor:
 
     @staticmethod
     def describe(name: str, args: dict) -> str:
+        if name == "phone_control":
+            return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
             return f"start isolated task: {args.get('goal', '')}"
         if name.startswith("task_"):
@@ -1511,6 +1560,8 @@ class Executor:
             return f'search the {scope} for {args.get("query", "")!r}'
         if name == "open_page":
             return f'open {args.get("url", "")}'
+        if name in ("read_url", "fetch_web_page"):
+            return f'read URL {args.get("url", "")}'
         if name == "read_terminal":
             return f'read terminal {args.get("target", "") or "(busiest pane)"}'
         if name == "list_terminals":
@@ -3039,6 +3090,21 @@ class Executor:
             return Result(False, f"opened {url} (window address:{address}) but could not "
                                 f"read it: {got.output}")
         return Result(True, f"opened {url} (window address:{address}):\n\n{got.output}")
+
+    def _tool_read_url(self, url: str) -> Result:
+        if not url or urlparse(url or "").scheme.lower() not in ("http", "https"):
+            return Result(False, "url must be a valid http or https address")
+        from .web_text import bounded_page_text, PageReadError
+        try:
+            text = bounded_page_text(url, timeout=12)
+            return Result(True, text)
+        except PageReadError as err:
+            return Result(False, f"could not read page {url}: {err}")
+        except Exception as err:
+            return Result(False, f"error reading {url}: {err}")
+
+    def _tool_fetch_web_page(self, url: str) -> Result:
+        return self._tool_read_url(url)
 
     # -- reach: scrolling ---------------------------------------------------
     def _window_geometry(self, target: str) -> tuple[dict | None, str]:

@@ -13,6 +13,19 @@
         "required": ["query"],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "read_url",
+      "description": "Fetch, read, and analyze the contents of any public web page or link (URL) directly in the background without opening a browser window. Returns clean page text and links for summarization, answering questions, or inspecting web content. Use this whenever the user sends a link or asks you to read, analyze, or summarize a URL.",
+      "adapter": "web.read_url",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string", "description": "The complete http:// or https:// URL to fetch and read."}
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      }
     }
   ]
 }

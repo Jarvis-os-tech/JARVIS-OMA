@@ -2,15 +2,17 @@
 
 Research assessment and implementation blueprint
 
-Prepared for Gopi • 1 November 2026 • Version 1.0
+Prepared for Gopi • 1 November 2026 • Version 1.2
+
+Repository baseline reconciled with commit ea52787 and the earlier Hermes integration on origin/dev
 
 ## 1 Decision and scope
 
-**Use Hermes as the planning and coordination brain for complex Jarvis tasks. Keep Jarvis responsible for voice, immediate desktop actions, execution policy, durable task records, and worker supervision.** Hermes should decide what work is needed and which verified capability should perform it. A small Jarvis bridge should turn that plan into tracked execution, return evidence, and deliver the result through the original voice or chat session.
+**Hermes and Jarvis are both primary orchestrators, with Hermes as the main orchestrator.** Both can understand goals, plan work, execute tools, delegate to agents, coordinate dependencies, and verify results within their authorized capabilities. Hermes is the default lead for broad coordination; Jarvis can also own and complete tasks independently, including multi-step work. They share a task service so either one's plan becomes tracked execution with evidence returned to the original voice or chat session.
 
 This architecture can cover software development, research, documents, analysis, personal workflows, desktop operations, and scheduled monitoring. “Any task” means an extensible system that can discover a suitable capability, carry out authorized work, verify the outcome, or explain exactly which capability or input is missing. It does not mean unrestricted computer access or guaranteed success on every request.
 
-The most important finding is that much of the foundation already exists. This machine has Hermes v0.22.5, relevant orchestration skills, several agent commands, a Jarvis CLI supervisor, a separate durable task system, and a shared memory MCP server. What remains is a reliable connection between these pieces. Their presence establishes implementation potential; authentication, live adapter behavior, and end-to-end orchestration still need acceptance testing. [L1–L7]
+The most important finding is that much of the foundation already exists. This machine has Hermes v0.22.5, relevant orchestration skills, several agent commands, a Jarvis CLI supervisor, a separate durable task system, and a shared memory MCP server. Repository history also supplies an authenticated Hermes gateway bridge and journaled task helpers, consolidated into the current branch by ea52787. What remains is repairing incomplete consolidation and connecting these pieces through one authoritative lifecycle. Their presence establishes implementation potential; authentication, live adapter behavior, and end-to-end orchestration still need acceptance testing. [L1–L10]
 
 This document reviews the entire supplied report package, checks current official documentation, and specifies a proposed system. Recommendations, configuration examples, and interface contracts below describe work to implement; they do not claim that the system has already been deployed. No worker tasks, model calls, installations, configuration changes, or service restarts were performed for this assessment.
 
@@ -29,13 +31,13 @@ Choosing a Claude model for a Hermes child does not launch Claude Code. Loading 
 
 ### 1.2 Recommended implementation choice
 
-For this existing Jarvis installation, extend the durable Jarvis task system and place Hermes behind a service boundary. Reuse the older multi-CLI supervisor’s launch and cancellation logic after reconciling its flags and policy. Keep one authoritative task record.
+For this existing Jarvis installation, support both orchestrators through the durable Jarvis task system and reuse the existing Hermes gateway service boundary. Repair and connect `HermesBridge` and `TaskAgents` before considering another client implementation. Reuse the older multi-CLI supervisor's launch and cancellation logic after reconciling its flags and policy. Each task has one current coordinating owner, Hermes or Jarvis, and one authoritative task record.
 
 Hermes Kanban is a credible alternative for owning complex workflow state, especially in a Hermes-first deployment. Adopt it only through an explicit ownership decision or migration. Do not allow Kanban and Jarvis to independently schedule, retry, or mark the same task complete.
 
 ## 2 Assessment of the complete supplied report
 
-The package contains the main report, quickstart, skills catalog, and architecture HTML. The main report correctly identifies Hermes as a persistent agent framework with multiple interfaces, extensible tools, skills, scheduling, and delegation. Its Jarvis diagram, however, places Hermes in the worker layer. The requested design promotes Hermes to coordinator for complex tasks while retaining the existing Jarvis interaction and control foundation. [R1–R4]
+The package contains the main report, quickstart, skills catalog, and architecture HTML. The main report correctly identifies Hermes as a persistent agent framework with multiple interfaces, extensible tools, skills, scheduling, and delegation. Its Jarvis diagram, however, places Hermes in the worker layer. The intended design makes Hermes the main orchestrator while preserving Jarvis as another primary orchestrator with its own planning, execution and delegation ability. [R1–R4]
 
 ### 2.1 Coverage and disposition
 
@@ -85,6 +87,8 @@ The Hermes checkout is `/home/g0pi/.hermes/hermes-agent` at commit `bf0203a794a0
 | --- | --- | --- |
 | Jarvis voice | Gemini Live integration and interruption handling | Route long work without blocking audio |
 | Jarvis agent supervisor | Eight agent names, workspace reservation, four active jobs, timeouts, process-group cancellation | Jobs are held in process memory; validate per-agent invocation and policy |
+| Hermes gateway bridge | Local authenticated gateway RPC, owned-session checks, correlated results and interrupt requests | Session ownership is in memory; add durable admission and recovery mapping |
+| Hermes task helpers | Atomic JSON journals, scratch worktrees, three active tasks, follow-up and recovery handling | Consolidated verifier imports and tool manifests are incomplete; execution is client-owned |
 | Visible execution | tmux execution and capability descriptors | Capability descriptions need live behavior checks |
 | Durable Jarvis tasks | SQLite records, request keys, isolated workers, persisted results and notices | Providers currently only `responses` and `codex` |
 | Jarvis memory MCP | Client identities, scoped reads, separate mutation permissions | Add a Hermes client policy and validate transport compatibility |
@@ -93,7 +97,7 @@ The Hermes checkout is `/home/g0pi/.hermes/hermes-agent` at commit `bf0203a794a0
 
 The older supervisor exposes `start_agent_goal`, `delegate_agent`, `delegate_team`, job queries and cancellation through skill manifests. `delegate_team` sequences assignments in one workspace. Its process success currently means the worker exited successfully; independent acceptance checks must establish task success. [L2–L4]
 
-The durable system is a separate implementation. It already treats SQLite as authority and avoids blind replay after uncertain exits. Extend this foundation rather than labelling the older eight-agent runner durable. The current source does not show an already working durable Hermes provider. [L5]
+The SQLite durable system is a separate implementation. It already treats SQLite as authority and avoids blind replay after uncertain exits. The consolidated `TaskAgents` implementation adds another persistence layer through JSON journals; its active coroutines and session ownership remain tied to the client. Extend and reconcile these foundations rather than labelling either the older eight-agent runner or the imported helper a fully integrated durable Hermes provider. [L5, L9]
 
 ### 3.2 Agent readiness snapshot
 
@@ -101,7 +105,7 @@ All nine commands below resolve on this machine. No authentication checks or liv
 
 | Agent command | Existing Jarvis support | Recommended disposition |
 | --- | --- | --- |
-| `hermes` | Process supervisor adapter | Coordinator through API; durable provider bridge still needed |
+| `hermes` | Process adapter plus consolidated gateway bridge and task helper | Repair imported dependencies, restore tool exposure, and connect durable lifecycle |
 | `codex` | Process adapter and durable task provider | First worker to validate end to end |
 | `claude` | Process adapter | Add durable result and policy mapping |
 | `opencode` | Process adapter | Validate CLI or server contract; then enable |
@@ -112,6 +116,26 @@ All nine commands below resolve on this machine. No authentication checks or liv
 | `agy` | Explicitly unsupported by current Jarvis adapter | Plan-dependent integration or human handoff |
 
 “Installed,” “authenticated,” “adapter tested,” and “approved for unattended operation” must be separate registry fields. A worker should only receive automatic assignments after all relevant states are satisfied.
+
+### 3.3 Repository history and consolidation audit
+
+The current checkout is on `JARVIS-OS` at ea52787. The earlier commits remain reachable through local remote-tracking branches; their code can be inspected without checking out another branch. Their titles establish provenance, while the current files establish what is actually available. [L9]
+
+| Commit | Verified contribution | Meaning for the plan |
+| --- | --- | --- |
+| `78c07cb` on `origin/dev` | Native tmux agent launching and decoupling of the earlier external orchestrator | Reuse the native execution foundation rather than introducing it again |
+| `4db0edc` on `origin/dev` | `HermesBridge`, gateway worker, task helpers, learning integration, personal-agent manifest and dedicated tests | Hermes connectivity is existing work, not a new module to design from zero |
+| `ea52787` on `JARVIS-OS` | Carries the bridge, gateway worker, task helper, learning modules and this blueprint into the current branch | Consolidation must be checked for dependencies, registration and tests |
+
+**The existing transport is local gateway RPC.** `HermesBridge` discovers an installed interpreter from package-manager receipts and starts a bounded helper. That helper uses Hermes's installed authenticated gateway client and calls `tools.list`, `session.create`, `session.resume`, `prompt.submit` and `session.interrupt`. Result events are filtered by session and admission identity. This is distinct from the HTTP Runs API proposed as an integration option elsewhere in this document. The bridge deliberately avoids installing Hermes or adopting unrelated conversations. [L9]
+
+**The task helper is journaled but not an independent execution service.** `TaskAgents` writes private atomic JSON journals, takes a manager lock, limits active helpers to three, creates scratch Git worktrees and supports same-client follow-up. On recovery, an unfinished journal becomes interrupted with unknown execution; work is not automatically replayed. Its worktrees start from an empty scratch repository, so existing-project inputs and changes need an explicit transfer strategy. The bridge's owned-session set and task helper's session set are process-local. [L9]
+
+**Four missing verifier exports block helper import.** The current `task_agents.py` imports `capture_workspace`, `verify_workspace_changes`, `completion_evidence` and `verification_notice` from `proactive.verification`. Static inspection finds none of these definitions in the current module, while `origin/dev` contains them. The consolidation has therefore carried a consumer without its required verifier implementation; the helper cannot be treated as runnable until that dependency is repaired. [L10]
+
+**Tool exposure and regression tests also need reconciliation.** The adapter methods exist in `skills/domains/orchestration.py`, but neither current manifest directory contains `personal-agents.json`. The historical manifest declares `get_hermes_status`, `create_task_agent`, status/list/cancel and follow-up tools. Without an equivalent explicit manifest or configuration, adapter methods alone do not expose those tools. The dedicated bridge and task-agent test files are present on `origin/dev` and absent from the current checkout. Historical test results do not establish that the consolidated branch passes them. [L4, L10]
+
+**The remaining durability work is specific.** The helper generates a new submission ID per run, deduplicates only active local requests, and records notification drops rather than providing a durable delivery outbox. Its queue and owned-session state need reconciliation with the SQLite task service. An interrupt RPC acknowledgement is not proof that remote work and descendants have stopped. Finish this integration before adding an independent scheduler or another Hermes transport. [L5, L9]
 
 ## 4 How Hermes can orchestrate work
 
@@ -149,7 +173,9 @@ Persistent `/goal` keeps an objective active across turns and supports determini
 
 ### 4.6 API and library integration
 
-Prefer the Hermes API for the Jarvis connection. Discover capabilities, create an API-owned run, retain its IDs, consume events, and map terminal states. Current documentation describes `/v1/capabilities`, `/v1/runs`, run events, status and stop controls. Idempotency and unknown-execution recovery depend on the server’s advertised mode. API access must not appropriate an existing desktop or CLI conversation. [S21]
+Start with the existing authenticated gateway bridge described in section 3.3. Preserve its session ownership and admission correlation while adding persistent task mapping, stable retry identities and restart reconciliation. It is already the repository's connection mechanism; replacing it with HTTP is not required to make Hermes the coordinator. Its installed-client RPC dependencies still require compatibility tests on upgrade. [L9]
+
+The HTTP API is an alternative service interface if a supported cross-process or remote client needs it. Discover capabilities, create an API-owned run, retain its IDs, consume events, and map terminal states. Current documentation describes `/v1/capabilities`, `/v1/runs`, run events, status and stop controls. Idempotency and unknown-execution recovery depend on the server's advertised mode. API access must not appropriate an existing desktop or CLI conversation. HTTP and gateway session identities must not be interchanged implicitly. [S21]
 
 Embedding `run_agent.AIAgent` is another option, but it binds Jarvis to a prepared Hermes source checkout and internal lifecycle assumptions. The Python-library guide is useful for controlled embedding; a service boundary makes independent upgrades and failure isolation easier. [S22]
 
@@ -198,10 +224,10 @@ Do not use UI automation or consumer-token extraction to bypass this boundary. T
 
 ```mermaid
 flowchart TD
-  U[Voice or chat request] --> V[Jarvis interaction layer]
+  U[Voice or chat request] --> V[Jarvis orchestrator and interaction layer]
   V --> F[Immediate desktop action]
   V --> B[Durable Jarvis task service]
-  B --> H[Hermes coordinator API run]
+  B --> H[Hermes main orchestrator through existing gateway bridge]
   H --> M[Scoped shared memory]
   H --> T[Jarvis bridge tools]
   T --> B
@@ -211,13 +237,13 @@ flowchart TD
   B --> V
 ```
 
-Jarvis is the user-facing assistant and trusted execution service. Hermes is its complex-task planner. The broker owns the task record and constraints. Workers execute bounded assignments. Results return through a persisted event path so the voice session can reconnect without losing work.
+Hermes is the main orchestrator and Jarvis is also a primary orchestrator. Jarvis combines user interaction with independent planning, tool use and agent delegation. Hermes provides the default lead for shared coordination, without requiring every Jarvis task to pass through it. The broker owns records and constraints; the assigned orchestrator owns the current plan. Results return through a persisted event path so a voice reconnection does not lose work.
 
 ### 6.1 Responsibilities
 
-**Jarvis interaction layer.** Capture the user’s goal, resolve the workspace and attachment references, acknowledge admission, and maintain responsive speech and desktop controls. Immediate actions such as changing volume should use the existing deterministic control path. Multi-step work becomes a durable task. Silence, mute and ordinary follow-up questions do not cancel that task.
+**Jarvis orchestrator and interaction layer.** Understand the user's goal, build and own a plan when appropriate, use tools directly, delegate to available agents, manage dependencies, and verify outcomes. Jarvis may independently handle simple or complex work within its capabilities. It also maintains responsive voice and desktop controls, admits durable tasks, and hands coordination to Hermes when useful. Silence, mute and ordinary follow-up questions do not cancel work.
 
-**Hermes coordinator profile.** Understand the goal, retrieve relevant context, decompose only when useful, select verified workers, sequence dependencies, request necessary clarification, and evaluate evidence. Give this profile access to the bridge and scoped memory. Do not rely on a persona prompt to prevent unrestricted host execution; restrict its actual tools.
+**Hermes main orchestrator profile.** Lead overall coordination by default: understand goals, retrieve context, decompose work, execute suitable tools, select workers, sequence dependencies, and evaluate evidence. Hermes may delegate a bounded assignment to Jarvis or transfer a goal's coordinating ownership to it. Both use the same task and policy boundaries; actual tool access must enforce those boundaries.
 
 **Jarvis task broker.** Validate authorization, deduplicate requests, allocate workspace and capacity, spawn supervised runs, record receipts, enforce deadlines and cancellation, and publish events. It must reject unsupported worker names and routing loops. The coordinator cannot silently enlarge its own permission scope or budget.
 
@@ -227,11 +253,11 @@ Jarvis is the user-facing assistant and trusted execution service. Hermes is its
 
 ### 6.2 Prevent orchestration recursion
 
-The current supervisor can launch Hermes. After Hermes becomes coordinator, it must not recursively ask the same supervisor to launch another coordinator. Give every run a role, parent ID and remaining depth. The bridge should reject the coordinator’s own provider as a general child worker unless an explicit specialist Hermes profile is allowlisted. Tool permission should enforce this, not just a prompt.
+Jarvis-to-Hermes and Hermes-to-Jarvis delegation are intentional capabilities. Prevent unbounded cycles by recording the current coordinator, parent assignment and remaining depth. A bounded child assignment is different from transferring a whole goal. Reject a repeated ancestor assignment or a recursive coordinator launch with no new bounded scope. Enforce this in the task service so both orchestrators can delegate without repeatedly handing the same work back to one another.
 
 ### 6.3 One task authority
 
-Choose the durable Jarvis store as the initial authority for user goals and execution states. Hermes run IDs and worker job IDs are child records. A Hermes conversation can end while a task remains active, and a voice session can disappear without changing task state.
+Choose the durable Jarvis store as the initial authority for user goals and execution states. Record `coordinator_owner` as Hermes or Jarvis with an ownership generation. Hermes is the default lead; Jarvis can own a task from admission or accept a handoff. Transfer ownership atomically after saving the current plan and outstanding assignments. Only the current owner may schedule the next dependent work or finalize the goal. A bounded child assignment does not transfer parent ownership. Either conversation may end while its task remains recorded.
 
 If Kanban later becomes the authority, keep its lifecycle authoritative and map Jarvis controls into it. A subordinate execution receipt database is acceptable; an independent scheduler for the same work is not. A mapping must define which system may retry, cancel, request review and declare completion.
 
@@ -260,6 +286,7 @@ Expose control operations through a small authenticated local service or MCP ser
   "schema_version": 1,
   "request_key": "voice-turn-184-add-export",
   "parent_task_id": "task-root-184",
+  "coordinator_owner": "hermes",
   "goal": "Add CSV export for the selected report",
   "workspace_id": "jarvis-os-export-worktree",
   "worker": "codex",
@@ -307,7 +334,7 @@ Digests, IDs and evidence must come from runtime results. Unknown cost stays unk
 
 ### 7.4 State and event semantics
 
-Use `accepted`, `planning`, `queued`, `running`, `validating`, `awaiting_review`, `succeeded`, `failed`, `blocked`, `cancel_requested`, `cancelled`, and `unknown` as proposed normalized states. Map these explicitly onto existing stores rather than assuming those names already exist.
+Use `accepted`, `planning`, `queued`, `running`, `validating`, `awaiting_review`, `succeeded`, `failed`, `blocked`, `cancel_requested`, `cancelled`, and `unknown` as proposed normalized states. Map these explicitly onto the existing SQLite tasks and JSON helper journals rather than assuming those names already exist. Carry the gateway session and admission IDs, or HTTP run IDs if that transport is selected, as distinct native identity fields.
 
 Every state change carries a monotonically increasing event sequence, task ID, attempt ID, owner generation and timestamp. A stale worker cannot finalize a newer attempt. Events may arrive more than once; deduplicate by event ID and preserve a durable notification outbox. Delivery acknowledgement means a consumer received an event, not that the requested work succeeded.
 
@@ -342,9 +369,9 @@ Cancellation does not undo edits or external effects. After stopping, retain art
 
 ### 8.4 Worker results must wake the coordinator
 
-Persist each worker completion or blocker before delivering it. Once the preceding Hermes run has terminated, the integration should submit one idempotent continuation into the same API-owned coordinator session, with the parent task, worker attempt, result state and authorized artifact IDs. Serialize turns for that session. Deduplicate worker events before scheduling the continuation so reconnects cannot produce duplicate reviews or dependent assignments.
+Persist each worker completion or blocker before delivering it to the current coordinating owner. For a Hermes-owned goal, submit one idempotent continuation into its bridge-owned session after the preceding turn ends; if HTTP is selected, use that client's API-owned session. For a Jarvis-owned goal, resume its recorded planning workflow through the Jarvis event path. Include parent task, ownership generation, worker attempt, result state and authorized artifact IDs. Serialize turns and deduplicate events so reconnects or handoffs cannot create duplicate reviews or assignments.
 
-Hermes should then assess the result, request review or rework, launch the next dependency, or finish the goal. API-side background completion records do not by themselves guarantee another model turn; the client owns that continuation. Record its admission before acknowledging the triggering event, and reconcile uncertain admission rather than resending under a new identity. This closes the loop between delegation and the next planning decision. [S1, S21]
+The owning orchestrator then assesses the result, requests review or rework, launches the next dependency, or finishes the goal. API-side background completion records do not by themselves guarantee another model turn; the client owns that continuation. Record its admission before acknowledging the triggering event, and reconcile uncertain admission rather than resending under a new identity. This closes the loop between delegation and the next planning decision. [S1, S21]
 
 ## 9 Skills and routing design
 
@@ -369,6 +396,8 @@ Three other installed names deserve care. `ethos-orchestrate` routes the creatio
 These are proposed assets, not files installed by this assessment. Keep policy in executable controls; skill text should reference it. Avoid loading the entire catalog into every voice or planning turn. Select a few applicable procedures and attach the relevant version to the task record.
 
 ### 9.3 Routing policy
+
+Hermes leads by default, while Jarvis may retain ownership when the user selects it or its available tools and context suit the task. Jarvis is not limited to immediate desktop actions or fallback use. Both may plan and delegate independently; shared task ownership and handoff rules prevent duplicate scheduling.
 
 Route by required interface, verified competence, privacy, cost, availability and user preference. A request naming Codex should select Codex or explain its blocker; it should not silently become a different provider. A local-data requirement must restrict every nested model call, not merely the top-level model.
 
@@ -439,11 +468,11 @@ These phases are ordered deliverables, not elapsed-time promises. Advance only a
 
 ### Phase 1 Establish the baseline
 
-Record Hermes and worker versions, inspect supported CLI options, identify the currently active Jarvis paths, and build the readiness registry. Preserve existing service configuration and define task ownership. Use a small disposable project for adapter tests. Exit gate: each enabled adapter has a successful bounded task, a known failure case, and a verified cancellation result.
+Record Hermes and worker versions, inspect supported CLI options, identify the currently active Jarvis paths, and build the readiness registry. Repair the four missing verifier exports or deliberately adapt the helper to a validated replacement. Restore equivalent personal-agent tool declarations and bring over the focused historical regression tests. Preserve existing service configuration and define task ownership. Use a small disposable project for adapter tests. Exit gate: consolidated modules import successfully, intended tools are exposed, and each enabled adapter has a bounded success case, known failure case and verified cancellation result.
 
 ### Phase 2 Connect Hermes to durable Jarvis tasks
 
-Create the authenticated Hermes client and API-owned coordinator session mapping. Extend the Jarvis task service to represent coordinator and external-worker runs. Expose the narrow bridge, persist native IDs, and implement an event outbox. Exit gate: one voice/chat request creates one task, reaches Hermes, runs Codex, produces a verified artifact, and delivers one result.
+Extend the existing `HermesBridge` and `TaskAgents` connection with durable coordinator session mapping rather than creating a second client. Extend the Jarvis task service to represent coordinator and external-worker runs, reconcile the JSON journals, expose the narrow bridge, persist native IDs, and implement an event outbox. Wire the declared tools and completion path into the active voice/UI registration. Exit gate: one voice/chat request creates one task, reaches Hermes, runs Codex, produces a verified artifact, and delivers one result.
 
 ### Phase 3 Add review and recovery
 
@@ -467,7 +496,8 @@ Evaluate Advanced Delegation for model/profile routing, a dedicated Codex app-se
 | Hermes disappears mid-run | No blind retry; task reconciles or becomes unknown |
 | Worker exits successfully with missing artifact | Verification fails |
 | Parallel writers target one directory | Second write is isolated or serialized |
-| Child tries to re-enter the coordinator | Recursion policy rejects it |
+| Hermes and Jarvis hand work to each other | One recorded owner; bounded child scope or explicit ownership transfer |
+| Handoff or delayed event repeats | Stale ownership generation cannot schedule duplicate work |
 | Worker requests a new credential or destination | Scope enforcement blocks or escalates it |
 | Cancel a process tree | Descendants stop or remaining work is identified |
 | Redeliver a completion event | User receives one logical notification |
@@ -508,7 +538,10 @@ Request: “Use Antigravity to build this screen.” Hermes prepares the workspa
 | Worker execution | `jarvis_control/task_worker.py` | Add external-worker protocol support while preserving confinement and evidence checks |
 | Legacy launch reuse | `orchestration/agent_orchestrator.py` | Reuse tested spawn/cancel code; move lifecycle authority into durable records |
 | Visible worker sessions | `orchestration/desktop_execution.py` | Make tmux a view of the authoritative run rather than its state store |
-| Hermes client | New integration module | Capability discovery, run admission, events, stop and recovery |
+| Hermes client | `orchestration/hermes_bridge.py` and `_hermes_gateway_worker.py` | Reuse authenticated RPC; persist ownership/admission mapping and recovery |
+| Hermes helper lifecycle | `orchestration/task_agents.py` | Reconcile JSON journals with durable authority, stable retries, project inputs and delivery |
+| Missing verifier dependency | `proactive/verification.py` | Restore or replace four imported helper functions and validate their bounded checks |
+| Personal-agent registration and tests | Historical manifest and focused tests on `origin/dev` | Restore equivalent declarations and tests in the consolidated branch |
 | Bridge tools | New narrow service or MCP module | Capabilities, submit, status, artifact reads and scoped cancellation |
 | Voice routing | `jarvis_control/skills.py` and active voice registration | Submit long tasks and return promptly; preserve immediate controls |
 | Existing orchestration tools | `skills/domains/orchestration.py` and `skill_manifests/agent-orchestration.json` | Point enabled operations at durable authority and normalize results |
@@ -650,3 +683,7 @@ L6. `/home/g0pi/.hermes/skills/` and `/home/g0pi/.hermes/hermes-agent/skills/` �
 L7. `/home/g0pi/JARVIS OS/jarvis_memory/mcp_server.py` — scoped shared-memory transport, permission separation and CLI arguments.
 
 L8. `/home/g0pi/JARVIS OS/README.md`, `jarvis_control/skills.py`, and `jarvis_voice/` — voice, immediate control and memory integration foundation.
+
+L9. Local Git objects `78c07cb53f4a5f5fdd87a69d415b30848d501667`, `4db0edcdf1dea896495d1becefca52e5102ca7c5` and current `ea52787233cb0e018804e924b4cb82145bfa7550`; `/home/g0pi/JARVIS OS/orchestration/hermes_bridge.py`, `orchestration/_hermes_gateway_worker.py` and `orchestration/task_agents.py` — historical provenance, authenticated gateway transport and journaled task helpers. The bridge and worker have no diff between the earlier integration commit and the consolidated commit; the helper gained workspace-verification calls.
+
+L10. `/home/g0pi/JARVIS OS/proactive/verification.py`, current manifest directories, and historical files read with `git show origin/dev:...` — static AST comparison confirms four verifier exports missing from the consolidated module. `skill_manifests/personal-agents.json`, `tests/test_orchestration/test_hermes_bridge.py` and `tests/test_orchestration/test_task_agents.py` exist in the historical branch but are absent in the current checkout. No live gateway tasks or regression suite were run for this reconciliation.

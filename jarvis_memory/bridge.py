@@ -17,6 +17,8 @@ import re
 import sqlite3
 import tempfile
 import threading
+import time
+from datetime import datetime
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler
 
@@ -111,6 +113,45 @@ class MemoryBridge:
         self.vectors = VectorStore(self.root / 'semantic_vectors.db')
         self._semantic_state = 'ready' if self.semantic_enabled else 'disabled'
         self._semantic_error = None
+        self._device_sessions = {}
+        self._device_knowledge = {}
+
+    def get_device_dir(self, device="pc") -> Path:
+        clean_dev = 'mobile' if str(device).lower().strip() in ('mobile', 'phone', 'android') else 'pc'
+        dev_dir = self.root / clean_dev
+        dev_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        (dev_dir / "transcripts").mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            workspace_dir = Path("/home/g0pi/JARVIS OS/conversations")
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            link_target = workspace_dir / clean_dev
+            if not link_target.exists() and not link_target.is_symlink():
+                link_target.symlink_to(dev_dir, target_is_directory=True)
+            elif link_target.is_symlink() and link_target.resolve() != dev_dir.resolve():
+                link_target.unlink()
+                link_target.symlink_to(dev_dir, target_is_directory=True)
+        except Exception as error:
+            log.debug("Could not link workspace conversation directory: %s", error)
+        return dev_dir
+
+    def _get_device_sessions(self, device="pc"):
+        clean_dev = 'mobile' if str(device).lower().strip() in ('mobile', 'phone', 'android') else 'pc'
+        if clean_dev not in self._device_sessions:
+            dev_dir = self.get_device_dir(clean_dev)
+            store = SessionStore(dev_dir / 'sessions.db', max_age_hours=float('inf'), consolidation_threshold=0)
+            try:
+                (dev_dir / 'sessions.db').chmod(0o600)
+            except OSError:
+                pass
+            self._device_sessions[clean_dev] = store
+        return self._device_sessions[clean_dev]
+
+    def _get_device_knowledge(self, device="pc"):
+        clean_dev = 'mobile' if str(device).lower().strip() in ('mobile', 'phone', 'android') else 'pc'
+        if clean_dev not in self._device_knowledge:
+            dev_dir = self.get_device_dir(clean_dev)
+            self._device_knowledge[clean_dev] = KnowledgeStore(dev_dir / 'knowledge.db')
+        return self._device_knowledge[clean_dev]
 
     def _require(self):
         if not self.enabled:
@@ -254,38 +295,58 @@ class MemoryBridge:
         finally:
             connection.close()
 
-    def recall_history(self, query='', limit=20):
+    def recall_history(self, query='', limit=20, device=None):
         if not self.enabled or not self.config.record_sessions:
             return []
         path = self.root / 'sessions.db'
         if not path.is_file():
             return []
+        clean_dev = str(device).lower().strip() if device else None
+        if clean_dev in ("*", "all", "both"):
+            clean_dev = None
+        elif clean_dev in ("phone", "android"):
+            clean_dev = "mobile"
+        elif clean_dev in ("desktop", "laptop"):
+            clean_dev = "pc"
+
         connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
         try:
             clean_q = query.strip() if isinstance(query, str) else ""
             if clean_q.lower() in ("*", "all", "everything", "recent", "history"):
                 clean_q = ""
+
+            filter_sql = ""
+            params = []
+            if clean_dev:
+                filter_sql = " AND (m.channel = ? OR (? = 'pc' AND (m.channel = '' OR m.channel IS NULL OR m.channel = 'voice')))"
+                params.extend([clean_dev, clean_dev])
+
             if not clean_q:
-                rows = connection.execute(
-                    'SELECT m.id, m.role, m.content, m.timestamp FROM session_messages m '
-                    'WHERE m.role IN ("user", "assistant") '
-                    'ORDER BY m.id DESC LIMIT ?', (limit,)).fetchall()
+                sql = (
+                    f'SELECT m.id, m.role, m.content, m.timestamp, m.channel FROM session_messages m '
+                    f'WHERE m.role IN ("user", "assistant"){filter_sql} '
+                    f'ORDER BY m.id DESC LIMIT ?'
+                )
+                rows = connection.execute(sql, (*params, limit)).fetchall()
                 return [{'role': role, 'content': content[:4000], 'timestamp': timestamp,
                          'text': content[:4000], 'message_id': identifier,
+                         'device': 'mobile' if channel == 'mobile' else 'pc',
                          'canonical_key': f'conversation:{identifier}', 'source_type': 'conversation',
                          'source': 'conversation'}
-                        for identifier, role, content, timestamp in reversed(rows) if self.scanner.scan(content).is_clean]
-            cursor = connection.execute(
-                'SELECT m.id, m.role, m.content, m.timestamp FROM session_messages m '
-                'WHERE m.role IN ("user", "assistant") ORDER BY m.id'
+                        for identifier, role, content, timestamp, channel in reversed(rows) if self.scanner.scan(content).is_clean]
+            sql = (
+                f'SELECT m.id, m.role, m.content, m.timestamp, m.channel FROM session_messages m '
+                f'WHERE m.role IN ("user", "assistant"){filter_sql} ORDER BY m.id'
             )
+            cursor = connection.execute(sql, tuple(params))
             best = []
             all_candidates = []
             while rows := cursor.fetchmany(256):
                 batch = [{'id': identifier, 'canonical_key': f'conversation:{identifier}',
                           'source_type': 'conversation', 'role': role, 'text': content,
-                          'timestamp': timestamp, 'source': 'conversation'}
-                         for identifier, role, content, timestamp in rows
+                          'timestamp': timestamp, 'source': 'conversation',
+                          'device': 'mobile' if channel == 'mobile' else 'pc'}
+                         for identifier, role, content, timestamp, channel in rows
                          if self.scanner.scan(content).is_clean]
                 all_candidates.extend(batch)
                 best = rank_candidates(clean_q, [*best, *batch], limit)
@@ -297,6 +358,7 @@ class MemoryBridge:
                     best.append(c_copy)
             return [{'role': item['role'], 'content': item['text'][:4000], 'timestamp': item['timestamp'],
                      'text': item['text'][:4000], 'message_id': item['id'],
+                     'device': item.get('device', 'pc'),
                      'canonical_key': item['canonical_key'], 'source_type': 'conversation',
                      'source': 'conversation', 'score': item.get('score', 0.0), 'match_reason': item.get('match_reason', '')}
                     for item in best]
@@ -451,59 +513,128 @@ class MemoryBridge:
         result = prefix + json.dumps(data, ensure_ascii=False)
         return result if any(data.values()) and len(result) <= self.config.context_max_chars else ''
 
-    def record_exchange(self, user_text, assistant_text):
-        if not self.enabled or not user_text.strip():
+    def record_exchange(self, user_text, assistant_text, device="pc"):
+        if not self.enabled or (not user_text.strip() and not assistant_text.strip()):
             return
+        clean_dev = 'mobile' if str(device).lower().strip() in ('mobile', 'phone', 'android') else 'pc'
         if self.service:
             self.service.submit(user_text[:16000], '')
         total_saved = 0
         if self.sessions:
             for role, text in [('user', user_text), ('assistant', assistant_text)]:
                 if text:
-                    self.sessions.save_message(self.session.session_id, role, text[:16000], channel='voice')
-                    self.session.add_message(role, text[:16000], channel='voice')
+                    self.sessions.save_message(self.session.session_id, role, text[:16000], channel=clean_dev)
+                    self.session.add_message(role, text[:16000], channel=clean_dev)
             self.session.messages = self.session.messages[-100:]
             total_saved = self.sessions.count_messages()
         if self.config.structured_capture and self.scanner.scan(user_text).is_clean:
             for item in extract_memories(user_text[:16000], assistant_text[:16000]):
                 if self.scanner.scan(item['text']).is_clean:
                     self.knowledge.upsert(item['text'], kind=item['kind'], key=item.get('key', ''),
-                        source='user-conversation', evidence={'role': 'user', 'quote': item['evidence']},
+                        source=f'{clean_dev}-conversation', evidence={'role': 'user', 'quote': item['evidence']},
                         confidence=item['confidence'])
-        log.info('Continuous memory saved exchange (user=%d chars, assistant=%d chars, total_stored=%d)',
-                 len(user_text), len(assistant_text), total_saved)
+
+        # Realtime dual write into dedicated device folder (PC vs Mobile)
+        try:
+            dev_dir = self.get_device_dir(clean_dev)
+            dev_sessions = self._get_device_sessions(clean_dev)
+            dev_session = dev_sessions.get_or_create('local-user', channel=clean_dev)
+            for role, text in [('user', user_text), ('assistant', assistant_text)]:
+                if text:
+                    dev_sessions.save_message(dev_session.session_id, role, text[:16000], channel=clean_dev)
+                    dev_session.add_message(role, text[:16000], channel=clean_dev)
+
+            if self.config.structured_capture and self.scanner.scan(user_text).is_clean:
+                dev_knowledge = self._get_device_knowledge(clean_dev)
+                for item in extract_memories(user_text[:16000], assistant_text[:16000]):
+                    if self.scanner.scan(item['text']).is_clean:
+                        dev_knowledge.upsert(item['text'], kind=item['kind'], key=item.get('key', ''),
+                            source=f'{clean_dev}-conversation', evidence={'role': 'user', 'quote': item['evidence']},
+                            confidence=item['confidence'])
+
+            now = datetime.now()
+            ts_str = now.strftime('%Y-%m-%d %H:%M:%S')
+            date_str = now.strftime('%Y-%m-%d')
+            time_str = now.strftime('%H:%M:%S')
+
+            history_file = dev_dir / 'history.md'
+            is_new_history = not history_file.exists() or history_file.stat().st_size == 0
+            with history_file.open('a', encoding='utf-8') as f:
+                if is_new_history:
+                    f.write(f'# JARVIS {clean_dev.upper()} Continuous Conversation History\n\n')
+                f.write(f'### [{ts_str}]\n')
+                if user_text.strip():
+                    f.write(f'**User:** {user_text.strip()}\n')
+                if assistant_text.strip():
+                    f.write(f'**JARVIS:** {assistant_text.strip()}\n')
+                f.write('\n')
+
+            transcript_file = dev_dir / 'transcripts' / f'{date_str}.md'
+            is_new_transcript = not transcript_file.exists() or transcript_file.stat().st_size == 0
+            with transcript_file.open('a', encoding='utf-8') as f:
+                if is_new_transcript:
+                    f.write(f'# Conversation Transcript - {date_str} ({clean_dev.upper()})\n\n')
+                if user_text.strip():
+                    f.write(f'### [{time_str}] User\n{user_text.strip()}\n\n')
+                if assistant_text.strip():
+                    f.write(f'### [{time_str}] JARVIS\n{assistant_text.strip()}\n\n')
+
+        except Exception as error:
+            log.warning('Failed writing to device memory (%s): %s', clean_dev, error)
+
+        log.info('Continuous memory saved exchange (device=%s, user=%d chars, assistant=%d chars, total_stored=%d)',
+                 clean_dev, len(user_text), len(assistant_text), total_saved)
 
     def status(self):
         total_messages = 0
+        pc_messages = 0
+        mobile_messages = 0
         sessions_path = self.root / 'sessions.db'
         if sessions_path.is_file():
             try:
                 conn = sqlite3.connect(sessions_path.as_uri() + '?mode=ro', uri=True)
                 total_messages = conn.execute("SELECT count(*) FROM session_messages").fetchone()[0]
+                mobile_messages = conn.execute("SELECT count(*) FROM session_messages WHERE channel = 'mobile'").fetchone()[0]
+                pc_messages = total_messages - mobile_messages
                 conn.close()
             except Exception:
                 pass
         facts_count = self.store.count()
-        return {'enabled': self.enabled, 'path': str(self.root), 'facts': facts_count,
-                'conversation_messages': total_messages,
-                'record_sessions': self.config.record_sessions,
-                'continuous_history': self.config.record_sessions,
-                'continuous_memory': True,
-                'auto_capture_running': bool(self.service and self.service.is_running),
-                'structured_capture': self.config.structured_capture,
-                'structured_memory': self.knowledge.stats(),
-                'status_summary': f"Continuous memory active with {total_messages} conversation messages and {facts_count} facts stored permanently across restarts.",
-                'retrieval_backend': ('local-hybrid-semantic-lexical' if self.semantic_enabled
-                                      else 'local-ranked-lexical-concept'),
-                'semantic_status': self._semantic_state,
-                'semantic_retrieval': {'enabled': self.semantic_enabled, 'status': self._semantic_state,
-                                       'provider': getattr(self.embedding_provider, 'identity', None),
-                                       'last_error': self._semantic_error,
-                                       'cache': str(self.vectors.path)},
-                'documents_backend': 'python-sqlite-fts5',
-                'obsidian_vault': self.config.obsidian_vault,
-                'obsidian_last_sync': self._vault_sync_result,
-                'native_vector_and_graph_backends': 'not installed'}
+        pc_dir = str(self.get_device_dir('pc'))
+        mobile_dir = str(self.get_device_dir('mobile'))
+        return {
+            'enabled': self.enabled,
+            'path': str(self.root),
+            'facts': facts_count,
+            'conversation_messages': total_messages,
+            'pc_messages': pc_messages,
+            'mobile_messages': mobile_messages,
+            'pc_dir': pc_dir,
+            'mobile_dir': mobile_dir,
+            'pc_history_path': str(Path(pc_dir) / 'history.md'),
+            'mobile_history_path': str(Path(mobile_dir) / 'history.md'),
+            'record_sessions': self.config.record_sessions,
+            'continuous_history': self.config.record_sessions,
+            'continuous_memory': True,
+            'auto_capture_running': bool(self.service and self.service.is_running),
+            'structured_capture': self.config.structured_capture,
+            'structured_memory': self.knowledge.stats(),
+            'status_summary': (
+                f"Continuous memory active with {total_messages} conversation messages "
+                f"({pc_messages} PC, {mobile_messages} Mobile) and {facts_count} facts stored permanently across restarts."
+            ),
+            'retrieval_backend': ('local-hybrid-semantic-lexical' if self.semantic_enabled
+                                  else 'local-ranked-lexical-concept'),
+            'semantic_status': self._semantic_state,
+            'semantic_retrieval': {'enabled': self.semantic_enabled, 'status': self._semantic_state,
+                                   'provider': getattr(self.embedding_provider, 'identity', None),
+                                   'last_error': self._semantic_error,
+                                   'cache': str(self.vectors.path)},
+            'documents_backend': 'python-sqlite-fts5',
+            'obsidian_vault': self.config.obsidian_vault,
+            'obsidian_last_sync': self._vault_sync_result,
+            'native_vector_and_graph_backends': 'not installed'
+        }
 
     def sync_obsidian(self, force=True, vault_dir=None):
         with self._vault_sync_lock:
@@ -534,3 +665,10 @@ class MemoryBridge:
         if self.sessions:
             self.sessions.close()
             self.sessions = None
+        for s in self._device_sessions.values():
+            try:
+                s.close()
+            except Exception:
+                pass
+        self._device_sessions.clear()
+        self._device_knowledge.clear()

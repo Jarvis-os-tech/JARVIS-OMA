@@ -10,6 +10,10 @@ deployment_backup/
 **/.secrets/
 connectors/.secrets/
 .agents/
+.jarvis-learning/
+.jarvis-orchestration/
 .claude/
+pairing_qr.png
+conversations/
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 
 from core.secret_env import sanitized_subprocess_env
+from orchestration.executables import installed_path
 from .agent_orchestrator import AgentOrchestrator, OrchestrationError, now, validate_model, command_for
 
 
@@ -257,7 +258,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
         process = await asyncio.create_subprocess_exec(
             'tmux', '-L', 'jarvis-desktop', *args,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env=sanitized_subprocess_env())
+            env=sanitized_subprocess_env(PATH=installed_path()))
         try:
             out, err = await process.communicate()
         except asyncio.CancelledError:
@@ -378,7 +379,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             team['tmux_session'] = session
             await asyncio.create_subprocess_exec(
                 'xdg-terminal-exec', 'tmux', '-L', 'jarvis-desktop', 'attach-session', '-t', session,
-                cwd=team['workspace'], start_new_session=True, env=sanitized_subprocess_env())
+                cwd=team['workspace'], start_new_session=True, env=sanitized_subprocess_env(PATH=installed_path()))
             delegated = True
             await super()._run_team(team_id, timeout_seconds)
         except asyncio.CancelledError:
@@ -450,7 +451,7 @@ class DesktopAgentOrchestrator(AgentOrchestrator):
             launcher = await asyncio.create_subprocess_exec(
                 'xdg-terminal-exec', 'tmux', '-L', 'jarvis-desktop', 'attach-session', '-t', session,
                 cwd=job['workspace'], start_new_session=True,
-                env=sanitized_subprocess_env())
+                env=sanitized_subprocess_env(PATH=installed_path()))
             while (await self._tmux('display-message', '-p', '-t', session,
                                    '#{session_attached}')).strip() in ('', '0'):
                 if job['cancel_requested']:

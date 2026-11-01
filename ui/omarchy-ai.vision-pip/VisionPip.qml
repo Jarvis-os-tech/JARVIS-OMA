@@ -30,7 +30,7 @@ Item {
     // Frame paths
     readonly property string screenFramePath: "/run/user/1000/jarvis_screen/live_stream.jpg"
     readonly property string cameraFramePath: "/run/user/1000/jarvis_webcam/live_stream.jpg"
-    readonly property string socketPath: "/run/user/1000/jarvis.sock"
+    readonly property string socketPath: "/run/user/1000/jarvis/control.sock"
 
     readonly property string targetFramePath: {
         if (activeMode === "screen") return screenFramePath
@@ -43,6 +43,10 @@ Item {
         sourceA = ""
         sourceB = ""
         showingA = true
+        if (targetFramePath.length > 0) {
+            frameTick = (frameTick + 1) % 1000000
+            sourceA = "file://" + targetFramePath + "?t=" + frameTick
+        }
     }
 
     // Startup directory initialization
@@ -93,10 +97,12 @@ Item {
         root.activeMode = clean
         sendModeProc.command = [
             "/usr/bin/python3", "-c",
-            "import socket, json; " +
+            "import socket, os, json; " +
+            "cands = ['/run/user/1000/jarvis/control.sock', '/run/user/1000/jarvis.sock']; " +
+            "target = next((p for p in cands if os.path.exists(p)), cands[0]); " +
             "s = socket.socket(socket.AF_UNIX); " +
             "s.settimeout(1.0); " +
-            "s.connect('/run/user/1000/jarvis.sock'); " +
+            "s.connect(target); " +
             "s.sendall(json.dumps({'command': 'set_vision_mode', 'mode': '" + clean + "'}).encode() + b'\\n'); " +
             "print(s.recv(1024).decode())"
         ]
@@ -108,10 +114,12 @@ Item {
         id: syncModeProc
         command: [
             "/usr/bin/python3", "-c",
-            "import socket, json; " +
+            "import socket, os, json; " +
+            "cands = ['/run/user/1000/jarvis/control.sock', '/run/user/1000/jarvis.sock']; " +
+            "target = next((p for p in cands if os.path.exists(p)), cands[0]); " +
             "s = socket.socket(socket.AF_UNIX); " +
             "s.settimeout(0.6); " +
-            "s.connect('/run/user/1000/jarvis.sock'); " +
+            "s.connect(target); " +
             "s.sendall(json.dumps({'command': 'get_vision_mode'}).encode() + b'\\n'); " +
             "print(s.recv(1024).decode())"
         ]
@@ -153,8 +161,8 @@ Item {
         running: root.activeMode !== "off"
         onTriggered: {
             if (root.targetFramePath.length === 0) return
-            root.frameTick = (root.frameTick + 1) % 100000
-            var nextUrl = "file://" + root.targetFramePath + "#" + root.frameTick
+            root.frameTick = (root.frameTick + 1) % 1000000
+            var nextUrl = "file://" + root.targetFramePath + "?t=" + root.frameTick
 
             if (root.showingA) {
                 root.sourceB = nextUrl
@@ -525,9 +533,12 @@ Item {
                             z: root.showingA ? 2 : 1
 
                             onStatusChanged: {
-                                if (status === Image.Ready && !root.showingA) {
-                                    root.showingA = true
+                                if (status === Image.Ready) {
                                     root.hasLoadedFrame = true
+                                    if (!root.showingA) {
+                                        root.showingA = true
+                                        root.sourceB = ""
+                                    }
                                 }
                             }
                         }
@@ -544,9 +555,12 @@ Item {
                             z: !root.showingA ? 2 : 1
 
                             onStatusChanged: {
-                                if (status === Image.Ready && root.showingA) {
-                                    root.showingA = false
+                                if (status === Image.Ready) {
                                     root.hasLoadedFrame = true
+                                    if (root.showingA) {
+                                        root.showingA = false
+                                        root.sourceA = ""
+                                    }
                                 }
                             }
                         }

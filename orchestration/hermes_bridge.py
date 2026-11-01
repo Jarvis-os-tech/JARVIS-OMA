@@ -50,7 +50,9 @@ class HermesBridge:
             raise HermesBridgeError('Existing Hermes runtime is unavailable; no installation attempted')
         env = {key: value for key, value in sanitized_subprocess_env().items()
                if key not in {'PYTHONPATH', 'PYTHONHOME', 'HERMES_TUI_GATEWAY_URL',
-                              'HERMES_HOME', 'HERMES_PROFILE'}}
+                              'HERMES_HOME', 'HERMES_PROFILE', 'PRIVATE_KEY',
+                              'AUTHORIZATION', 'BASH_ENV', 'ENV', 'LD_PRELOAD',
+                              'LD_LIBRARY_PATH'}}
         env['HERMES_HOME'] = str(self.home)
         worker = Path(__file__).with_name('_hermes_gateway_worker.py')
         spawn = asyncio.create_task(asyncio.create_subprocess_exec(
@@ -118,11 +120,15 @@ class HermesBridge:
                     'summary': 'Existing local Hermes gateway is unavailable; no task was submitted.',
                     'next_actions': ['Check Hermes gateway status, then retry discovery.'], 'artifacts': []}
 
-    async def create_session(self, *, workspace):
+    async def create_session(self, *, workspace, title=None):
         root = Path(workspace).expanduser().resolve(strict=True)
         if not root.is_dir() or not (root / '.git').exists():
             raise HermesBridgeError('Use an isolated task Git checkout for Hermes work')
-        result = await self._request('create', workspace=str(root))
+        options = {'workspace': str(root)}
+        if title:
+            from orchestration.task_names import task_name
+            options['title'] = task_name(title)
+        result = await self._request('create', **options)
         session = result.get('session_id')
         if not isinstance(session, str) or not session or len(session) > 200:
             raise HermesBridgeError('Hermes did not return a valid owned session identity')
@@ -142,13 +148,13 @@ class HermesBridge:
         self._active.add(session_id)
         try:
             return await self._request('run', session_id=session_id, prompt=prompt,
-                                       timeout_seconds=timeout_seconds, timeout=timeout_seconds + 15)
+                                       timeout_seconds=timeout_seconds, timeout=timeout_seconds + 40)
         finally:
             self._active.discard(session_id)
 
     async def cancel(self, session_id):
         self._owned(session_id)
-        result = await self._request('cancel', session_id=session_id)
+        result = await self._request('cancel', session_id=session_id, timeout=35)
         return {'acknowledged': result.get('acknowledged') is True, **result}
 
     async def close(self):

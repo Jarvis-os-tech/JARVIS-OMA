@@ -13,6 +13,7 @@ import uuid
 from core.secret_env import sanitized_subprocess_env
 from orchestration.personas import PERSONAS
 from orchestration.harness2_adapter import Harness2Adapter
+from orchestration.executables import installed_executables, installed_path
 
 AGENTS = ('codex', 'claude', 'opencode', 'gemini', 'hermes', 'omp', 'pi', 'crush')
 TERMINAL = frozenset({'completed', 'failed', 'cancelled', 'timed_out'})
@@ -100,7 +101,7 @@ def command_for(agent, executable, prompt, model=None):
 class AgentOrchestrator:
     def __init__(self, executables=None, command_builder=command_for):
         self.executables = (dict(executables) if executables is not None else
-                            {name: shutil.which(name) for name in AGENTS})
+                            installed_executables())
         self._command_builder = command_builder
         self.jobs = {}
         self.workers = {}
@@ -245,7 +246,7 @@ class AgentOrchestrator:
                 *command,
                 cwd=job['workspace'], stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                start_new_session=True, env=sanitized_subprocess_env())
+                start_new_session=True, env=sanitized_subprocess_env(PATH=installed_path()))
             self.processes[job_id] = process
             job['state'] = 'running'
             if job['cancel_requested']:

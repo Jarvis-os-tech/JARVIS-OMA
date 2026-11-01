@@ -23,6 +23,7 @@ DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
            'gui', 'cli_anything', 'orchestration', 'learning', 'phone', 'vision', 'composio')
 
 _ORCHESTRATION = frozenset({
+    'start_hermes_goal',
     'start_agent_goal', 'list_system_agents', 'delegate_agent', 'delegate_team',
     'check_agent_team', 'cancel_agent_team', 'check_agent_job', 'list_agent_jobs',
     'cancel_agent_job', 'get_hermes_status', 'create_task_agent', 'task_agent_status',

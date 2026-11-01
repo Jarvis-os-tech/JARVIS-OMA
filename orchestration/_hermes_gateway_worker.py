@@ -34,11 +34,34 @@ async def operate(request):
                     'next_actions': [], 'artifacts': []}
         if operation == 'create':
             created = await client.rpc('session.create', cwd=request['workspace'],
-                title='JARVIS task ' + uuid.uuid4().hex[:12], _timeout=15)
+                title=request.get('title') or 'Jarvis task', _timeout=15)
             return {'session_id': created['session_id']}
         session = request['session_id']
         if operation == 'cancel':
-            answer = await client.rpc('session.interrupt', session_id=session, _timeout=10)
+            try:
+                # Canonical gateway resume is a read-only mount, not a prompt
+                # replay. Its handle fences this interrupt against a newer turn.
+                resumed = await client.rpc('session.resume', session_id=session, _timeout=15)
+                if resumed.get('session_id') != session:
+                    raise ValueError('Session identity changed; refusing interrupt')
+                generation = resumed.get('execution_generation')
+                if type(generation) is not int:
+                    raise ValueError('Gateway lacks generation-fenced cancellation')
+                await client.rpc('session.interrupt', session_id=session,
+                                 execution_generation=generation, _timeout=10)
+            except Exception as error:
+                if getattr(error, 'code', None) != 4001:
+                    raise
+                # Disconnected turns may already be reaped. Confirm absence,
+                # without sending a replacement prompt or replaying any work.
+                active = await client.rpc('session.active_list', _timeout=10)
+                rows = active.get('sessions')
+                if not isinstance(rows, list) or any(
+                        row.get('id') == session or row.get('session_id') == session
+                        for row in rows):
+                    raise
+                return {'acknowledged': True, 'inactive': True, 'effect': 'unknown',
+                        'summary': 'Owned Hermes session is no longer active; no turn was resumed.'}
             # A received RPC acknowledgement is not proof every side effect was rolled back.
             return {'acknowledged': True, 'effect': 'unknown', 'summary': 'Hermes accepted the interrupt request.'}
         if operation != 'run':
@@ -83,7 +106,11 @@ async def operate(request):
                                 'summary': 'Hermes returned a result; task success requires review.'}
         except (TimeoutError, asyncio.CancelledError):
             with contextlib.suppress(Exception):
-                await client.rpc('session.interrupt', session_id=session, _timeout=5)
+                current = await client.rpc('session.resume', session_id=session, _timeout=15)
+                generation = current.get('execution_generation')
+                if current.get('session_id') == session and type(generation) is int:
+                    await client.rpc('session.interrupt', session_id=session,
+                                     execution_generation=generation, _timeout=10)
             raise
 
 

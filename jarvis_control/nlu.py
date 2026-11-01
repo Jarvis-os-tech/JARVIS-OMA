@@ -77,6 +77,7 @@ class NLUEngine:
     STANDBY_TRIGGERS = [
         r'\b(enter standby|go to standby|standby mode|go to sleep|sleep now|shut up|be quiet|mute yourself)\b',
         r'\b(stop listening|standby jarvis|jarvis standby)\b',
+        r'\b(goodbye|bye jarvis|goodbye jarvis|bye bye|see you later|i have to go|i gotta go|alvida|chalta hoon)\b',
     ]
 
     # System control triggers
@@ -102,6 +103,8 @@ class NLUEngine:
         """Apply phonetic normalization, whitespace cleanup, and dialect corrections."""
         if not text or not isinstance(text, str):
             return ""
+        leading_space = " " if text.startswith(" ") else ""
+        trailing_space = " " if text.endswith(" ") else ""
         normalized = text.strip()
 
         # Phonetic replacements
@@ -110,7 +113,10 @@ class NLUEngine:
 
         # Clean multiple spaces and trailing punctuation artifacts
         normalized = re.sub(r'\s+', ' ', normalized)
-        return normalized.strip()
+        res = normalized.strip()
+        if not res:
+            return ""
+        return leading_space + res + trailing_space
 
     @classmethod
     def analyze(cls, text: str) -> NLUResult:
@@ -276,9 +282,28 @@ class NLUEngine:
 
         # Guard 3: Standby gating
         if tool_name == 'enter_standby' and analysis.category != IntentCategory.STANDBY:
-            # Only allow if explicitly commanded
             lower = user_text.casefold()
-            if not any(w in lower for w in ('standby', 'sleep', 'quiet', 'mute', 'chup', 'ruko')):
+            if not any(w in lower for w in ('standby', 'sleep', 'quiet', 'mute', 'chup', 'ruko', 'bye', 'goodbye', 'have to go', 'gotta go', 'alvida')):
                 return False, "User did not command to enter standby mode."
+
+        # Guard 4: Block github_authorize unless user explicitly commands GitHub authorization / login
+        if tool_name == 'github_authorize':
+            lower = user_text.casefold()
+            explicit_auth = bool(re.search(r'\b(authorize github|login github|connect github|link github|github login|github authorize)\b', lower))
+            if not explicit_auth:
+                log.info('NLU Gate blocked %s: user did not request GitHub authorization ("%s")', tool_name, user_text)
+                return False, (
+                    "Do NOT invoke github_authorize. The user asked to scan, examine, or report on codebases/repositories: "
+                    f"'{user_text}'. All repositories and agent architectures are local on this PC (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). "
+                    "Use local inspection tools (such as list_files, search_files, read_file) or discuss the repository directly."
+                )
+
+        # Guard 5: Block google_authorize unless user explicitly commands Google authorization / login
+        if tool_name == 'google_authorize':
+            lower = user_text.casefold()
+            explicit_auth = bool(re.search(r'\b(authorize google|login google|connect google|link google|google login|google authorize)\b', lower))
+            if not explicit_auth:
+                log.info('NLU Gate blocked %s: user did not request Google authorization ("%s")', tool_name, user_text)
+                return False, "Do NOT invoke google_authorize unless the user explicitly requests to link their Google account."
 
         return True, ""

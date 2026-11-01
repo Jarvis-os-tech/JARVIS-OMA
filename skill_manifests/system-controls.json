@@ -369,9 +369,7 @@
           "action": {
             "type": "string",
             "enum": [
-              "mute",
               "unmute",
-              "toggle",
               "status",
               "volume"
             ],

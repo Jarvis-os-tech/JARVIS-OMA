@@ -297,9 +297,12 @@ class UnifiedSkills:
             return await self._memory_skills.context_async()
         return ""
 
-    def queue_memory_exchange(self, user_text: str, assistant_text: str) -> None:
+    def queue_memory_exchange(self, user_text: str, assistant_text: str, device: str = "pc") -> None:
         if self._memory_skills and hasattr(self._memory_skills, "queue_memory_exchange"):
-            self._memory_skills.queue_memory_exchange(user_text, assistant_text)
+            try:
+                self._memory_skills.queue_memory_exchange(user_text, assistant_text, device=device)
+            except TypeError:
+                self._memory_skills.queue_memory_exchange(user_text, assistant_text)
 
     async def start(self) -> None:
         if self._memory_skills and hasattr(self._memory_skills, "start"):

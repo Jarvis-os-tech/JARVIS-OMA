@@ -1,5 +1,6 @@
 """Orchestration adapters extracted from the registry facade."""
 import logging
+import sqlite3
 from pathlib import Path
 from orchestration.agent_orchestrator import OrchestrationError
 from orchestration.evolution import EvolutionManager
@@ -10,6 +11,7 @@ log = logging.getLogger(__name__)
 
 
 ADAPTERS = {
+    'hermes.goal': '_adapter_start_hermes_goal',
     'hermes.status': '_adapter_hermes_status',
     'personal_agents.create': '_adapter_create_task_agent',
     'personal_agents.status': '_adapter_task_agent_status',
@@ -58,6 +60,15 @@ ADAPTER_COMMANDS = {
 
 
 class OrchestrationDomain:
+    async def _adapter_start_hermes_goal(self, goal, context='', timeout_seconds=600):
+        """Default coordinator; Jarvis's native tools remain independently usable."""
+        try:
+            return self._personal_agents().start(
+                goal, role='main orchestrator', context=context,
+                timeout_seconds=timeout_seconds)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_list_system_agents(self):
         return self._agent_orchestrator.discover()
 

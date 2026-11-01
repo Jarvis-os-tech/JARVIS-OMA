@@ -1332,10 +1332,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
 
 
 
-    def queue_memory_exchange(self, user, assistant):
+    def queue_memory_exchange(self, user, assistant, device="pc"):
         if not user and not assistant:
             return
-        self.queue_memory_job(self.memory_call('record_exchange', user, assistant))
+        self.queue_memory_job(self.memory_call('record_exchange', user, assistant, device=device))
 
     def queue_memory_job(self, operation):
         if len(self._memory_writes) >= 16:

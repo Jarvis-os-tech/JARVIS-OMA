@@ -141,21 +141,44 @@ class ControlServer:
             records = req.get('records', [])
             user_text = req.get('user', '').strip()
             assistant_text = req.get('assistant', '').strip()
-            if records:
-                user_turns = [r.get('content', '') for r in records if r.get('role') == 'user']
-                model_turns = [r.get('content', '') for r in records if r.get('role') in ('model', 'assistant')]
-                if not user_text and user_turns:
-                    user_text = ' '.join(user_turns).strip()
-                if not assistant_text and model_turns:
-                    assistant_text = ' '.join(model_turns).strip()
-            if self.record_memory_cb:
-                res = self.record_memory_cb(user_text, assistant_text)
+            device = str(req.get('device', 'mobile')).lower().strip() or 'mobile'
+            if not self.record_memory_cb:
+                return json.dumps({'error': 'Memory recording unavailable'}) + '\n'
+
+            async def _save_turn(u: str, a: str) -> None:
+                if not u and not a:
+                    return
+                try:
+                    res = self.record_memory_cb(u, a, device=device)
+                except TypeError:
+                    res = self.record_memory_cb(u, a)
                 if asyncio.iscoroutine(res):
                     await res
-                log.info('Ingested remote memory from mobile companion (user=%d chars, assistant=%d chars, records=%d)',
-                         len(user_text), len(assistant_text), len(records))
+
+            if records:
+                current_user = ""
+                current_assistant = ""
+                for r in records:
+                    r_role = r.get('role', '')
+                    r_content = r.get('content', '').strip()
+                    if r_role == 'user':
+                        if current_user or current_assistant:
+                            await _save_turn(current_user, current_assistant)
+                            current_user = ""
+                            current_assistant = ""
+                        current_user = r_content
+                    elif r_role in ('assistant', 'model'):
+                        current_assistant = (current_assistant + " " + r_content).strip() if current_assistant else r_content
+                if current_user or current_assistant:
+                    await _save_turn(current_user, current_assistant)
+                log.info('Ingested %d remote memory records from %s companion', len(records), device)
                 return json.dumps({'status': 'ok', 'saved': True, 'count': len(records)}) + '\n'
-            return json.dumps({'error': 'Memory recording unavailable'}) + '\n'
+            elif user_text or assistant_text:
+                await _save_turn(user_text, assistant_text)
+                log.info('Ingested remote memory from %s companion (user=%d chars, assistant=%d chars)',
+                         device, len(user_text), len(assistant_text))
+                return json.dumps({'status': 'ok', 'saved': True, 'count': 1}) + '\n'
+            return json.dumps({'status': 'ok', 'saved': False, 'count': 0, 'reason': 'empty_exchange'}) + '\n'
         if cmd == 'get_vision_mode':
             if self.get_vision_mode_cb:
                 mode = self.get_vision_mode_cb()

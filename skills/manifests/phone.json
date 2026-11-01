@@ -3,7 +3,7 @@
   "skills": [
     {
       "name": "phone_call",
-      "description": "Make an outgoing phone call to a contact name (e.g. 'Dad', 'China Mama', 'Annayya') or phone number (e.g. '+919949617551') through the connected phone plugin (OMyPhone/PipeWire telephony).",
+      "description": "Make a normal PC outgoing phone call through OMyPhone/PipeWire telephony to the user-requested contact or number. Keep using this for ordinary call requests on the PC. If the user explicitly says call FROM MY PHONE or using my mobile, use phone_control(action=call_contact, recipient=...) to call natively from Android instead.",
       "adapter": "phone.call",
       "parameters_json_schema": {
         "type": "object",
@@ -157,7 +157,7 @@
     },
     {
       "name": "phone_status",
-      "description": "Check the current phone and telephony connection status, including connected phone gateways and active calls.",
+      "description": "Check Bluetooth/OMyPhone TELEPHONY gateways and active calls. This is not Android screen/app control. To check or control the paired Android phone wirelessly, use phone_control with action=status instead. A disconnected calling gateway does not mean wireless Android control is disconnected.",
       "adapter": "phone.status",
       "parameters_json_schema": {
         "type": "object",

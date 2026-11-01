@@ -6,7 +6,7 @@ import socket
 from urllib.parse import urljoin, urlparse
 from urllib.request import HTTPHandler, HTTPSHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-MAX_BYTES = 1_000_000
+MAX_BYTES = 3_000_000
 MAX_TEXT = 16_000
 
 
@@ -106,7 +106,10 @@ def fetch_page_text(url, *, timeout=7):
     public_url(url)
     # Do not inherit authenticated browser state or proxy credentials.
     opener = build_opener(ProxyHandler({}), PublicRedirects(), PublicHTTPHandler(), PublicHTTPSHandler())
-    request = Request(url, headers={'User-Agent': 'JARVIS-PageReader/1.0', 'Accept': 'text/html,text/plain'})
+    request = Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,text/plain,*/*',
+    })
     try:
         with opener.open(request, timeout=timeout) as response:
             final_url = response.geturl()

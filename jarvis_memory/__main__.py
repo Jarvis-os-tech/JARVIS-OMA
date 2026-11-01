@@ -20,7 +20,9 @@ def cmd_stats(bridge: MemoryBridge, args: argparse.Namespace) -> int:
         sm = status.get('structured_memory', {})
         print("=== JARVIS OS Sovereign Memory Status ===")
         print(f"Directory:           {status.get('path', 'N/A')}")
-        print(f"Continuous History:  {status.get('conversation_messages', 0)} messages stored")
+        print(f"Total History:       {status.get('conversation_messages', 0)} messages stored")
+        print(f"  • PC Messages:     {status.get('pc_messages', 0)} ({status.get('pc_dir', '')})")
+        print(f"  • Mobile Messages: {status.get('mobile_messages', 0)} ({status.get('mobile_dir', '')})")
         print(f"Total Facts:         {status.get('facts', 0)}")
         print(f"Structured Active:   {sm.get('active', 0)}")
         print(f"Structured Total:    {sm.get('total', 0)}")
@@ -69,15 +71,19 @@ def cmd_search(bridge: MemoryBridge, args: argparse.Namespace) -> int:
 
 def cmd_history(bridge: MemoryBridge, args: argparse.Namespace) -> int:
     query = " ".join(args.query) if getattr(args, "query", None) else ""
-    turns = bridge.recall_history(query=query, limit=args.limit)
+    device = getattr(args, "device", None)
+    clean_device = None if not device or device == "all" else device
+    turns = bridge.recall_history(query=query, limit=args.limit, device=clean_device)
     if args.json:
         print(json.dumps(turns, indent=2))
         return 0
-    print(f"=== Continuous Conversation History ({len(turns)} turns) ===")
+    dev_title = f" [{clean_device.upper()}]" if clean_device else ""
+    print(f"=== Continuous Conversation History{dev_title} ({len(turns)} turns) ===")
     for turn in turns:
+        dev = turn.get('device', 'pc').upper()
         role = turn.get('role', 'unknown').upper()
         content = turn.get('content', turn.get('text', ''))
-        print(f"[{role}]: {content}\n")
+        print(f"[{dev} | {role}]: {content}\n")
     return 0
 
 
@@ -150,11 +156,13 @@ def main(argv: list[str] | None = None) -> int:
     hist_p = subparsers.add_parser("history", help="Show continuous conversation history")
     hist_p.add_argument("query", nargs="*", default=[], help="Optional filter string")
     hist_p.add_argument("--limit", "-n", type=int, default=20, help="Max turns to return")
+    hist_p.add_argument("--device", "-d", choices=["all", "pc", "mobile"], default="all", help="Filter by device: pc, mobile, or all")
     hist_p.set_defaults(func=cmd_history)
 
     conv_p = subparsers.add_parser("conversations", help="Alias for history")
     conv_p.add_argument("query", nargs="*", default=[], help="Optional filter string")
     conv_p.add_argument("--limit", "-n", type=int, default=20, help="Max turns to return")
+    conv_p.add_argument("--device", "-d", choices=["all", "pc", "mobile"], default="all", help="Filter by device: pc, mobile, or all")
     conv_p.set_defaults(func=cmd_history)
 
     # store

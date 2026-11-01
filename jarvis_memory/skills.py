@@ -50,8 +50,8 @@ class MemorySkills:
             self.declarations = []
         parameters = {
             'remember_memory': ({'text': {'type': 'string'}}, ['text']),
-            'recall_memory': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, []),
-            'recall_conversation': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}, []),
+            'recall_memory': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}, 'device': {'type': 'string', 'enum': ['all', 'pc', 'mobile']}}, []),
+            'recall_conversation': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}, 'device': {'type': 'string', 'enum': ['all', 'pc', 'mobile']}}, []),
             'forget_memory': ({'text': {'type': 'string'}}, ['text']),
             'clear_memory': ({}, []),
             'update_memory_profile': ({'name': {'type': 'string'}, 'content': {'type': 'string'}}, ['name', 'content']),
@@ -127,12 +127,14 @@ class MemorySkills:
         res["total_stored_messages"] = status.get("conversation_messages", 0)
         return res
 
-    async def _adapter_recall_conversation(self, query: str = "", limit: int = 20) -> dict[str, Any]:
-        turns = await self._memory_operation("recall_history", query=query, limit=limit)
+    async def _adapter_recall_conversation(self, query: str = "", limit: int = 20, device: str | None = None) -> dict[str, Any]:
+        turns = await self._memory_operation("recall_history", query=query, limit=limit, device=device)
         status = await self._memory_operation("status")
         return {
             "count": len(turns),
             "total_stored_messages": status.get("conversation_messages", len(turns)),
+            "pc_messages": status.get("pc_messages", 0),
+            "mobile_messages": status.get("mobile_messages", 0),
             "messages": turns,
             "summary": f"Retrieved {len(turns)} conversation turns from continuous memory.",
         }
@@ -161,7 +163,7 @@ class MemorySkills:
     async def _adapter_memory_history(self, memory_id: str) -> dict[str, Any]:
         return await self._memory_operation("memory_history", memory_id=memory_id)
 
-    def queue_memory_exchange(self, user: str, assistant: str) -> None:
+    def queue_memory_exchange(self, user: str, assistant: str, device: str = "pc") -> None:
         if not user and not assistant:
             return
         if len(self._memory_writes) >= 16:
@@ -172,8 +174,8 @@ class MemorySkills:
             return
 
         async def _do_record():
-            await self._memory_operation('record_exchange', user_text=user, assistant_text=assistant)
-            log.info("Continuous memory saved exchange (user=%d chars, assistant=%d chars)", len(user), len(assistant))
+            await self._memory_operation('record_exchange', user_text=user, assistant_text=assistant, device=device)
+            log.info("Continuous memory saved exchange (device=%s, user=%d chars, assistant=%d chars)", device, len(user), len(assistant))
 
         task = asyncio.create_task(_do_record())
         self._memory_writes.add(task)
