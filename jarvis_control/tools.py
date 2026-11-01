@@ -1052,6 +1052,29 @@ TOOL_SCHEMAS.append(PHONE_CONTROL_SCHEMA)
 from .mobile_pairing import SCHEMA as PHONE_PAIR_SCHEMA
 TOOL_SCHEMAS.append(PHONE_PAIR_SCHEMA)
 
+SYSTEM_UPDATE_SCHEMA = {
+    'name': 'system_update',
+    'description': (
+        'Check for, apply, or roll back standalone JARVIS OS releases synchronized '
+        'from the official GitHub repository. Use action="check" to see if an update '
+        'is available, action="apply" to compile and activate the latest update, or '
+        'action="rollback" to restore the previous operational version.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'action': {
+                'type': 'string',
+                'enum': ['check', 'apply', 'rollback', 'status'],
+                'description': 'The release operation to perform: check, apply, rollback, or status.'
+            }
+        },
+        'required': ['action'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(SYSTEM_UPDATE_SCHEMA)
+
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -1442,6 +1465,8 @@ class Executor:
         description = self.describe(name, args)
         read_only = name in READ_ONLY_TOOLS or (
             name == 'system_control' and str(args.get('action', '')).endswith('_get')
+        ) or (
+            name == 'system_update' and args.get('action') in ('check', 'status')
         )
         try:
             if not read_only:
@@ -1505,6 +1530,8 @@ class Executor:
 
     @staticmethod
     def describe(name: str, args: dict) -> str:
+        if name == "system_update":
+            return f"system update: {args.get('action', 'check')}"
         if name == "phone_control":
             return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
@@ -3311,6 +3338,28 @@ class Executor:
     def _tool_system_control(self, action, value=None, enabled=None, workspace=''):
         from .system_control import execute
         return execute(self, action, value, enabled, workspace)
+
+    def _tool_system_update(self, action: str = "check") -> Result:
+        try:
+            from orchestration.release_manager import ReleaseManager
+            rm = ReleaseManager()
+            if action in ("check", "status"):
+                res = rm.check_remote_update()
+                if res.get("has_update"):
+                    return Result(True, f"A system update is available: commit {res['remote_sha'][:7]}. {res.get('message', '')}")
+                elif res.get("error"):
+                    return Result(False, f"Failed to check for updates: {res['error']}")
+                curr = res.get("current_sha", "")[:7] or "baseline"
+                return Result(True, f"JARVIS OS is already up-to-date on version {curr}.")
+            elif action == "apply":
+                meta = rm.apply_update()
+                return Result(True, f"Successfully updated and activated release {meta.get('commit', '')[:7]}: {meta.get('message', '')}")
+            elif action == "rollback":
+                meta = rm.rollback()
+                return Result(True, f"Successfully rolled back to release {meta.get('commit', '')[:7]}: {meta.get('message', '')}")
+            return Result(False, f"Unknown action: {action}")
+        except Exception as e:
+            return Result(False, f"System update failed: {e}")
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.

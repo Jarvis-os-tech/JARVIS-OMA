@@ -697,6 +697,30 @@
         "required": [],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "system_update",
+      "description": "Check for, apply, or roll back standalone JARVIS OS releases synchronized from the official GitHub repository.",
+      "adapter": "system_update",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "apply",
+              "rollback",
+              "status"
+            ],
+            "description": "Release operation to perform: check, apply, rollback, or status."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
     }
   ]
 }

@@ -2516,6 +2516,23 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         except Exception as error:
             raise SkillError(f"Failed to sync JARVIS branch: {error}") from None
 
+    async def _adapter_system_update(self, action="check"):
+        """Check, apply, or roll back standalone JARVIS OS releases."""
+        try:
+            from orchestration.release_manager import ReleaseManager
+            rm = ReleaseManager()
+            if action in ("check", "status"):
+                return rm.check_remote_update()
+            elif action == "apply":
+                meta = rm.apply_update()
+                return {"status": "updated", "commit": meta.get("commit"), "message": meta.get("message")}
+            elif action == "rollback":
+                meta = rm.rollback()
+                return {"status": "rolled_back", "commit": meta.get("commit"), "message": meta.get("message")}
+            raise SkillError(f"Unknown update action: {action}")
+        except Exception as error:
+            raise SkillError(f"System update failed: {error}") from None
+
     async def _adapter_control_power(self, action):
         """Manage system power profile and sleep states."""
         res = await system_control.control_power(action)
