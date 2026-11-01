@@ -20,6 +20,7 @@ Usage:
   jarvis logs [-f]     View JARVIS systemd logs
   jarvis listen [cmd]  Control voice listening (toggle|start|stop|cancel|confirm)
   jarvis standby       Enter private local standby (Hey Jarvis wakes)
+  jarvis send [text]   Send typed query or command directly to live JARVIS session
   jarvis control [cmd] Desktop controlling & information retrieval (list|map|call)
   jarvis task [cmd]    Submit, inspect, read, cancel or resume durable work
   jarvis vision [cmd]  Camera start, inspect, status or stop
@@ -102,6 +103,14 @@ case "$cmd" in
             exec "${SCRIPT_DIR}/bin/jarvis-voice" standby "$@"
         else
             exec jarvis-voice standby "$@"
+        fi
+        ;;
+    send|tell|prompt)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
+            exec "${SCRIPT_DIR}/bin/jarvis-voice" send "$@"
+        else
+            exec jarvis-voice send "$@"
         fi
         ;;
     control|task|vision|say|doctor)

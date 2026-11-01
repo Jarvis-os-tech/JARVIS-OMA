@@ -66,6 +66,42 @@ class StandbyConfig:
 
 
 @dataclass
+class FillerMixingConfig:
+    ducking_window_ms: int = 50
+    local_buffer_precharge: int = 2
+
+    def validate(self):
+        if not isinstance(self.ducking_window_ms, int) or isinstance(self.ducking_window_ms, bool) or self.ducking_window_ms < 0:
+            raise ValueError('fillers.mixing.ducking_window_ms must be a non-negative integer')
+        if not isinstance(self.local_buffer_precharge, int) or isinstance(self.local_buffer_precharge, bool) or self.local_buffer_precharge < 0:
+            raise ValueError('fillers.mixing.local_buffer_precharge must be a non-negative integer')
+        return self
+
+
+@dataclass
+class FillerConfig:
+    enable_local_fillers: bool = True
+    filler_audio_dir: str = "~/.local/share/jarvis-oma/audio/fillers/"
+    phrases: list = field(default_factory=lambda: [
+        {"text": "humm", "file": "humm_thoughtful.pcm", "duration_ms": 800, "context": "generic_deep_thought"},
+        {"text": "wait a sec", "file": "wait_sec_system.pcm", "duration_ms": 1100, "context": "system_mutation"},
+        {"text": "let's see", "file": "lets_see_code.pcm", "duration_ms": 950, "context": "filesystem_grep"},
+        {"text": "give me a moment", "file": "moment_agent.pcm", "duration_ms": 1400, "context": "sub_agent_spawn"},
+    ])
+    mixing: FillerMixingConfig = field(default_factory=FillerMixingConfig)
+
+    def validate(self):
+        if not isinstance(self.enable_local_fillers, bool):
+            raise ValueError('fillers.enable_local_fillers must be a boolean')
+        if not isinstance(self.filler_audio_dir, str):
+            raise ValueError('fillers.filler_audio_dir must be a string')
+        if not isinstance(self.phrases, list):
+            raise ValueError('fillers.phrases must be a list of phrase mappings')
+        self.mixing.validate()
+        return self
+
+
+@dataclass
 class Config:
     model: str = 'gemini-3.8-live'
     voice: str = 'Aoede'
@@ -89,6 +125,7 @@ class Config:
     control: dict = field(default_factory=dict)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     standby: StandbyConfig = field(default_factory=StandbyConfig)
+    fillers: FillerConfig = field(default_factory=FillerConfig)
 
     def validate(self):
         for name in ('barge_in', 'autostart_listening', 'greet_on_start', 'enable_tools',
@@ -111,6 +148,7 @@ class Config:
         control_config(self)
         self.memory.validate()
         self.standby.validate()
+        self.fillers.validate()
         return self
 
 
@@ -119,13 +157,28 @@ def load() -> Config:
     path = config_home / 'jarvis-voice' / 'config.toml'
     if path.exists():
         data = tomllib.loads(path.read_text())
+        fillers_data = data.pop('fillers', None)
+        voice_data = data.get('voice', None)
+        if isinstance(voice_data, dict) and 'fillers' in voice_data:
+            fillers_data = voice_data.pop('fillers')
+            if 'voice' in voice_data:
+                data['voice'] = voice_data['voice']
+            else:
+                data.pop('voice', None)
+        if fillers_data and isinstance(fillers_data, dict):
+            mixing_data = fillers_data.pop('mixing', {})
+            mixing_cfg = FillerMixingConfig(**mixing_data) if isinstance(mixing_data, dict) else FillerMixingConfig()
+            fillers_cfg = FillerConfig(**fillers_data, mixing=mixing_cfg)
+        else:
+            fillers_cfg = FillerConfig()
+
         unknown = set(data) - set(Config.__dataclass_fields__)
         if unknown:
             raise ValueError('Unsupported jarvis-voice setting: ' + ', '.join(sorted(unknown)))
         standby_data = data.pop('standby', {})
         standby_cfg = StandbyConfig(**standby_data) if isinstance(standby_data, dict) else StandbyConfig()
         data.pop('memory', None)
-        return Config(**data, standby=standby_cfg, memory=load_memory_config(path).memory).validate()
+        return Config(**data, standby=standby_cfg, fillers=fillers_cfg, memory=load_memory_config(path).memory).validate()
     return Config(memory=load_memory_config().memory).validate()
 
 

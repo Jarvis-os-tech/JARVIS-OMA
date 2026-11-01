@@ -129,6 +129,41 @@ def test_cli_standby_command(tmp_path, monkeypatch):
     t.join()
 
 
+def test_cli_send_command(tmp_path, monkeypatch):
+    import socket
+    import threading
+    sock_path = tmp_path / 'control.sock'
+    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.settimeout(3.0)
+    server.listen(1)
+
+    received = []
+    def handle():
+        try:
+            conn, _ = server.accept()
+            conn.settimeout(2.0)
+            data = conn.recv(1024)
+            received.append(data)
+            conn.sendall(b'{"status": "sent", "text": "hello jarvis"}\n')
+            conn.close()
+        except socket.timeout:
+            pass
+        finally:
+            server.close()
+
+    t = threading.Thread(target=handle)
+    t.start()
+
+    from jarvis_voice.__main__ import main
+    rc = main(['send', 'hello', 'jarvis'])
+    assert rc == 0
+    t.join()
+    assert b'send hello jarvis\n' in received
+
+
 def test_invalid_listen_action_is_rejected_before_connecting():
     from jarvis_voice.__main__ import main
     with pytest.raises(SystemExit) as result:

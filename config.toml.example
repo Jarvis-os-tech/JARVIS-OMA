@@ -26,3 +26,24 @@ semantic_model = ""                     # Example: text-embedding-004
 semantic_url = "http://127.0.0.1:11434" # Used only when provider = "ollama"
 semantic_dimension = 768                 # Must match the selected embedding model
 semantic_min_score = 0.55               # Reject weak semantic-only matches
+
+[fillers]
+# Enable instant local reflex loops bypassing cloud round-trip times
+enable_local_fillers = true
+
+# The directory holding pre-rendered or cached PCM snippets of your specific voice model
+filler_audio_dir = "~/.local/share/jarvis-oma/audio/fillers/"
+
+# Allowed variations for the token classifier to pick from randomly based on task categorization
+phrases = [
+    { text = "humm", file = "humm_thoughtful.pcm", duration_ms = 800, context = "generic_deep_thought" },
+    { text = "wait a sec", file = "wait_sec_system.pcm", duration_ms = 1100, context = "system_mutation" },
+    { text = "let's see", file = "lets_see_code.pcm", duration_ms = 950, context = "filesystem_grep" },
+    { text = "give me a moment", file = "moment_agent.pcm", duration_ms = 1400, context = "sub_agent_spawn" }
+]
+
+# Audio mixing configurations for the Raised-Cosine transition inside downstream.py
+[fillers.mixing]
+ducking_window_ms = 50       # Time window to smoothly fade out the local filler when Gemini PCM arrives
+local_buffer_precharge = 2   # Number of small audio chunks pre-loaded into RAM to eliminate disk wake latency
+

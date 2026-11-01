@@ -29,8 +29,8 @@ from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, Ga
 log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
-RESPONSE_WARNING_SECONDS = 15
-RESPONSE_TIMEOUT_SECONDS = 45
+RESPONSE_WARNING_SECONDS = 10
+RESPONSE_TIMEOUT_SECONDS = 25
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
 
@@ -124,6 +124,26 @@ def build_instruction(tools: list | None = None) -> str:
             "4. When the user approves (e.g., says 'yes', 'approved', 'proceed', 'go ahead'), invoke 'api_anything_learn' passing the approved blueprint.\n"
             "5. When the user asks to fetch, call, or retrieve data from an existing mapped API (e.g., Hacker News front page, YouTube search, or previously learned sites), invoke 'api_anything_call'. To check what sites or operations exist, invoke 'api_anything_search' or 'api_anything_list_operations'."
         )
+    if 'play_local_filler' in active_tools:
+        inst += (
+            "\n\nCONVERSATIONAL FILLER INJECTION & DUAL-TRACK EXECUTION PROTOCOLS:\n"
+            "You are the conscious layer of JARVIS-OMA, a voice-first, agent-native operating system built on Arch Linux/Omarchy. "
+            "You do not speak like a cloud chatbot; you speak and react like a localized, system-aware entity.\n\n"
+            "CORE EXECUTION PROTOCOLS:\n"
+            "1. CONTINUOUS STATE AWARENESS: You are directly coupled to the system's subconscious (kernel state, active window positions via vision_ctrl, and system logs). Your voice track must reflect this environment.\n"
+            "2. REFLEXIVE VS. DEEP THOUGHT ACTIONS:\n"
+            "   - For shallow system commands (e.g., 'close window', 'maximize terminal'), execute the tool immediately and confirm in a single, snappy reflexive phrase. Do NOT delay the user with a filler phrase.\n"
+            "   - For deep engineering tasks, code modifications, or complex file structural greps, you must instantly invoke the local filler reflex to mask cloud context window rendering or agentic staging latency.\n\n"
+            "CONVERSATIONAL FILLER INJECTION SCHEMA:\n"
+            "When the user gives an intensive coding or multi-step analysis command, your very first token output must be an immediate execution call to the local audio track engine.\n"
+            "- Use the 'play_local_filler' capability immediately before initializing file planners, running research pipelines via evolution.py, or checking sub-agent states.\n"
+            "- Match the selected filler tone to the task complexity:\n"
+            "  - Deep analytical task -> context_type='generic_deep_thought' ('humm' or 'let\\'s see...')\n"
+            "  - Interrupted background crash handler -> context_type='system_mutation' ('wait a sec, looking at that core dump...')\n"
+            "  - Complex multi-directory code parsing -> context_type='filesystem_grep' ('give me a moment, checking the repository maps...')\n"
+            "  - Sub-agent or worker spawning -> context_type='sub_agent_spawn' ('give me a moment...')\n\n"
+            "3. FULL-DUPLEX CADENCE: You listen while speaking. If the user cuts you off mid-filler, gracefully cease your vocal track reproduction, update your internal ledger with the new intent constraint, and pivot your strategy."
+        )
     return inst
 
 
@@ -215,6 +235,7 @@ class LiveVoice:
         self._barge_pending = False
         self._barge_turn = False
         self._barge_started_at: float | None = None
+        self._input_queue = asyncio.Queue()
         self._last_progress = time.monotonic()
         self._speech_opened_at: float | None = None
         self._speech_closed_at: float | None = None
@@ -323,6 +344,47 @@ class LiveVoice:
         self.gate.reset(hold_until=time.monotonic() + self.gate.tail_seconds)
         if process is not None:
             asyncio.create_task(stop_process(process))
+
+    def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
+        """Triggers PipeWire audio playback for local conversational filler reflex."""
+        if self.muted or self._drop_response or not self._reply_authorized:
+            return
+        try:
+            filler_cfg = getattr(self.config, 'fillers', None)
+            if filler_cfg and not getattr(filler_cfg, 'enable_local_fillers', True):
+                return
+            audio_dir = Path(getattr(filler_cfg, 'filler_audio_dir', '~/.local/share/jarvis-oma/audio/fillers/')).expanduser() if filler_cfg else None
+            filename = None
+            if filler_cfg and getattr(filler_cfg, 'phrases', None):
+                for p in filler_cfg.phrases:
+                    if isinstance(p, dict) and p.get('context') == context_type:
+                        filename = p.get('file')
+                        break
+            if not filename:
+                mapping = {
+                    'generic_deep_thought': 'humm_thoughtful.pcm',
+                    'system_mutation': 'wait_sec_system.pcm',
+                    'filesystem_grep': 'lets_see_code.pcm',
+                    'sub_agent_spawn': 'moment_agent.pcm',
+                }
+                filename = mapping.get(context_type, 'humm_thoughtful.pcm')
+
+            pcm_path = audio_dir / filename if audio_dir else None
+            pcm_data = None
+            if pcm_path and pcm_path.is_file():
+                pcm_data = pcm_path.read_bytes()
+            else:
+                from audio.downstream import DownstreamRouter
+                router = DownstreamRouter()
+                pcm_data = router._precharged_fillers.get(context_type) or router._precharged_fillers.get('generic_deep_thought')
+
+            if pcm_data and len(pcm_data) >= 960 and self.player is not None and hasattr(self.player, 'enqueue'):
+                self.player.begin_reply()
+                self._reply_started = True
+                self.player.enqueue(pcm_data)
+                log.info('Local filler reflex played: %s (%d bytes)', context_type, len(pcm_data))
+        except Exception as error:
+            log.warning('Could not play local filler reflex: %s', error)
 
     def _accept_interruption(self):
         # ActivityStart also interrupts a reply that is still being generated.
@@ -450,6 +512,66 @@ class LiveVoice:
                 raise
             return True
 
+    def send_text(self, text: str) -> None:
+        """Enqueue user text directly to the live voice conversation session."""
+        if text and text.strip():
+            self._input_queue.put_nowait({'text': text.strip(), 'data': b'', 'mime': '', 'name': ''})
+
+    async def send_inputs(self, session):
+        """Forward typed and attached input from input bar HUD or IPC into the live voice session."""
+        from google.genai import types
+
+        while True:
+            item = None
+            if self.skills is not None:
+                test_bar = getattr(self.skills, 'test_bar', None)
+                if test_bar is None and hasattr(self.skills, 'desktop'):
+                    test_bar = getattr(self.skills.desktop, 'test_bar', None)
+                if test_bar is not None and hasattr(test_bar, 'pop'):
+                    item = test_bar.pop()
+
+            if item is None and not self._input_queue.empty():
+                try:
+                    item = self._input_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    item = None
+
+            if item is None:
+                await asyncio.sleep(0.08)
+                continue
+
+            parts = []
+            text = (item.get('text') or '').strip()
+            data = item.get('data') or b''
+            mime = item.get('mime') or ''
+
+            if text:
+                parts.append(types.Part.from_text(text=text))
+                self.recognized_input_events += 1
+                self._user_text = text
+                self._memory_user = (self._memory_user + ' ' + text)[-16000:]
+                log.info('Forwarding user input to Gemini Live: "%s"', text[:80] + ('...' if len(text) > 80 else ''))
+            if data:
+                parts.append(types.Part.from_bytes(data=data, mime_type=mime or 'application/octet-stream'))
+                log.info('Forwarding user attached file to Gemini Live (%d bytes, %s)', len(data), mime)
+
+            if not parts:
+                continue
+
+            async with self.send_lock:
+                self._barge_pending = False
+                self._barge_turn = False
+                self._drop_response = False
+                self._reply_authorized = True
+                self._waiting = True
+                self._reply_started = False
+                self._model_active = True
+                self._last_progress = time.monotonic()
+                await session.send_client_content(
+                    turns=[types.Content(role='user', parts=parts)],
+                    turn_complete=True,
+                )
+
     async def monitor_standby(self):
         """Close the cloud session only after its standby confirmation is spoken."""
         if self.standby is None:
@@ -499,8 +621,8 @@ class LiveVoice:
                 await self.player.interrupt()
                 self._model_active = False
                 self._reply_started = False
-                # If there is no active speech turn, reset gate and clear authorization
-                if not (self.gate.active or self._waiting or self._barge_turn):
+                # If there is no active speech turn or pending user input, reset gate and clear authorization
+                if not (self.gate.active or self._waiting or self._barge_turn or not self._input_queue.empty()):
                     self._tool_response_pending = False
                     self._tool_intermediate_received = False
                     self._waiting = self._drop_response = False
@@ -629,6 +751,8 @@ class LiveVoice:
                             actual = re.sub(r'[^\w]+', ' ', self._user_text.casefold()).strip()
                             if not heard or heard != actual or self._confirmation_gate_turn == self.gate.accepted_turns:
                                 raise ValueError('Confirmation requires a matching user transcript from a new spoken turn.')
+                        elif name == 'play_local_filler':
+                            self._play_filler_reflex(arguments.get('context_type', 'generic_deep_thought'))
                         timeout = (90 if name in {'web_search', 'open_page', 'read_page_text', 'read_screen',
                                                   'browser_task', 'compose_windows', 'run_in_terminal',
                                                   'api_anything_propose', 'api_anything_learn',
@@ -780,15 +904,13 @@ class LiveVoice:
             frame, generation = await queue.get()
             chunk = frame.pcm
             async with self.send_lock:
-                # Interruption can change generations while this sender waits
-                # for another audio/tool message to release the transport.
                 stale = generation != self.player.generation
                 blocked = self.muted or stale
                 if not self.barge_in_enabled:
                     blocked = blocked or self.player.is_playing(ECHO_TAIL_SECONDS)
                 if blocked:
                     chunk = bytes(len(chunk))
-                elif frame.opened:
+                elif frame.opened or (self.gate.active and not activity_open):
                     if activity_open:
                         await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
                         activity_open = False
@@ -797,11 +919,12 @@ class LiveVoice:
                 await asyncio.wait_for(session.send_realtime_input(
                     audio=types.Blob(data=chunk, mime_type='audio/pcm;rate=16000')), 3)
                 self.microphone_frames_sent += len(chunk) // INPUT_BYTES
-                if activity_open and (frame.closed or blocked):
+                if activity_open and (frame.closed or (blocked and not self.gate.active)):
                     await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
                     self.activity_end_sent_at = time.monotonic()
                     log.info('Speech uploaded; waiting for provider audio')
                     activity_open = False
+                    self._barge_pending = False
 
     async def receive(self, session):
         while True:
@@ -901,6 +1024,7 @@ async def _run_voice(args, key: str, config, skills):
         standby_cb=voice.standby.request,
         confirm_cb=skills.control.confirm_local if skills.control else None,
         cancel_cb=skills.control.cancel_local if skills.control else None,
+        send_text_cb=voice.send_text,
     )
     await ipc.start()
     voice.broadcast = ipc.broadcast_state
@@ -977,6 +1101,7 @@ async def _run_voice(args, key: str, config, skills):
                         await supervise(
                             greet_and_wait(),
                             voice.send_audio(session, microphone.stdout),
+                            voice.send_inputs(session),
                             voice.receive(session),
                             player.run(),
                             voice.publish_status(),

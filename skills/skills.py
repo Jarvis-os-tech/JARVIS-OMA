@@ -127,6 +127,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'task.list': '_adapter_list_tasks',
         'task.cancel': '_adapter_cancel_task',
         'standby.enter': '_adapter_enter_standby',
+        'audio.filler': '_adapter_play_local_filler',
         'memory.remember': '_adapter_remember_memory',
         'memory.recall': '_adapter_recall_memory',
         'memory.forget': '_adapter_forget_memory',
@@ -586,6 +587,16 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 document = json.loads(path.read_text(encoding='utf-8'))
             except (OSError, json.JSONDecodeError, RecursionError) as error:
                 raise SkillError(f'cannot load skill manifest {path.name}: {error}') from None
+            if isinstance(document, dict) and 'name' in document and ('parameters' in document or 'parameters_json_schema' in document):
+                document = {
+                    'version': 1,
+                    'skills': [{
+                        'name': document['name'],
+                        'description': document.get('description', ''),
+                        'adapter': document.get('adapter', 'audio.filler'),
+                        'parameters_json_schema': document.get('parameters_json_schema') or document.get('parameters', {})
+                    }]
+                }
             if not isinstance(document, dict) or set(document) != {'version', 'skills'}:
                 raise SkillError(f'invalid skill manifest structure: {path.name}')
             if document['version'] != 1 or not isinstance(document['skills'], list):
@@ -1423,6 +1434,14 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             }
         except RuntimeError as error:
             raise SkillError(str(error)) from None
+
+    async def _adapter_play_local_filler(self, context_type: str = 'generic_deep_thought'):
+        return {
+            'ok': True,
+            'status': 'filler_playing',
+            'action': 'play_local_filler',
+            'context_type': str(context_type),
+        }
 
     async def _file_operation(self, operation, *args, **kwargs):
         try:

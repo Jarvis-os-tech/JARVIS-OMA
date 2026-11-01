@@ -156,3 +156,26 @@ async def test_socket_confirmation_returns_after_async_callback(tmp_path):
         await writer.wait_closed()
     finally:
         await server.close()
+
+
+@pytest.mark.asyncio
+async def test_send_text_ipc_command(socket_path):
+    from jarvis_voice.ipc import ControlServer
+    sent = []
+    server = ControlServer(
+        socket_path=socket_path,
+        send_text_cb=lambda text: sent.append(text),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(b'send what is the weather\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res.get('status') == 'sent'
+        assert res.get('text') == 'what is the weather'
+        assert sent == ['what is the weather']
+    finally:
+        await server.close()

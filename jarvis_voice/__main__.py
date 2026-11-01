@@ -53,6 +53,12 @@ def _ipc_command(args):
         cmd = f'listen {action}'
     elif args.command == 'standby':
         cmd = 'standby'
+    elif args.command in ('send', 'tell', 'prompt'):
+        text = ' '.join(([args.action] if args.action else []) + (getattr(args, 'text_args', None) or [])).strip()
+        if not text:
+            print('send requires a text message to send to JARVIS', file=sys.stderr)
+            return 1
+        cmd = f'send {text}'
     else:
         cmd = args.command
 
@@ -75,9 +81,10 @@ def main(argv=None):
         prog='jarvis-voice',
         description='JARVIS Voice Core — sovereign voice foundation')
     parser.add_argument('command', nargs='?', default='run',
-        choices=['run', 'status', 'listen', 'standby', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
+        choices=['run', 'status', 'listen', 'standby', 'send', 'tell', 'prompt', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
         help='Command to execute (default: run)')
-    parser.add_argument('action', nargs='?', help='Action for listen command')
+    parser.add_argument('action', nargs='?', help='Action for listen or first word for send')
+    parser.add_argument('text_args', nargs='*', help='Additional words for send/tell')
     parser.add_argument('--model', default=os.getenv('GEMINI_LIVE_MODEL'))
     parser.add_argument('--voice', default=None, help='Gemini voice name')
     parser.add_argument('--check', action='store_true',
@@ -115,7 +122,7 @@ def main(argv=None):
     if args.command in ('restart', 'disable', 'disanble', 'enable', 'start', 'stop'):
         return _systemd_command(args.command)
 
-    if args.command in ('status', 'listen', 'standby'):
+    if args.command in ('status', 'listen', 'standby', 'send', 'tell', 'prompt'):
         return _ipc_command(args)
 
     if args.command == 'run':

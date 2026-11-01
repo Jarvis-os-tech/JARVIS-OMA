@@ -679,3 +679,99 @@ async def test_tool_turn_complete_without_audio_does_not_hang():
     assert voice._reply_authorized is False
 
 
+@pytest.mark.asyncio
+async def test_send_inputs_forwards_user_text_and_test_bar():
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+    from skills.input_bar import TestBar
+
+    class FakeSkills:
+        def __init__(self):
+            self.test_bar = TestBar()
+
+    skills = FakeSkills()
+    voice = LiveVoice(Playback('default'), skills=skills)
+    sent_turns = []
+
+    class FakeSession:
+        async def send_client_content(self, turns, turn_complete):
+            sent_turns.append((turns, turn_complete))
+
+    session = FakeSession()
+
+    # Enqueue into skills test_bar (input bar HUD)
+    skills.test_bar.items.put_nowait({'text': 'query from hud', 'data': b'', 'mime': '', 'name': ''})
+
+    # Also enqueue via voice.send_text (IPC/CLI)
+    voice.send_text('query from ipc')
+
+    worker = asyncio.create_task(voice.send_inputs(session))
+    await asyncio.sleep(0.2)
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    assert len(sent_turns) == 2
+    # Verify first turn from test_bar: sent_turns is list of (turns_list, turn_complete)
+    content1 = sent_turns[0][0][0]
+    assert any(getattr(p, 'text', '') == 'query from hud' for p in content1.parts)
+    assert sent_turns[0][1] is True  # turn_complete
+
+    # Verify second turn from IPC
+    content2 = sent_turns[1][0][0]
+    assert any(getattr(p, 'text', '') == 'query from ipc' for p in content2.parts)
+    assert sent_turns[1][1] is True  # turn_complete
+
+    # State flags updated
+    assert voice._reply_authorized is True
+    assert voice._waiting is True
+    assert voice._model_active is True
+
+
+@pytest.mark.asyncio
+async def test_interruption_does_not_drop_subsequent_model_response():
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+
+    voice = LiveVoice(Playback('default'))
+    voice._model_active = True
+    voice._accept_interruption()
+    assert voice._barge_pending is True
+    assert voice._barge_turn is True
+    assert voice._reply_authorized is True
+
+    # Interruption event arrives for old generation
+    event_interrupted = SimpleNamespace(
+        server_content=SimpleNamespace(interrupted=True),
+        tool_call=None, session_resumption_update=None, go_away=None, tool_call_cancellation=None,
+    )
+    await voice.handle(event_interrupted)
+    assert voice._barge_pending is True
+    assert voice.provider_interruptions == 1
+
+    event_complete = SimpleNamespace(
+        server_content=SimpleNamespace(turn_complete=True),
+        tool_call=None, session_resumption_update=None, go_away=None, tool_call_cancellation=None,
+    )
+    await voice.handle(event_complete)
+    assert voice._barge_pending is False
+    assert voice._reply_authorized is True
+
+    # New model response arrives with audio
+    enqueued = []
+    voice.player.enqueue = lambda data: enqueued.append(data)
+    event_audio = SimpleNamespace(
+        server_content=SimpleNamespace(
+            interrupted=False,
+            model_turn=SimpleNamespace(
+                parts=[SimpleNamespace(inline_data=SimpleNamespace(data=b'\x01\x00' * 160))]
+            ),
+        ),
+        tool_call=None, session_resumption_update=None, go_away=None, tool_call_cancellation=None,
+    )
+    await voice.handle(event_audio)
+    assert len(enqueued) == 1
+    assert voice.provider_audio_bytes == 320
+
+
+
