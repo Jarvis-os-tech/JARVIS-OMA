@@ -48,21 +48,18 @@ def setup_standalone_venv(venv_dir: Path, source_venv: Path) -> None:
 
 def seed_sync_git(sync_git_dir: Path, repo_url: str, branch: str) -> None:
     """Seed the bare git mirror cache."""
+    sync_git_dir.parent.mkdir(parents=True, exist_ok=True)
     if sync_git_dir.is_dir():
-        log.info("Fetching latest commits into %s...", sync_git_dir)
+        log.info("Fetching latest commits from local repo into %s...", sync_git_dir)
         subprocess.run(
-            ["git", "--git-dir", str(sync_git_dir), "fetch", "origin", f"{branch}:{branch}"],
-            check=False,
-            timeout=60,
+            ["git", "--git-dir", str(sync_git_dir), "fetch", str(REPO_ROOT), f"{branch}:{branch}"],
+            check=True,
         )
         return
 
     log.info("Seeding bare git cache at %s...", sync_git_dir)
-    sync_git_dir.parent.mkdir(parents=True, exist_ok=True)
-    # Clone bare from current repo first for speed, then set origin to GitHub
     subprocess.run(["git", "clone", "--bare", str(REPO_ROOT), str(sync_git_dir)], check=True)
     subprocess.run(["git", "--git-dir", str(sync_git_dir), "remote", "set-url", "origin", repo_url], check=True)
-    subprocess.run(["git", "--git-dir", str(sync_git_dir), "fetch", "origin", f"{branch}:{branch}"], check=False)
 
 
 def main() -> int:
