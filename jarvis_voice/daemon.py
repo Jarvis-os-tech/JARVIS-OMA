@@ -30,7 +30,7 @@ log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
 RESPONSE_WARNING_SECONDS = 10
-RESPONSE_TIMEOUT_SECONDS = 25
+RESPONSE_TIMEOUT_SECONDS = 35
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
 
@@ -165,7 +165,7 @@ def build_instruction(tools: list | None = None) -> str:
     if 'enter_standby' in active_tools:
         inst += (
             "\n\nSTANDBY MODE RULES:\n"
-            "1. When the user asks you to enter standby, sleep, mute yourself, keep quiet, or go to standby mode, ALWAYS invoke 'enter_standby'.\n"
+            "1. When the user asks you to enter standby, sleep, mute yourself, keep quiet, or says goodbye / bye / I have to go, ALWAYS invoke 'enter_standby'.\n"
         )
     return inst
 
