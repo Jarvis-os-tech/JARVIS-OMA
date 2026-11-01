@@ -20,10 +20,6 @@ log = logging.getLogger(__name__)
 # allowing it to function even if the shared Gemini 3.x allowance fails.
 GROUNDING_MODELS = (
     "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
 )
 
 _search_key_cooldown: dict[str, float] = {}

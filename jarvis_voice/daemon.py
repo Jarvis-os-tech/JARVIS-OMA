@@ -94,7 +94,8 @@ def build_instruction(tools: list | None = None) -> str:
         "LANGUAGE & ACCENT ROBUSTNESS RULES:\n"
         "1. PRIMARY LANGUAGE: Your primary spoken and operational language is English. Always speak in natural, fluent English unless the user explicitly commands you to speak in another specific language.\n"
         "2. ACCENT & PHONETIC TOLERANCE: The user speaks in English with natural regional accents (including Indian English, global accents, colloquial phrasing, or occasional bilingual words). ALWAYS understand their meaning, intent, and desktop requests. Match the user's conversational pace.\n"
-        "3. NEVER REFUSE LANGUAGE: Under no circumstances should you ever tell the user 'I cannot respond in that language' or refuse to understand. If words sound unfamiliar or are transcribed phonetically, deduce their intent in the context of computer controls, questions, or conversation, and respond helpfully in English.\n\n"
+        "3. NEVER REFUSE LANGUAGE: Under no circumstances should you ever tell the user 'I cannot respond in that language' or refuse to understand. If words sound unfamiliar or are transcribed phonetically, deduce their intent in the context of computer controls, questions, or conversation, and respond helpfully in English.\n"
+        "4. CONVERSATIONAL VS TOOL INTENT: When the user asks questions, seeks clarification, explains problems, or discusses what is happening, ANSWER CONVERSATIONALLY AND DIRECTLY. Do NOT execute tools (such as phone_pair or media controls) unless the user explicitly commands that specific action.\n\n"
         f"{tool_status}\n\n"
         "GROUNDING & CAPABILITY SELF-AWARENESS RULES:\n"
         "1. Your real-world capabilities are strictly bounded by your declared tools in this session.\n"
@@ -184,6 +185,9 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
     input_transcription_cfg = {}
     if lang_codes:
         input_transcription_cfg['language_codes'] = list(lang_codes)
+    input_transcription_cfg['custom_vocabulary'] = [
+        'Jarvis', 'JARVIS', 'Hey Jarvis', 'Omarchy', 'Hyprland', 'PipeWire', 'terminal', 'workspace', 'standby', 'volume'
+    ]
 
     cfg = {
         'response_modalities': ['AUDIO'],

@@ -80,6 +80,10 @@ class MonitorEchoCancellation:
                 available = await pactl('list', 'short', 'sources')
                 if any(line.split()[1:2] == [self.source] for line in available.splitlines()):
                     self.active = True
+                    try:
+                        await pactl('set-source-volume', self.source, '100%')
+                    except Exception:
+                        pass
                     log.info('PipeWire Monitor AEC active: mic=%s target=%s speaker=%s',
                              source, self.source, self.sink)
                     return True
