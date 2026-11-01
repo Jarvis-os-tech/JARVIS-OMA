@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 # Prefer project virtualenv with installed dependencies
 if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
     PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+elif [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+    PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
 elif [[ -x "${HOME}/Projects/JARVIS-OMA/.venv/bin/python" ]]; then
     PYTHON="${HOME}/Projects/JARVIS-OMA/.venv/bin/python"
 elif [[ -x "${HOME}/.local/share/jarvis-voice/.venv/bin/python" ]]; then

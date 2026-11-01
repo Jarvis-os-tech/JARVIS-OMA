@@ -7,14 +7,15 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=%h/.local/share/jarvis-voice/bin/jarvis-voice run
-WorkingDirectory=%h/.local/share/jarvis-voice
-Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=%h/.local/share/jarvis-runtime/current/bin/jarvis-voice run
+WorkingDirectory=%h/.local/share/jarvis-runtime/current
+Environment=PYTHONPATH=%h/.local/share/jarvis-runtime/current
 Environment=XDG_RUNTIME_DIR=%t
 Restart=always
 RestartSec=2
-KillMode=control-group
-TimeoutStopSec=8
+KillMode=mixed
+TimeoutStopSec=10
+SendSIGKILL=yes
 UMask=0077
 NoNewPrivileges=true
 StandardOutput=journal

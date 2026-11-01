@@ -1,0 +1,19 @@
+[Unit]
+Description=JARVIS shared device execution bridge
+After=jarvis-voice.service
+Wants=jarvis-voice.service
+
+[Service]
+WorkingDirectory=%h/.local/share/jarvis-runtime/current
+ExecStart=%h/.local/share/jarvis-runtime/venv/bin/python -m jarvis_control.device_bridge
+Environment=PYTHONPATH=%h/.local/share/jarvis-runtime/current
+Environment=XDG_RUNTIME_DIR=%t
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=10
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

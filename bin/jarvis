@@ -28,6 +28,9 @@ Usage:
   jarvis pair          Generate QR code to pair mobile companion app
   jarvis history [N]   View continuous conversation history
   jarvis memory [cmd]  Memory inspection (stats|search|history|store)
+  jarvis update [--check] Check or apply updates strictly from GitHub
+  jarvis rollback      Instantly roll back to previous operational release
+  jarvis releases      List all installed releases and active status
   jarvis doctor       Check JARVIS dependencies and enabled features
 
 EOF
@@ -146,6 +149,40 @@ case "$cmd" in
         else
             exec python3 -m jarvis_memory "$@"
         fi
+        ;;
+    update)
+        shift || true
+        PYTHON="python3"
+        if [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+            PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
+        elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+        fi
+        if [[ "${1:-}" == "--check" || "${1:-}" == "check" ]]; then
+            exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_release.py" check
+        else
+            exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_release.py" update "$@"
+        fi
+        ;;
+    rollback)
+        shift || true
+        PYTHON="python3"
+        if [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+            PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
+        elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+        fi
+        exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_release.py" rollback "$@"
+        ;;
+    releases|release)
+        shift || true
+        PYTHON="python3"
+        if [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+            PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
+        elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+        fi
+        exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_release.py" list "$@"
         ;;
     control|task|vision|say|doctor)
         control_cmd="$cmd"

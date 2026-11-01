@@ -1537,12 +1537,18 @@ def main(args=None):
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s %(name)s: %(message)s')
 
     async def _run():
+        loop = asyncio.get_running_loop()
+        main_task = asyncio.current_task()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            with contextlib.suppress(NotImplementedError):
+                loop.add_signal_handler(sig, main_task.cancel)
         await run(args, key)
 
     try:
         asyncio.run(_run())
         return 0
     except (KeyboardInterrupt, asyncio.CancelledError):
+        log.info('JARVIS Voice Core shut down cleanly.')
         return 0
     except Exception as e:
         print(f'Error: {e}', file=sys.stderr)
