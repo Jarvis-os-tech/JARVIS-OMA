@@ -1,0 +1,16 @@
+[Unit]
+Description=JARVIS OS System Health & Audio Alert Monitor
+After=pipewire.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/g0pi/JARVIS OS
+ExecStart=/usr/bin/python3 "/home/g0pi/JARVIS OS/scripts/system_monitor.py" --daemon --interval 15
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,45 @@
+{
+  "network": {
+    "check_gateway": true,
+    "dns_targets": [
+      "cloudflare.com",
+      "google.com",
+      "1.1.1.1"
+    ],
+    "wan_urls": [
+      "http://connectivitycheck.gstatic.com/generate_204",
+      "https://1.1.1.1"
+    ]
+  },
+  "servers": {
+    "tcp": [],
+    "http": [
+      {
+        "url": "https://cloudflare.com",
+        "name": "Cloudflare Edge",
+        "expected_codes": [200, 301, 302]
+      }
+    ]
+  },
+  "resources": {
+    "cpu_threshold_percent": 90.0,
+    "memory_threshold_percent": 90.0,
+    "disk_threshold_percent": 90.0,
+    "disks": [
+      "/"
+    ],
+    "thermal_threshold_celsius": 85.0
+  },
+  "services": {
+    "user": [
+      "pipewire.service",
+      "wireplumber.service"
+    ],
+    "system": []
+  },
+  "alerts": {
+    "cooldown_seconds": 300,
+    "enable_audio": true,
+    "enable_desktop_notifications": true
+  }
+}
