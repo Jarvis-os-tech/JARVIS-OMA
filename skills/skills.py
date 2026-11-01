@@ -85,6 +85,8 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'jarvis.switch_mode': '_adapter_switch_jarvis_mode',
         'jarvis.get_mode': '_adapter_get_jarvis_mode',
         'jarvis.sync_branch': '_adapter_sync_jarvis_branch',
+        'system_update': '_adapter_system_update',
+        'system.update': '_adapter_system_update',
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
         'web.open': '_adapter_open_website',
