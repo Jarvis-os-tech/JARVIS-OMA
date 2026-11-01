@@ -18,6 +18,8 @@ import com.jarvis.os.audio.LocalFillerMixer
 import com.jarvis.os.audio.VadDetector
 import com.jarvis.os.audio.VadState
 import com.jarvis.os.gemini.ConversationState
+import com.jarvis.os.overlay.OverlayUiState
+import com.jarvis.os.overlay.OverlayWindowManager
 import com.jarvis.os.net.GeminiLiveClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,7 @@ class JarvisVoiceService : Service() {
     private val vadDetector = VadDetector()
     private val fillerMixer = LocalFillerMixer()
     private val geminiClient = GeminiLiveClient()
+    private var overlayManager: OverlayWindowManager? = null
 
     private val _currentState = MutableStateFlow(ConversationState.IDLE)
     val currentState: StateFlow<ConversationState> = _currentState.asStateFlow()
@@ -63,6 +66,13 @@ class JarvisVoiceService : Service() {
         Log.i(TAG, "JarvisVoiceService onCreate")
         acquireWakeLock()
         setupGeminiCallbacks()
+        try {
+            overlayManager = OverlayWindowManager(this).apply {
+                attach()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to initialize overlay window: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -202,8 +212,16 @@ class JarvisVoiceService : Service() {
         updateState(ConversationState.IDLE)
     }
 
-    private fun updateState(newState: ConversationState) {
+    private fun updateState(newState: ConversationState, rms: Float = 0f) {
         _currentState.value = newState
+        val uiState = when (newState) {
+            ConversationState.IDLE -> OverlayUiState.Idle
+            ConversationState.LISTENING -> OverlayUiState.Listening(rms)
+            ConversationState.THINKING -> OverlayUiState.Thinking("Reasoning...")
+            ConversationState.SPEAKING -> OverlayUiState.Speaking(rms)
+            ConversationState.ERROR -> OverlayUiState.Idle
+        }
+        overlayManager?.updateState(uiState)
         updateNotification("JARVIS: ${newState.name.lowercase().replaceFirstChar { it.uppercase() }}")
     }
 
@@ -246,6 +264,8 @@ class JarvisVoiceService : Service() {
         super.onDestroy()
         Log.i(TAG, "JarvisVoiceService onDestroy")
         stopVoicePipeline()
+        overlayManager?.detach()
+        overlayManager = null
         releaseWakeLock()
         serviceScope.cancel()
     }
