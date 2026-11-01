@@ -102,12 +102,16 @@ def build_instruction(tools: list | None = None) -> str:
         "3. If the user asks for a capability or action that is NOT among your declared tools (for example, window manipulation, systemctl services, file editing, or live web search when no matching tool exists), be completely truthful: state clearly that this specific capability is not yet connected to your session.\n"
         "4. NEVER hallucinate or pretend an action succeeded on the computer without a successful tool invocation.\n"
         "5. Speak only in response to the user or an explicitly supplied background result. Give one concise reply per turn, then wait silently.\n"
-        "6. WEB SEARCH: Use 'web_search' or 'internet_search' only when the user explicitly asks to search the web, check current news, or lookup real-time live events. For general knowledge, concepts, conversation, and questions you know, answer directly and concisely without calling web_search. NEVER call 'open_page' or launch a browser unless the user explicitly asks to open or show a web page on their desktop screen.\n"
-        "7. ACCOUNT CONNECTIONS: When the user asks to connect, authorize, or link their Google account (or when Gmail/Calendar indicates setup is needed), invoke 'google_authorize'. It automatically opens their web browser to Google OAuth. When the user asks to connect or authorize GitHub, invoke 'github_authorize' to open GitHub authorization in their browser.\n"
-        "8. VISION & PICTURE-IN-PICTURE (PiP): When the user asks to start screen sharing, look at their screen, start vision mode, or open the camera/webcam preview in picture-in-picture, invoke 'control_vision_mode' with mode='screen' or mode='camera'. To stop or close the preview, invoke 'control_vision_mode' with mode='off' or action='stop'."
+        "6. WEB SEARCH & LINK ANALYSIS: Use 'web_search' or 'internet_search' when the user asks to search the web or check current news. When the user sends, pastes, or asks to read, analyze, or summarize a web link (URL), you can analyze it immediately using the web content provided in context, or invoke 'read_url' to fetch the clean content directly in the background. Summarize, extract facts, or answer questions from the link. NEVER call 'open_page' or launch a browser unless the user explicitly asks to open or show a web page on their desktop screen.\n"
+        "7. ATTACHMENTS & FILE ANALYSIS: When the user transmits or attaches files (code, documents, PDFs, images, data files), inspect the attached content provided in the turn, analyze it carefully, and answer their questions or provide insights directly.\n"
+        "8. ACCOUNT CONNECTIONS: When the user asks to connect, authorize, or link their Google account (or when Gmail/Calendar indicates setup is needed), invoke 'google_authorize'. It automatically opens their web browser to Google OAuth. When the user asks to connect or authorize GitHub, invoke 'github_authorize' to open GitHub authorization in their browser.\n"
+        "9. VISION & PICTURE-IN-PICTURE (PiP): When the user asks to start screen sharing, look at their screen, start vision mode, or open the camera/webcam preview in picture-in-picture, invoke 'control_vision_mode' with mode='screen' or mode='camera'. To stop or close the preview, invoke 'control_vision_mode' with mode='off' or action='stop'."
     )
     if 'omarchy_help' in active_tools:
         from jarvis_control.omarchy_skill import ROUTING
+        inst += ROUTING
+    if 'phone_control' in active_tools:
+        from jarvis_control.phone_control import ROUTING
         inst += ROUTING
     if 'camera_view' in active_tools:
         from jarvis_control.vision import ROUTING
@@ -143,6 +147,14 @@ def build_instruction(tools: list | None = None) -> str:
             "  - Complex multi-directory code parsing -> context_type='filesystem_grep' ('give me a moment, checking the repository maps...')\n"
             "  - Sub-agent or worker spawning -> context_type='sub_agent_spawn' ('give me a moment...')\n\n"
             "3. FULL-DUPLEX CADENCE: You listen while speaking. If the user cuts you off mid-filler, gracefully cease your vocal track reproduction, update your internal ledger with the new intent constraint, and pivot your strategy."
+        )
+    if 'start_hermes_goal' in active_tools:
+        from orchestration.routing import ROUTING
+        inst += ROUTING
+    if 'enter_standby' in active_tools:
+        inst += (
+            "\n\nSTANDBY MODE RULES:\n"
+            "1. When the user asks you to enter standby, sleep, mute yourself, keep quiet, or go to standby mode, ALWAYS invoke 'enter_standby'.\n"
         )
     return inst
 
@@ -263,14 +275,20 @@ class LiveVoice:
         standby_cfg = getattr(config, 'standby', None)
         self.standby = StandbyController(
             enabled=getattr(standby_cfg, 'enabled', True) if standby_cfg else True,
-            threshold=getattr(standby_cfg, 'threshold', 0.05) if standby_cfg else 0.05,
-            vad_threshold=getattr(standby_cfg, 'vad_threshold', 0.0) if standby_cfg else 0.0,
+            threshold=getattr(standby_cfg, 'threshold', 0.50) if standby_cfg else 0.50,
+            vad_threshold=getattr(standby_cfg, 'vad_threshold', 0.50) if standby_cfg else 0.50,
+            arming_delay=getattr(standby_cfg, 'arming_delay', 1.0) if standby_cfg else 1.0,
         )
         self.standby_active = False
         self._wake_confirmation_pending = False
+        self._wake_confirmation_in_flight = False
         self._user_text = ''
         self._assistant_text = ''
         self._capture_queue: asyncio.Queue | None = None
+        self.vision_mode = 'off'
+        self.vision_mode_event = asyncio.Event()
+        self.on_vision_mode_broadcast = None
+        self._camera_device = '/dev/video0'
 
     def status(self) -> dict:
         standby_engaged = self.standby_active or (self.standby is not None and self.standby.engaged)
@@ -308,6 +326,7 @@ class LiveVoice:
             'last_tool': self._last_tool,
             'control_enabled': bool(self.skills and getattr(self.skills, 'control', None)),
             'tool_count': len(self.skills.declarations) if self.skills else 0,
+            'vision_mode': self.vision_mode,
             'latency': {
                 'speech_end_to_first_audio_ms': self.response_first_audio_ms,
                 'first_audio_chunk_to_write_ms': self.player.first_chunk_write_ms,
@@ -344,6 +363,129 @@ class LiveVoice:
         self.gate.reset(hold_until=time.monotonic() + self.gate.tail_seconds)
         if process is not None:
             asyncio.create_task(stop_process(process))
+
+    def set_vision_mode(self, mode: str) -> str:
+        clean_mode = str(mode).lower().strip()
+        if clean_mode not in ('screen', 'camera', 'off'):
+            clean_mode = 'off'
+        prev_mode = self.vision_mode
+        if prev_mode == clean_mode:
+            return clean_mode
+        self.vision_mode = clean_mode
+        if self.skills is not None:
+            self.skills.vision_mode = clean_mode
+            if hasattr(self.skills, 'control_vision_mode'):
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self.skills.control_vision_mode(clean_mode, 'start' if clean_mode != 'off' else 'stop'))
+                except RuntimeError:
+                    pass
+        if prev_mode != clean_mode:
+            log.info('Real-time vision mode changed: %s -> %s', prev_mode, clean_mode)
+
+        if clean_mode != 'off':
+            self.vision_mode_event.set()
+        else:
+            self.vision_mode_event.clear()
+
+        if callable(self.broadcast):
+            try:
+                self.broadcast({'vision_mode': clean_mode})
+            except Exception as e:
+                log.debug('Could not broadcast vision mode: %s', e)
+        if callable(self.on_vision_mode_broadcast):
+            try:
+                self.on_vision_mode_broadcast(clean_mode)
+            except Exception as e:
+                log.debug('Could not call on_vision_mode_broadcast: %s', e)
+        return self.vision_mode
+
+    async def _capture_screen_frame(self) -> bytes | None:
+        screen_file = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'jarvis_screen' / 'live_stream.jpg'
+        try:
+            if screen_file.exists():
+                mtime = screen_file.stat().st_mtime
+                if (time.time() - mtime) < 2.5:
+                    data = screen_file.read_bytes()
+                    if data.startswith(b'\xff\xd8'):
+                        return data
+        except OSError:
+            pass
+        grim = shutil.which('grim')
+        if not grim:
+            return None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                grim, '-t', 'jpeg', '-q', '60', '-',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+            if proc.returncode == 0 and stdout and stdout.startswith(b'\xff\xd8'):
+                screen_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                screen_file.write_bytes(stdout)
+                return stdout
+        except Exception:
+            pass
+        return None
+
+    async def _capture_camera_frame(self) -> bytes | None:
+        cam_file = Path(os.getenv('XDG_RUNTIME_DIR') or '/tmp') / 'jarvis_webcam' / 'live_stream.jpg'
+        try:
+            if cam_file.exists():
+                mtime = cam_file.stat().st_mtime
+                if (time.time() - mtime) < 2.5:
+                    data = cam_file.read_bytes()
+                    if data.startswith(b'\xff\xd8'):
+                        return data
+        except OSError:
+            pass
+        ffmpeg = shutil.which('ffmpeg')
+        if not ffmpeg or not os.path.exists(self._camera_device):
+            return None
+        try:
+            cam_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            proc = await asyncio.create_subprocess_exec(
+                ffmpeg, '-f', 'v4l2', '-input_format', 'mjpeg', '-video_size', '1280x720',
+                '-r', '15', '-i', self._camera_device, '-vframes', '1', '-y', str(cam_file),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=2.0)
+            if cam_file.exists():
+                data = cam_file.read_bytes()
+                if data.startswith(b'\xff\xd8'):
+                    return data
+        except Exception:
+            pass
+        return None
+
+    async def stream_vision(self, session):
+        from google.genai import types
+        last_frame_at = 0.0
+        while True:
+            if self.vision_mode == 'off':
+                await self.vision_mode_event.wait()
+            delay = 1.0 - (time.monotonic() - last_frame_at)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            if self.vision_mode == 'off':
+                continue
+            last_frame_at = time.monotonic()
+            try:
+                capture = self._capture_screen_frame if self.vision_mode == 'screen' else self._capture_camera_frame
+                frame = await capture()
+                if not frame or self.vision_mode == 'off':
+                    continue
+                async with self.send_lock:
+                    if self.vision_mode != 'off' and self.connected and self._session is session:
+                        await session.send_realtime_input(video=types.Blob(data=frame, mime_type='image/jpeg'))
+            except (asyncio.TimeoutError, TimeoutError):
+                log.warning('Realtime video send timed out; frame dropped')
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                log.debug('Realtime video send error: %s', error)
 
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
         """Triggers PipeWire audio playback for local conversational filler reflex."""
@@ -514,6 +656,8 @@ class LiveVoice:
 
     def send_text(self, text: str) -> None:
         """Enqueue user text directly to the live voice conversation session."""
+        if self.standby_active or (self.standby and self.standby.active):
+            self.standby.wake()
         if text and text.strip():
             self._input_queue.put_nowait({'text': text.strip(), 'data': b'', 'mime': '', 'name': ''})
 
@@ -536,6 +680,9 @@ class LiveVoice:
                 except asyncio.QueueEmpty:
                     item = None
 
+            if item and (self.standby_active or (self.standby and self.standby.active)):
+                self.standby.wake()
+
             if item is None:
                 await asyncio.sleep(0.08)
                 continue
@@ -543,17 +690,110 @@ class LiveVoice:
             parts = []
             text = (item.get('text') or '').strip()
             data = item.get('data') or b''
-            mime = item.get('mime') or ''
+            mime = (item.get('mime') or '').strip()
+            name = (item.get('name') or '').strip()
 
+            fetched_contexts = []
             if text:
-                parts.append(types.Part.from_text(text=text))
+                urls = re.findall(r'https?://[^\s<>"]+|www\.[^\s<>"]+', text)
+                clean_urls = []
+                for u in urls:
+                    u_clean = u.rstrip('.,;:)!?"\'')
+                    if u_clean.startswith('www.'):
+                        u_clean = 'https://' + u_clean
+                    if u_clean not in clean_urls:
+                        clean_urls.append(u_clean)
+
+                for u_target in clean_urls[:2]:
+                    try:
+                        from jarvis_control.web_text import bounded_page_text
+                        page_text = await asyncio.to_thread(bounded_page_text, u_target, timeout=12)
+                        if page_text:
+                            fetched_contexts.append(f"[Live Web Page Content for {u_target}]:\n{page_text[:12000]}")
+                    except Exception as err:
+                        log.info('URL background fetch skipped or failed for %s: %s', u_target, err)
+                        fetched_contexts.append(f"[Note: Could not fetch web content for {u_target}: {err}]")
+
+            full_text = text
+            if fetched_contexts:
+                if full_text:
+                    full_text = full_text + "\n\n" + "\n\n".join(fetched_contexts)
+                else:
+                    full_text = "\n\n".join(fetched_contexts)
+
+            if full_text:
+                parts.append(types.Part.from_text(text=full_text))
                 self.recognized_input_events += 1
-                self._user_text = text
-                self._memory_user = (self._memory_user + ' ' + text)[-16000:]
-                log.info('Forwarding user input to Gemini Live: "%s"', text[:80] + ('...' if len(text) > 80 else ''))
+                self._user_text = text or full_text[:80]
+                self._memory_user = (self._memory_user + ' ' + (text or full_text))[-16000:]
+                log.info('Forwarding user input to Gemini Live: "%s"', (text or full_text)[:80] + ('...' if len(text or full_text) > 80 else ''))
+
             if data:
-                parts.append(types.Part.from_bytes(data=data, mime_type=mime or 'application/octet-stream'))
-                log.info('Forwarding user attached file to Gemini Live (%d bytes, %s)', len(data), mime)
+                filename = name or 'file'
+                ext = (filename.rsplit('.', 1)[-1].lower() if '.' in filename else '')
+                content_mime = mime or ''
+
+                is_image = (
+                    content_mime.startswith('image/')
+                    or ext in ('png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp')
+                    or data[:8] == b'\x89PNG\r\n\x1a\n'
+                    or data[:3] == b'\xff\xd8\xff'
+                    or (data[:4] == b'RIFF' and len(data) > 12 and data[8:12] == b'WEBP')
+                )
+
+                if is_image:
+                    img_mime = content_mime if content_mime.startswith('image/') else (
+                        f'image/{ext}' if ext in ('png', 'jpeg', 'webp', 'gif') else ('image/jpeg' if ext == 'jpg' else 'image/jpeg')
+                    )
+                    parts.append(types.Part.from_bytes(data=data, mime_type=img_mime))
+                    log.info('Forwarding user attached image to Gemini Live (%d bytes, %s, %s)', len(data), img_mime, filename)
+                    if not text:
+                        parts.insert(0, types.Part.from_text(
+                            text=f"[User attached image: {filename}. Please inspect and analyze this image or answer questions about it.]"
+                        ))
+                elif ext == 'pdf' or content_mime == 'application/pdf' or data[:4] == b'%PDF':
+                    pdf_text = ""
+                    try:
+                        import tempfile, subprocess
+                        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=True) as tmp:
+                            tmp.write(data)
+                            tmp.flush()
+                            proc = await asyncio.to_thread(
+                                subprocess.run,
+                                ['pdftotext', '-layout', tmp.name, '-'],
+                                capture_output=True, text=True, timeout=10
+                            )
+                            pdf_text = proc.stdout.strip()
+                    except Exception as err:
+                        log.warning("PDF extraction failed: %s", err)
+
+                    if pdf_text:
+                        pdf_payload = f"[Attached PDF Document: {filename} ({len(data)} bytes)]:\n{pdf_text[:32000]}"
+                    else:
+                        pdf_payload = f"[Attached PDF Document: {filename} ({len(data)} bytes, unreadable or scanned)]"
+
+                    parts.append(types.Part.from_text(text=pdf_payload))
+                    log.info('Forwarding extracted PDF text to Gemini Live (%d chars, %s)', len(pdf_text), filename)
+                    if not text:
+                        parts.insert(0, types.Part.from_text(
+                            text=f"Please analyze this attached PDF document ({filename})."
+                        ))
+                else:
+                    try:
+                        decoded = data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        decoded = data.decode('latin-1', errors='replace')
+
+                    file_label = f"Attached file: {filename}"
+                    code_tag = ext if ext in ('py', 'js', 'ts', 'html', 'css', 'json', 'yaml', 'yml', 'toml', 'sh', 'c', 'cpp', 'rs', 'go', 'sql', 'md', 'txt', 'csv') else ''
+                    file_payload = f"[{file_label}]\n```{code_tag}\n{decoded[:32000]}\n```"
+
+                    parts.append(types.Part.from_text(text=file_payload))
+                    log.info('Forwarding user attached file as text to Gemini Live (%d chars, %s)', len(decoded), filename)
+                    if not text:
+                        parts.insert(0, types.Part.from_text(
+                            text=f"Please review and analyze this attached file ({filename})."
+                        ))
 
             if not parts:
                 continue
@@ -573,19 +813,65 @@ class LiveVoice:
                 )
 
     async def monitor_standby(self):
-        """Close the cloud session only after its standby confirmation is spoken."""
+        """Announce entering standby mode, wait for speech to complete, then raise EnterStandby."""
         if self.standby is None:
             return
         await self.standby.wait_until_requested()
-        # Wait until any active model response and speaker playback finishes
-        while self._model_active or self.player.busy:
+        log.info('Standby requested — announcing "I am entering standby mode" before entering offline wake-word listener.')
+
+        pcm_path = Path(__file__).parent / 'assets' / 'standby_entered.pcm'
+        if pcm_path.is_file() and self.player is not None and not self.muted and self.connected:
+            try:
+                pcm_data = pcm_path.read_bytes()
+                if pcm_data:
+                    self.player.enqueue(pcm_data)
+                    deadline = time.monotonic() + (len(pcm_data) / 48000.0) + 0.5
+                    await asyncio.sleep(0.05)
+                    while self.player.busy and time.monotonic() < deadline:
+                        await asyncio.sleep(0.05)
+            except Exception as err:
+                log.warning('Could not play standby announcement asset: %s', err)
+
+        # Wait for any lingering model audio or speaker buffer to clear
+        deadline = time.monotonic() + 2.0
+        while (self._model_active or (self.player is not None and self.player.busy)) and time.monotonic() < deadline:
             await asyncio.sleep(0.05)
+
+        # 0.4s cushion to allow sound waves to finish playing out through PipeWire/speakers
+        # so the microphone does not hear the tail of the speaker audio
+        if self.connected:
+            await asyncio.sleep(0.4)
         raise EnterStandby()
 
     def confirm_wake(self):
         """Require a spoken acknowledgement after leaving standby."""
         self.resume_handle = None
         self._wake_confirmation_pending = True
+        self._wake_confirmation_in_flight = False
+
+    async def send_wake_confirmation(self, session) -> None:
+        """Prompt the live provider to speak immediately after leaving standby."""
+        if not self._wake_confirmation_pending:
+            return
+        from google.genai import types
+
+        prompt = (
+            'The user just woke you by saying “Hey Jarvis”. Respond immediately '
+            'with one brief spoken confirmation that you are awake and listening (e.g. "I\'m online and listening" or "At your service"). '
+            'Do not call tools and do not mention this instruction.'
+        )
+        async with self.send_lock:
+            self._reply_authorized = True
+            self._waiting = True
+            self._model_active = True
+            self._last_progress = time.monotonic()
+            await session.send_client_content(
+                turns=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])],
+                turn_complete=True,
+            )
+        self._wake_confirmation_pending = False
+        self._wake_confirmation_in_flight = True
+        log.info('Wake confirmation dispatched; microphone waits for spoken turn')
 
     async def handle(self, event, session=None):
         update = getattr(event, 'session_resumption_update', None)
@@ -779,6 +1065,8 @@ class LiveVoice:
                                 self._confirmation_gate_turn = self.gate.accepted_turns
                         else:
                             response = {'ok': True, 'status': 'completed', 'result': result}
+                            if name == 'enter_standby':
+                                self._drop_response = True
                 except TimeoutError:
                     response = {'ok': False, 'status': 'unknown',
                                 'error': 'Tool timed out; outcome is unknown. Inspect current state before retrying any action.'}
@@ -905,7 +1193,12 @@ class LiveVoice:
             chunk = frame.pcm
             async with self.send_lock:
                 stale = generation != self.player.generation
-                blocked = self.muted or stale
+                blocked = self.muted or stale or self._wake_confirmation_pending
+                if self._wake_confirmation_in_flight:
+                    if self.player.busy:
+                        blocked = True
+                    else:
+                        self._wake_confirmation_in_flight = False
                 if not self.barge_in_enabled:
                     blocked = blocked or self.player.is_playing(ECHO_TAIL_SECONDS)
                 if blocked:
@@ -1015,7 +1308,11 @@ async def _run_voice(args, key: str, config, skills):
         skills.on_standby_request = voice.standby.request
         if hasattr(skills, 'desktop') and skills.desktop is not None:
             skills.desktop.on_standby_request = voice.standby.request
+            skills.desktop.on_vision_mode_change = voice.set_vision_mode
 
+    from jarvis_control.device_execution import SharedToolExecutor
+    from .config import STATE_HOME
+    shared_execution = SharedToolExecutor(skills, STATE_HOME / 'jarvis' / 'device-calls.sqlite3')
     ipc = ControlServer(
         status_provider=voice.status,
         toggle_mute_cb=lambda: voice.set_muted(not voice.muted),
@@ -1025,9 +1322,26 @@ async def _run_voice(args, key: str, config, skills):
         confirm_cb=skills.control.confirm_local if skills.control else None,
         cancel_cb=skills.control.cancel_local if skills.control else None,
         send_text_cb=voice.send_text,
+        wake_cb=voice.standby.wake,
+        get_vision_mode_cb=lambda: voice.vision_mode,
+        set_vision_mode_cb=voice.set_vision_mode,
+        tools_provider=shared_execution.declarations,
+        tool_call_cb=shared_execution.call,
+        record_memory_cb=skills.queue_memory_exchange if skills else None,
     )
     await ipc.start()
     voice.broadcast = ipc.broadcast_state
+
+    def _broadcast_vision_mode(mode: str) -> None:
+        ipc.broadcast_state({'vision_mode': mode})
+        try:
+            payload = json.dumps({'mode': mode})
+            cmd = ['/usr/share/omarchy/bin/omarchy-shell', '-q', 'vision-pip', 'setState', payload]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    voice.on_vision_mode_broadcast = _broadcast_vision_mode
 
     from .echo import MonitorEchoCancellation
 
@@ -1037,7 +1351,7 @@ async def _run_voice(args, key: str, config, skills):
 
     recovery = ConnectionRecovery(retry_budget=getattr(args, 'retries', 5))
     from .background import monitor as monitor_background
-    background_worker = asyncio.create_task(monitor_background(voice, skills.control))
+    background_worker = asyncio.create_task(monitor_background(voice, skills))
 
     try:
         while True:
@@ -1078,22 +1392,7 @@ async def _run_voice(args, key: str, config, skills):
 
                         async def greet_and_wait():
                             if getattr(voice, '_wake_confirmation_pending', False):
-                                voice._wake_confirmation_pending = False
-                                if voice.gate.active or voice.gate.accepted_turns > 0:
-                                    log.info('Wake confirmation skipped: user already began speaking command')
-                                else:
-                                    log.info('Triggering realtime wake confirmation...')
-                                    try:
-                                        from google.genai import types
-                                        await asyncio.sleep(0.15)
-                                        await session.send_client_content(
-                                            turns=[types.Content(role='user', parts=[types.Part.from_text(
-                                                text='You just woke up from standby mode. Briefly confirm in one short phrase (like "I\'m online and listening" or "At your service") that you are awake.'
-                                            )])],
-                                            turn_complete=True,
-                                        )
-                                    except Exception as exc:
-                                        log.warning('Failed to send wake confirmation: %s', exc)
+                                await voice.send_wake_confirmation(session)
                             else:
                                 await voice.send_greeting(session)
                             await asyncio.Event().wait()
@@ -1103,6 +1402,7 @@ async def _run_voice(args, key: str, config, skills):
                             voice.send_audio(session, microphone.stdout),
                             voice.send_inputs(session),
                             voice.receive(session),
+                            voice.stream_vision(session),
                             player.run(),
                             voice.publish_status(),
                             voice.monitor_microphone(),
@@ -1117,6 +1417,12 @@ async def _run_voice(args, key: str, config, skills):
                 if callable(voice.broadcast):
                     voice.broadcast(voice.status())
                 log.info('STANDBY — cloud voice stopped; say “Hey Jarvis” to resume.')
+
+                try:
+                    await asyncio.create_subprocess_exec('pactl', 'set-source-mute', '@DEFAULT_SOURCE@', '0',
+                                                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+                except Exception:
+                    pass
 
                 mic_args = ['pw-record', '--rate', '16000', '--channels', '1',
                             '--format', 's16', '--latency', '20ms',
@@ -1177,6 +1483,7 @@ async def _run_voice(args, key: str, config, skills):
         await asyncio.gather(background_worker, return_exceptions=True)
         await echo.close()
         await ipc.close()
+        shared_execution.close()
 
 
 def main(args=None):

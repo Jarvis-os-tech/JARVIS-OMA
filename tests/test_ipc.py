@@ -179,3 +179,122 @@ async def test_send_text_ipc_command(socket_path):
         assert sent == ['what is the weather']
     finally:
         await server.close()
+
+
+@pytest.mark.asyncio
+async def test_wake_ipc_command(socket_path):
+    from jarvis_voice.ipc import ControlServer
+    woken = []
+    server = ControlServer(
+        socket_path=socket_path,
+        wake_cb=lambda: woken.append(True),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(b'wake\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res.get('status') == 'awake'
+        assert res.get('standby') is False
+        assert woken == [True]
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_vision_mode_json_ipc_commands(socket_path):
+    from jarvis_voice.ipc import ControlServer
+    current_mode = {'mode': 'off'}
+
+    def set_mode(m):
+        current_mode['mode'] = m
+        return {'vision_mode': m}
+
+    server = ControlServer(
+        socket_path=socket_path,
+        get_vision_mode_cb=lambda: current_mode['mode'],
+        set_vision_mode_cb=set_mode,
+    )
+    await server.start()
+    try:
+        # 1. get_vision_mode when off
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(json.dumps({'command': 'get_vision_mode'}).encode() + b'\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res['status'] == 'ok'
+        assert res['vision_mode'] == 'off'
+
+        # 2. set_vision_mode to camera
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(json.dumps({'command': 'set_vision_mode', 'mode': 'camera'}).encode() + b'\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res['status'] == 'ok'
+        assert res['vision_mode'] == 'camera'
+        assert current_mode['mode'] == 'camera'
+
+        # 3. get_vision_mode when camera
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(json.dumps({'command': 'get_vision_mode'}).encode() + b'\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res['status'] == 'ok'
+        assert res['vision_mode'] == 'camera'
+
+        # 4. text command: vision screen
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        writer.write(b'vision screen\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res['status'] == 'ok'
+        assert res['vision_mode'] == 'screen'
+        assert current_mode['mode'] == 'screen'
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_memory_command(socket_path):
+    from jarvis_voice.ipc import ControlServer
+    recorded = []
+    def record_cb(user, assistant):
+        recorded.append((user, assistant))
+        return True
+
+    server = ControlServer(
+        socket_path=socket_path,
+        record_memory_cb=record_cb
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_unix_connection(str(socket_path))
+        cmd = {
+            'command': 'sync_memory',
+            'records': [
+                {'role': 'user', 'content': 'Hello from phone'},
+                {'role': 'model', 'content': 'Hello back on mobile'}
+            ]
+        }
+        writer.write(json.dumps(cmd).encode() + b'\n')
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(4096), 2)
+        writer.close()
+        res = json.loads(data.decode())
+        assert res['status'] == 'ok'
+        assert res['saved'] is True
+        assert len(recorded) == 1
+        assert recorded[0] == ('Hello from phone', 'Hello back on mobile')
+    finally:
+        await server.close()

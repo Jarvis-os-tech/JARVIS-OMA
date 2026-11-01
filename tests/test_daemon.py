@@ -774,4 +774,103 @@ async def test_interruption_does_not_drop_subsequent_model_response():
     assert voice.provider_audio_bytes == 320
 
 
+@pytest.mark.asyncio
+async def test_send_inputs_prefetches_urls_and_attaches_web_content(monkeypatch):
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+    from skills.input_bar import TestBar
+
+    monkeypatch.setattr(
+        'jarvis_control.web_text.bounded_page_text',
+        lambda url, timeout=12: f"Mock page text for {url}",
+    )
+
+    class FakeSkills:
+        def __init__(self):
+            self.test_bar = TestBar()
+
+    skills = FakeSkills()
+    voice = LiveVoice(Playback('default'), skills=skills)
+    sent_turns = []
+
+    class FakeSession:
+        async def send_client_content(self, turns, turn_complete):
+            sent_turns.append((turns, turn_complete))
+
+    session = FakeSession()
+    voice.send_text('please check https://example.com/article')
+
+    worker = asyncio.create_task(voice.send_inputs(session))
+    await asyncio.sleep(0.15)
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    assert len(sent_turns) == 1
+    content = sent_turns[0][0][0]
+    full_text = content.parts[0].text
+    assert 'please check https://example.com/article' in full_text
+    assert '[Live Web Page Content for https://example.com/article]' in full_text
+    assert 'Mock page text for https://example.com/article' in full_text
+
+
+@pytest.mark.asyncio
+async def test_send_inputs_formats_code_and_image_attachments():
+    from jarvis_voice.daemon import LiveVoice
+    from jarvis_voice.playback import Playback
+    from skills.input_bar import TestBar
+
+    class FakeSkills:
+        def __init__(self):
+            self.test_bar = TestBar()
+
+    skills = FakeSkills()
+    voice = LiveVoice(Playback('default'), skills=skills)
+    sent_turns = []
+
+    class FakeSession:
+        async def send_client_content(self, turns, turn_complete):
+            sent_turns.append((turns, turn_complete))
+
+    session = FakeSession()
+
+    # Code attachment
+    skills.test_bar.items.put_nowait({
+        'text': 'analyze this script',
+        'data': b'def add(a, b):\n    return a + b\n',
+        'mime': 'text/x-python',
+        'name': 'math_utils.py',
+    })
+
+    # Image attachment
+    png_bytes = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'
+    skills.test_bar.items.put_nowait({
+        'text': '',
+        'data': png_bytes,
+        'mime': 'image/png',
+        'name': 'screenshot.png',
+    })
+
+    worker = asyncio.create_task(voice.send_inputs(session))
+    await asyncio.sleep(0.2)
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    assert len(sent_turns) == 2
+
+    # Verify code attachment turn
+    turn1_content = sent_turns[0][0][0]
+    parts1_text = [p.text for p in turn1_content.parts if getattr(p, 'text', None)]
+    assert any('analyze this script' in t for t in parts1_text)
+    assert any('Attached file: math_utils.py' in t for t in parts1_text)
+    assert any('def add(a, b):' in t for t in parts1_text)
+
+    # Verify image attachment turn
+    turn2_content = sent_turns[1][0][0]
+    assert any('screenshot.png' in getattr(p, 'text', '') for p in turn2_content.parts)
+    assert any(getattr(getattr(p, 'inline_data', None), 'mime_type', '') == 'image/png' for p in turn2_content.parts)
+
+
+
 

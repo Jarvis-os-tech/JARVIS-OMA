@@ -56,8 +56,9 @@ semantic_min_score = 0.55               # Reject weak semantic-only matches
 
 [standby]
 enabled = true                           # Standby mode with local wake-word ("Hey Jarvis")
-threshold = 0.05                         # Wake-word detection threshold
-vad_threshold = 0.0                      # Optional VAD threshold
+threshold = 0.50                         # Wake-word detection threshold (0.50 = 50% confidence)
+vad_threshold = 0.50                     # Voice Activity Detection threshold to filter background noise
+arming_delay = 1.0                       # Delay (seconds) before arming detector to prevent residual echo
 
 [fillers]
 # Enable instant local reflex loops bypassing cloud round-trip times

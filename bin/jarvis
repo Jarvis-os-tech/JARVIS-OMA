@@ -26,6 +26,8 @@ Usage:
   jarvis vision [cmd]  Camera start, inspect, status or stop
   jarvis say [text]    Typed request to the configured planner
   jarvis pair          Generate QR code to pair mobile companion app
+  jarvis history [N]   View continuous conversation history
+  jarvis memory [cmd]  Memory inspection (stats|search|history|store)
   jarvis doctor       Check JARVIS dependencies and enabled features
 
 EOF
@@ -127,6 +129,22 @@ case "$cmd" in
             exec "${SCRIPT_DIR}/.venv/bin/python" "${SCRIPT_DIR}/scripts/jarvis_pair.py" "$@"
         else
             exec python3 "${SCRIPT_DIR}/scripts/jarvis_pair.py" "$@"
+        fi
+        ;;
+    history)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            exec "${SCRIPT_DIR}/.venv/bin/python" -m jarvis_memory history "$@"
+        else
+            exec python3 -m jarvis_memory history "$@"
+        fi
+        ;;
+    memory)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            exec "${SCRIPT_DIR}/.venv/bin/python" -m jarvis_memory "$@"
+        else
+            exec python3 -m jarvis_memory "$@"
         fi
         ;;
     control|task|vision|say|doctor)

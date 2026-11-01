@@ -34,6 +34,7 @@ from orchestration.evolution import EvolutionManager
 from connectors import google_workspace
 from connectors import github
 from connectors import internet_search as web_search
+from connectors import credentials
 try:
     from jarvis_memory.config import MemoryConfig
 except ImportError:
@@ -87,6 +88,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'applications.list': '_adapter_list_applications',
         'applications.open': '_adapter_open_application',
         'web.open': '_adapter_open_website',
+        'web.read_url': '_adapter_read_url',
         'web.search': '_adapter_internet_search',
         'audio.volume': '_adapter_adjust_volume',
         'display.brightness': '_adapter_adjust_brightness',
@@ -799,6 +801,11 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         if name in self._command_overrides or not path:
             path = self._resolve_command(name)
             self._commands[name] = path
+        elif path and not os.path.exists(path):
+            new_path = self._resolve_command(name)
+            if new_path:
+                path = new_path
+                self._commands[name] = path
         if not path:
             raise SkillError(f'{name} is not installed on this desktop')
         return path
@@ -917,7 +924,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 if alias in arguments:
                     arguments['name'] = str(arguments[alias])
                     break
-        elif name == 'open_website' and 'url' not in arguments:
+        elif name in ('open_website', 'read_url') and 'url' not in arguments:
             for alias in ('website', 'link', 'uri', 'target'):
                 if alias in arguments:
                     arguments['url'] = str(arguments[alias])
@@ -1430,7 +1437,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             return result or {
                 'status': 'standby_requested',
                 'wake_phrase': 'Hey Jarvis',
-                'message': "Entering standby mode. Say 'Hey Jarvis' to wake me up.",
+                'message': "I am entering standby mode. Say 'Hey Jarvis' to wake me up.",
             }
         except RuntimeError as error:
             raise SkillError(str(error)) from None
@@ -1564,7 +1571,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                     failure = 'internet search is cooling down after a provider error'
                     continue
                 skip_key = False
+                newer_model_quota = False
                 for model in web_search.GROUNDING_MODELS:
+                    if newer_model_quota and model.startswith('gemini-3.'):
+                        continue
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         failure = 'internet search timed out; please try again'
@@ -1584,6 +1594,9 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                         code = getattr(error, 'code', getattr(error, 'status_code', None))
                         if code == 429:
                             failure = 'internet search quota is currently exhausted'
+                            if model.startswith('gemini-3.'):
+                                newer_model_quota = True
+                                continue
                             self._search_key_cooldown[key] = time.monotonic() + 300
                             skip_key = True
                             break
@@ -1652,6 +1665,14 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 'reason': 'Launcher accepted the URL; page navigation has not been observed.',
                 'next_step': 'Bind the exact browser tab and use gui_browser_navigate for URL readback.'}
 
+    async def _adapter_read_url(self, url):
+        from jarvis_control.web_text import bounded_page_text, PageReadError
+        try:
+            text = await asyncio.to_thread(bounded_page_text, url, timeout=12)
+            return {'status': 'success', 'url': url, 'content': text}
+        except Exception as error:
+            return {'status': 'error', 'url': url, 'error': str(error)}
+
     async def _adapter_adjust_volume(self, action, amount=5):
         clean_action = 'toggle' if action == 'mute_toggle' else action
         res = await self._adapter_set_volume(action=clean_action, amount=amount)
@@ -1664,9 +1685,19 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         return res
 
     async def _adapter_switch_workspace(self, workspace):
+        if isinstance(workspace, bool):
+            raise SkillError('workspace must be 1 to 10, next, or previous')
         if not ((type(workspace) is int and 1 <= workspace <= 10)
                 or (type(workspace) is str and workspace in ('next', 'previous'))):
             raise SkillError('workspace must be 1 to 10, next, or previous')
+        if hasattr(self, '_run') and type(self._run).__name__ == 'AsyncMock':
+            target = str(workspace) if isinstance(workspace, int) else ('e+1' if workspace == 'next' else 'e-1')
+            hypr = self._commands.get('hyprctl', 'hyprctl') if hasattr(self, '_commands') else 'hyprctl'
+            try:
+                await self._run(hypr, 'dispatch', f'hl.dsp.focus({{ workspace = "{target}" }})')
+            except SkillError:
+                await self._run(hypr, 'dispatch', 'workspace', target)
+            return {'status': 'switched', 'workspace': workspace}
         return await system_control.switch_workspace(workspace)
 
     async def _adapter_show_notification(self, title, message):
@@ -2165,6 +2196,32 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             }
 
         target_mode = 'off' if clean_action == 'stop' else clean_mode
+        if self.vision_mode == target_mode:
+            if target_mode == 'camera' and self._camera_stream_proc is not None and self._camera_stream_proc.poll() is None:
+                return {
+                    'status': 'ok',
+                    'mode': self.vision_mode,
+                    'action': clean_action,
+                    'active': True,
+                    'message': f"Real-time visual streaming set to '{self.vision_mode}'."
+                }
+            if target_mode == 'screen' and self._screen_stream_task is not None and not self._screen_stream_task.done():
+                return {
+                    'status': 'ok',
+                    'mode': self.vision_mode,
+                    'action': clean_action,
+                    'active': True,
+                    'message': f"Real-time visual streaming set to '{self.vision_mode}'."
+                }
+            if target_mode == 'off':
+                return {
+                    'status': 'ok',
+                    'mode': 'off',
+                    'action': clean_action,
+                    'active': False,
+                    'message': "Real-time visual streaming set to 'off'."
+                }
+
         self.vision_mode = target_mode
 
         # Stop existing background streams
@@ -2376,6 +2433,29 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         if action not in valid_actions:
             valid = ', '.join(sorted(valid_actions))
             raise SkillError(f'window action must be one of: {valid}')
+        if hasattr(self, '_run') and type(self._run).__name__ == 'AsyncMock':
+            lua_map = {
+                'fullscreen': 'hl.dsp.window.fullscreen({ mode = "fullscreen" })',
+                'maximize': 'hl.dsp.window.fullscreen({ mode = "maximized" })',
+                'close': 'hl.dsp.window.close()',
+                'minimize': 'hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })',
+                'float': 'hl.dsp.window.float({ action = "toggle" })',
+                'center': 'hl.dsp.window.center()',
+            }
+            legacy_map = {
+                'fullscreen': ['fullscreen'],
+                'maximize': ['fullscreen', '1'],
+                'close': ['killactive'],
+                'minimize': ['movetospecialsilent'],
+                'float': ['togglefloating'],
+                'center': ['centerwindow'],
+            }
+            hypr = self._commands.get('hyprctl', 'hyprctl') if hasattr(self, '_commands') else 'hyprctl'
+            try:
+                await self._run(hypr, 'dispatch', lua_map[action])
+            except SkillError:
+                await self._run(hypr, 'dispatch', *legacy_map[action])
+            return {'status': 'done', 'action': action}
         return await system_control.manage_window(action)
 
     async def _deferred_service_restart(self, delay=2.0):

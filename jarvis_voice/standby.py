@@ -20,7 +20,7 @@ class OpenWakeWordDetector:
 
     sample_count = 1280  # openWakeWord consumes 80 ms (1280 samples) at 16 kHz
 
-    def __init__(self, *, threshold: float = 0.05, vad_threshold: float = 0.0):
+    def __init__(self, *, threshold: float = 0.50, vad_threshold: float = 0.50):
         try:
             from openwakeword.model import Model
             model_path = files('openwakeword').joinpath(
@@ -35,6 +35,7 @@ class OpenWakeWordDetector:
             raise WakeWordUnavailable(
                 'offline Hey Jarvis wake-word model is unavailable') from error
         self.threshold = threshold
+        self.vad_threshold = vad_threshold
         self._pcm = bytearray()
         self.last_score = 0.0
         self.peak_score = 0.0
@@ -65,7 +66,7 @@ class OpenWakeWordDetector:
             if self.last_score >= self.threshold:
                 self._candidate_hits = getattr(self, '_candidate_hits', 0) + 1
                 self._candidate_age = 0
-                strong_threshold = min(1.0, max(0.15, self.threshold + 0.05))
+                strong_threshold = min(1.0, max(0.65 if self.threshold >= 0.4 else 0.15, self.threshold + 0.05))
                 if self.last_score >= strong_threshold or self._candidate_hits >= 2:
                     detected = True
                     log.info(
@@ -84,9 +85,9 @@ class OpenWakeWordDetector:
 class StandbyController:
     """Coordinate live-session shutdown and local wake-word activation."""
 
-    def __init__(self, *, enabled: bool = True, threshold: float = 0.05,
-                 vad_threshold: float = 0.0, detector=None,
-                 arming_delay: float = 0.5):
+    def __init__(self, *, enabled: bool = True, threshold: float = 0.50,
+                 vad_threshold: float = 0.50, detector=None,
+                 arming_delay: float = 1.0):
         self.enabled = enabled
         self.threshold = threshold
         self.vad_threshold = vad_threshold
@@ -94,11 +95,16 @@ class StandbyController:
         self.arming_delay = max(0.0, float(arming_delay))
         self.active = False
         self._requested = asyncio.Event()
+        self._wake_event = asyncio.Event()
 
     @property
     def engaged(self) -> bool:
         """True from the instant standby is requested until wake completes."""
         return self._requested.is_set() or self.active
+
+    def wake(self) -> None:
+        """Trigger immediate wake from standby mode."""
+        self._wake_event.set()
 
     async def prepare(self) -> None:
         if self.enabled and self.detector is None:
@@ -126,6 +132,7 @@ class StandbyController:
         if self.detector is None:
             raise WakeWordUnavailable('wake-word detector is not ready')
         self.active = True
+        self._wake_event.clear()
         try:
             if self.arming_delay:
                 await asyncio.sleep(self.arming_delay)
@@ -136,18 +143,63 @@ class StandbyController:
             elif isinstance(stream, asyncio.Queue):
                 while not stream.empty():
                     stream.get_nowait()
+            elif isinstance(stream, asyncio.StreamReader) and hasattr(stream, '_buffer'):
+                stream._buffer.clear()
             self.detector.reset()
             windows = 0
             while True:
+                if self._wake_event.is_set():
+                    log.info('Wake requested via external control signal')
+                    return
+
                 if isinstance(stream, asyncio.StreamReader):
                     try:
-                        frame = await stream.readexactly(640)
+                        read_task = asyncio.create_task(stream.readexactly(640))
+                        wake_task = asyncio.create_task(self._wake_event.wait())
+                        done, pending = await asyncio.wait(
+                            [read_task, wake_task],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in pending:
+                            task.cancel()
+                        if wake_task in done:
+                            log.info('Wake requested via external control signal')
+                            return
+                        frame = read_task.result()
                     except asyncio.IncompleteReadError:
                         break
                 elif hasattr(stream, 'async_input_queue'):
-                    frame = await stream.async_input_queue.get()
+                    try:
+                        get_task = asyncio.create_task(stream.async_input_queue.get())
+                        wake_task = asyncio.create_task(self._wake_event.wait())
+                        done, pending = await asyncio.wait(
+                            [get_task, wake_task],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in pending:
+                            task.cancel()
+                        if wake_task in done:
+                            log.info('Wake requested via external control signal')
+                            return
+                        frame = get_task.result()
+                    except Exception:
+                        break
                 elif hasattr(stream, 'get'):
-                    frame = await stream.get()
+                    try:
+                        get_task = asyncio.create_task(stream.get())
+                        wake_task = asyncio.create_task(self._wake_event.wait())
+                        done, pending = await asyncio.wait(
+                            [get_task, wake_task],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in pending:
+                            task.cancel()
+                        if wake_task in done:
+                            log.info('Wake requested via external control signal')
+                            return
+                        frame = get_task.result()
+                    except Exception:
+                        break
                 elif hasattr(stream, 'read'):
                     frame = await stream.read(640)
                 else:
@@ -165,3 +217,4 @@ class StandbyController:
         finally:
             self.active = False
             self._requested.clear()
+            self._wake_event.clear()

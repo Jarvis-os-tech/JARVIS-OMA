@@ -1,33 +1,91 @@
-model = "gemini-3.8-live"
-voice = "Aoede"
-device = ""  # Microphone source
-output_device = ""  # Speaker sink; empty uses system default
-barge_in = false
-autostart_listening = true
-greet_on_start = true
-api_key_env = "GEMINI_API_KEY"
+# Jarvis Configuration Example (TOML)
+# Copy this file to ~/.config/jarvis-oma/config.toml or ./config.toml
+
+[agent]
+name = "Jarvis"                          # Custom agent name (e.g. Jarvis, Friday, Nova)
+voice = "Aoede"                          # Prebuilt voice: Aoede, Charon, Fenrir, Kore, Puck
+model = "gemini-3.8-live"                # Gemini Live model
+greet_on_activation = true               # Proactively greet the user upon activation
+single_sentence = false                  # Allow detailed answers when requested
+# greeting_prompt = "..."                # Optional custom greeting prompt
+greeting_cooldown_seconds = 14400         # Avoid repeated greetings within 4 hours on the same day
+greeting_resume_work = true              # Offer one relevant continuation from previous conversations
+# system_instruction = "Custom persona prompt..." # Optional custom system prompt
+
+[audio]
+input_sample_rate = 16000                # Capture sample rate in Hz
+output_sample_rate = 24000               # Required: provider PCM is 24 kHz; no resampling yet
+input_frame_ms = 20                      # Input frame size in ms
+output_frame_ms = 20                     # Output frame size in ms
+queue_max_seconds = 10                   # Playback backlog ceiling
+playback_latency_ms = 100                # Speaker-device buffer in milliseconds
+playback_cushion_s = 0.32               # Network audio held before speech starts/resumes
+capture_latency_ms = 20                  # PipeWire capture latency
+command_timeout = 8                      # Subprocess command timeout in seconds
+noise_suppression = true                 # WebRTC noise suppression filter
+local_barge_in = true                    # Stop Jarvis for sustained speech on the echo-cancelled mic
+diagnostic_transcripts = false          # Temporarily log spoken transcript fragments for audio troubleshooting
+voice_rms_threshold = 450.0              # Ignore quieter background noise
+voice_band_ratio = 0.55                  # Required energy inside 300-3400 Hz
+duck_after_ms = 40                       # Used only when duck_gain is below 1.0
+barge_in_after_ms = 300                  # Flush playback for sustained speech
+release_after_ms = 120                   # Restore volume after speech ends
+duck_gain = 1.0                          # Keep speech clear; below 1.0 enables volume ducking
+fade_ms = 10                             # Click-free gain transition
+mic_volume_percent = 80                  # Max mic volume percent to avoid clipping/bleed
+
+[vad]
+enabled = true                           # Required until manual activity signals are implemented
+start_sensitivity = "START_SENSITIVITY_LOW"   # LOW (less sensitive to noise) or HIGH
+end_sensitivity = "END_SENSITIVITY_LOW"        # HIGH or LOW
+prefix_padding_ms = 300                  # Audio buffer before speech
+silence_duration_ms = 800                # Silence duration before turn end
+activity_handling = "START_OF_ACTIVITY_INTERRUPTS" # Or "NO_INTERRUPTION" to prevent mid-turn cutoff
+
+[skills]
+enabled = true                           # Enable desktop controls
+exclude_unavailable = true               # Exclude skills if system binary is missing
+# manifest_dirs = ["/custom/manifest/path"]
+
+[standby]
+enabled = true                           # Stop cloud voice while retaining local wake listening
+threshold = 0.50                         # Balanced for accents and laptop microphones (0.50 = 50% confidence)
+vad_threshold = 0.50                     # VAD threshold to reject background noise
+arming_delay = 1.0                       # Delay before arming detector to prevent residual echo
+
+[filesystem]
+enabled = true                           # Enable filesystem skills
+autonomous = true                        # Grant full autonomous access for file management
+allow_delete = true                      # Allow permanent deletion in addition to trash
+max_read_chars = 50000                   # Maximum characters read per read_file call
+max_write_bytes = 5242880                # Maximum bytes per write/append (5 MiB)
 
 [memory]
 enabled = true
-path = ""                               # Bridge default: $XDG_STATE_HOME/jarvis/memory
+path = ""                               # Bridge default: $XDG_STATE_HOME/jarvis-oma/memory
 max_facts = 1000                         # Positive integer
 context_max_chars = 6000                 # Positive integer
-record_sessions = true                  # Continuous text memory
+record_sessions = true                  # Continuous text memory; never expires automatically
 auto_capture = false                    # Requires a nonempty extraction_model
-extraction_model = ""                   # Optional local Ollama model
+extraction_model = ""                   # Optional local Ollama model; no Gemini extraction calls
 extraction_url = "http://127.0.0.1:11434"
-obsidian_vault = ""                     # Existing Obsidian vault path
+obsidian_vault = ""                     # Existing Obsidian vault path (e.g. "memory/data/obsidian-vault")
 obsidian_auto_sync = true               # Sync changes to linked Markdown notes
 obsidian_timezone = "Asia/Kolkata"       # Calendar date/day for daily conversation reports
 structured_capture = true               # Capture explicit user preferences/decisions/tasks locally
 semantic_retrieval = false              # Opt in after choosing an embedding model/provider
-semantic_provider = "gemini"            # Reuses GEMINI_API_KEY
-semantic_model = ""                     # Example: text-embedding-004
+semantic_provider = "gemini"            # Reuses Jarvis's in-memory GEMINI_API_KEY
+semantic_model = ""                     # Example: gemini-embedding-2
 semantic_url = "http://127.0.0.1:11434" # Used only when provider = "ollama"
 semantic_dimension = 768                 # Must match the selected embedding model
 semantic_min_score = 0.55               # Reject weak semantic-only matches
 
-[fillers]
+[commands]
+# Override binary paths if installed in custom locations:
+# hyprctl = "/usr/bin/hyprctl"
+# grim = "/usr/bin/grim"
+
+[voice.fillers]
 # Enable instant local reflex loops bypassing cloud round-trip times
 enable_local_fillers = true
 
@@ -43,7 +101,7 @@ phrases = [
 ]
 
 # Audio mixing configurations for the Raised-Cosine transition inside downstream.py
-[fillers.mixing]
+[voice.fillers.mixing]
 ducking_window_ms = 50       # Time window to smoothly fade out the local filler when Gemini PCM arrives
 local_buffer_precharge = 2   # Number of small audio chunks pre-loaded into RAM to eliminate disk wake latency
 

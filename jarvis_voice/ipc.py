@@ -24,6 +24,12 @@ class ControlServer:
         confirm_cb: Optional[Callable] = None,
         cancel_cb: Optional[Callable] = None,
         send_text_cb: Optional[Callable] = None,
+        wake_cb: Optional[Callable] = None,
+        get_vision_mode_cb: Optional[Callable] = None,
+        set_vision_mode_cb: Optional[Callable] = None,
+        tools_provider: Optional[Callable] = None,
+        tool_call_cb: Optional[Callable] = None,
+        record_memory_cb: Optional[Callable] = None,
     ):
         self.socket_path = Path(socket_path) if socket_path else SOCKET_PATH
         self.status_provider = status_provider or (lambda: {})
@@ -34,8 +40,15 @@ class ControlServer:
         self.confirm_cb = confirm_cb
         self.cancel_cb = cancel_cb
         self.send_text_cb = send_text_cb
+        self.wake_cb = wake_cb
+        self.get_vision_mode_cb = get_vision_mode_cb
+        self.set_vision_mode_cb = set_vision_mode_cb
+        self.tools_provider = tools_provider
+        self.tool_call_cb = tool_call_cb
+        self.record_memory_cb = record_memory_cb
         self._server = None
         self._owns_socket = False
+        self._legacy_symlink: Optional[Path] = None
 
     async def start(self):
         self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -60,6 +73,17 @@ class ControlServer:
         self.socket_path.chmod(0o600)
         log.info('IPC listening on %s', self.socket_path)
 
+        legacy_sock = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis.sock"
+        if self.socket_path == SOCKET_PATH and legacy_sock != self.socket_path:
+            try:
+                if legacy_sock.is_symlink() or legacy_sock.exists():
+                    legacy_sock.unlink()
+                legacy_sock.symlink_to(self.socket_path)
+                self._legacy_symlink = legacy_sock
+                log.debug("Linked legacy socket %s -> %s", legacy_sock, self.socket_path)
+            except Exception as err:
+                log.debug("Could not create legacy jarvis.sock symlink: %s", err)
+
     async def close(self):
         if self._server is not None:
             self._server.close()
@@ -68,6 +92,11 @@ class ControlServer:
         if self._owns_socket:
             self.socket_path.unlink(missing_ok=True)
             self._owns_socket = False
+        if getattr(self, '_legacy_symlink', None) and self._legacy_symlink.is_symlink():
+            try:
+                self._legacy_symlink.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def broadcast_state(self, status: dict):
         """Write atomic state file for external readers."""
@@ -100,7 +129,110 @@ class ControlServer:
             result = await result
         return json.dumps({'result': result}) + '\n'
 
+    async def _handle_json_command(self, req: dict) -> str:
+        cmd = req.get('command')
+        if cmd == 'tools':
+            return json.dumps({'device': 'pc', 'tools': self.tools_provider() if self.tools_provider else []}) + '\n'
+        if cmd == 'tool_call':
+            if not self.tool_call_cb:
+                return json.dumps({'error': 'Shared execution unavailable'}) + '\n'
+            return json.dumps(await self.tool_call_cb(req)) + '\n'
+        if cmd == 'sync_memory':
+            records = req.get('records', [])
+            user_text = req.get('user', '').strip()
+            assistant_text = req.get('assistant', '').strip()
+            if records:
+                user_turns = [r.get('content', '') for r in records if r.get('role') == 'user']
+                model_turns = [r.get('content', '') for r in records if r.get('role') in ('model', 'assistant')]
+                if not user_text and user_turns:
+                    user_text = ' '.join(user_turns).strip()
+                if not assistant_text and model_turns:
+                    assistant_text = ' '.join(model_turns).strip()
+            if self.record_memory_cb:
+                res = self.record_memory_cb(user_text, assistant_text)
+                if asyncio.iscoroutine(res):
+                    await res
+                log.info('Ingested remote memory from mobile companion (user=%d chars, assistant=%d chars, records=%d)',
+                         len(user_text), len(assistant_text), len(records))
+                return json.dumps({'status': 'ok', 'saved': True, 'count': len(records)}) + '\n'
+            return json.dumps({'error': 'Memory recording unavailable'}) + '\n'
+        if cmd == 'get_vision_mode':
+            if self.get_vision_mode_cb:
+                mode = self.get_vision_mode_cb()
+                if asyncio.iscoroutine(mode):
+                    mode = await mode
+            else:
+                mode = self.status_provider().get('vision_mode', 'off')
+            return json.dumps({'status': 'ok', 'vision_mode': mode}) + '\n'
+        if cmd == 'set_vision_mode':
+            mode = str(req.get('mode', 'off')).strip().lower()
+            res = {}
+            if self.set_vision_mode_cb:
+                res = self.set_vision_mode_cb(mode)
+                if asyncio.iscoroutine(res):
+                    res = await res
+            if not isinstance(res, dict):
+                res = {'vision_mode': mode}
+            self.broadcast_state({'vision_mode': res.get('vision_mode', mode)})
+            return json.dumps({'status': 'ok', **res}) + '\n'
+        if cmd == 'status':
+            return json.dumps(self.status_provider()) + '\n'
+        if cmd == 'toggle_mute':
+            muted = False
+            if self.toggle_mute_cb:
+                muted = self.toggle_mute_cb()
+                if asyncio.iscoroutine(muted):
+                    muted = await muted
+            return json.dumps({'status': 'ok', 'muted': muted}) + '\n'
+        if cmd == 'set_mute':
+            requested = req.get('muted', True)
+            if self.set_mute_cb:
+                muted = self.set_mute_cb(requested)
+                if asyncio.iscoroutine(muted):
+                    muted = await muted
+            else:
+                muted = requested
+            return json.dumps({'status': 'ok', 'muted': muted}) + '\n'
+        if cmd == 'interrupt':
+            if self.interrupt_cb:
+                self.interrupt_cb()
+            return json.dumps({'status': 'ok', 'interrupted': True}) + '\n'
+        if cmd == 'standby':
+            if self.standby_cb:
+                res = self.standby_cb()
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+                return json.dumps({'status': 'ok', 'standby': True}) + '\n'
+            return json.dumps({'error': 'standby not available'}) + '\n'
+        if cmd == 'wake':
+            if self.wake_cb:
+                res = self.wake_cb()
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+                return json.dumps({'status': 'ok', 'standby': False}) + '\n'
+            return json.dumps({'error': 'wake not available'}) + '\n'
+        return json.dumps({'error': f'unknown json command: {cmd}'}) + '\n'
+
     def _dispatch(self, command: str):
+        if command.startswith('{'):
+            try:
+                req = json.loads(command)
+                return self._handle_json_command(req)
+            except Exception as e:
+                return json.dumps({'error': f'invalid json: {e}'}) + '\n'
+        if command in ('vision status', 'vision get'):
+            mode = (self.get_vision_mode_cb() if self.get_vision_mode_cb
+                    else self.status_provider().get('vision_mode', 'off'))
+            return f'jarvis-vision: {mode}\n'
+        if command.startswith('vision '):
+            _, _, mode = command.partition(' ')
+            clean = mode.strip().lower()
+            if self.set_vision_mode_cb:
+                res = self.set_vision_mode_cb(clean)
+                if asyncio.iscoroutine(res):
+                    return self._control_result(lambda: res)
+                return json.dumps({'status': 'ok', 'vision_mode': clean}) + '\n'
+            return json.dumps({'error': 'vision control not available'}) + '\n'
         if command == 'status --json':
             return json.dumps(self.status_provider()) + '\n'
         if command == 'status':
@@ -117,12 +249,23 @@ class ControlServer:
                     asyncio.create_task(res)
                 return json.dumps({'standby': True, 'status': 'standby_requested'}) + '\n'
             return json.dumps({'error': 'standby not available'}) + '\n'
+        if command in ('wake', 'standby off', 'resume'):
+            if self.wake_cb:
+                res = self.wake_cb()
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+                return json.dumps({'standby': False, 'status': 'awake'}) + '\n'
+            return json.dumps({'error': 'wake not available'}) + '\n'
         if command == 'listen toggle':
+            if self.wake_cb:
+                self.wake_cb()
             if self.toggle_mute_cb:
                 muted = self.toggle_mute_cb()
                 return json.dumps({'muted': muted}) + '\n'
             return json.dumps({'error': 'toggle not available'}) + '\n'
         if command == 'listen start':
+            if self.wake_cb:
+                self.wake_cb()
             if self.set_mute_cb:
                 self.set_mute_cb(False)
                 return json.dumps({'muted': False}) + '\n'
@@ -148,6 +291,8 @@ class ControlServer:
             text = text.strip()
             if not text:
                 return json.dumps({'error': 'empty text'}) + '\n'
+            if self.wake_cb:
+                self.wake_cb()
             if self.send_text_cb:
                 res = self.send_text_cb(text)
                 if asyncio.iscoroutine(res):

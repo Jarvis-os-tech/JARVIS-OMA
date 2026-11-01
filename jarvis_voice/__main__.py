@@ -53,6 +53,8 @@ def _ipc_command(args):
         cmd = f'listen {action}'
     elif args.command == 'standby':
         cmd = 'standby'
+    elif args.command == 'wake':
+        cmd = 'wake'
     elif args.command in ('send', 'tell', 'prompt'):
         text = ' '.join(([args.action] if args.action else []) + (getattr(args, 'text_args', None) or [])).strip()
         if not text:
@@ -81,7 +83,7 @@ def main(argv=None):
         prog='jarvis-voice',
         description='JARVIS Voice Core — sovereign voice foundation')
     parser.add_argument('command', nargs='?', default='run',
-        choices=['run', 'status', 'listen', 'standby', 'send', 'tell', 'prompt', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
+        choices=['run', 'status', 'listen', 'standby', 'wake', 'send', 'tell', 'prompt', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
         help='Command to execute (default: run)')
     parser.add_argument('action', nargs='?', help='Action for listen or first word for send')
     parser.add_argument('text_args', nargs='*', help='Additional words for send/tell')
@@ -122,7 +124,7 @@ def main(argv=None):
     if args.command in ('restart', 'disable', 'disanble', 'enable', 'start', 'stop'):
         return _systemd_command(args.command)
 
-    if args.command in ('status', 'listen', 'standby', 'send', 'tell', 'prompt'):
+    if args.command in ('status', 'listen', 'standby', 'wake', 'send', 'tell', 'prompt'):
         return _ipc_command(args)
 
     if args.command == 'run':

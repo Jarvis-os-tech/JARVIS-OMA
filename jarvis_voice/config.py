@@ -52,8 +52,9 @@ def load_env(api_key_env="GEMINI_API_KEY"):
 @dataclass
 class StandbyConfig:
     enabled: bool = True
-    threshold: float = 0.05
-    vad_threshold: float = 0.0
+    threshold: float = 0.50
+    vad_threshold: float = 0.50
+    arming_delay: float = 1.0
 
     def validate(self):
         if not isinstance(self.enabled, bool):
@@ -62,6 +63,8 @@ class StandbyConfig:
             val = getattr(self, name)
             if not isinstance(val, (int, float)) or isinstance(val, bool) or not (0.0 <= float(val) <= 1.0):
                 raise ValueError(f'standby.{name} must be between 0.0 and 1.0')
+        if not isinstance(self.arming_delay, (int, float)) or isinstance(self.arming_delay, bool) or float(self.arming_delay) < 0.0:
+            raise ValueError('standby.arming_delay must be a non-negative number')
         return self
 
 

@@ -128,3 +128,56 @@ class StandbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detector.frames, [])
         await engine.async_input_queue.put(b'wake')
         await asyncio.wait_for(listener, timeout=.2)
+
+    async def test_controller_wakes_on_explicit_wake_signal(self):
+        class BlockingDetector:
+            def reset(self):
+                pass
+            def process(self, frame):
+                return False
+
+        controller = StandbyController(detector=BlockingDetector(), arming_delay=0)
+        engine = SimpleNamespace(async_input_queue=asyncio.Queue())
+        await controller.request()
+        listener = asyncio.create_task(controller.listen_for_wake_word(engine))
+        await asyncio.sleep(0.01)
+        self.assertTrue(controller.active)
+        controller.wake()
+        await asyncio.wait_for(listener, timeout=0.2)
+        self.assertFalse(controller.active)
+        self.assertFalse(controller.engaged)
+
+    def test_default_threshold_rejects_ambient_noise_and_detects_strong_wake(self):
+        detector = OpenWakeWordDetector.__new__(OpenWakeWordDetector)
+        detector.threshold = 0.50
+        detector._pcm = bytearray()
+        detector._model = FakeModel([0.15, 0.20, 0.45])
+        window = b'\x00\x00' * detector.sample_count
+
+        # Ambient noise and low scores below 0.50 do not trigger detection
+        self.assertFalse(detector.process(window))
+        self.assertFalse(detector.process(window))
+        self.assertFalse(detector.process(window))
+
+        # Real wake word score (>= 0.65) triggers detection
+        detector._model = FakeModel([0.85])
+        self.assertTrue(detector.process(window))
+
+    async def test_standby_announces_before_entering_standby(self):
+        from jarvis_voice.daemon import LiveVoice, EnterStandby
+        from jarvis_voice.playback import Playback
+
+        player = Playback('default')
+        voice = LiveVoice(player)
+        voice.connected = True
+
+        enqueued_pcm = []
+        player.enqueue = lambda data: enqueued_pcm.append(data)
+
+        await voice.standby.request()
+        with self.assertRaises(EnterStandby):
+            await voice.monitor_standby()
+
+        self.assertTrue(len(enqueued_pcm) > 0)
+        self.assertEqual(len(enqueued_pcm[0]), 94080)
+

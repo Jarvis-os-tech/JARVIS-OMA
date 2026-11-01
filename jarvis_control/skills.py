@@ -155,6 +155,7 @@ class UnifiedSkills:
         self._memory_skills = memory_skills
         self.control = control_skills
         self.desktop = desktop_skills
+        self.config = getattr(control_skills, 'config', None) or Config()
         self._is_closed = False
         self.declarations: list[dict[str, Any]] = []
 
@@ -203,6 +204,23 @@ class UnifiedSkills:
             return self.desktop.test_bar
         return None
 
+    @property
+    def vision_mode(self) -> str:
+        if self.desktop and hasattr(self.desktop, 'vision_mode'):
+            return self.desktop.vision_mode
+        return getattr(self, '_vision_mode', 'off')
+
+    @vision_mode.setter
+    def vision_mode(self, mode: str):
+        self._vision_mode = mode
+        if self.desktop and hasattr(self.desktop, 'vision_mode'):
+            self.desktop.vision_mode = mode
+
+    async def control_vision_mode(self, mode: str, action: str = 'start') -> dict:
+        if self.desktop and hasattr(self.desktop, '_adapter_control_vision_mode'):
+            return await self.desktop._adapter_control_vision_mode(mode, action)
+        return {'status': 'unavailable', 'vision_mode': 'off'}
+
     async def execute(self, name: str, args: dict[str, Any]) -> str:
         if name == 'enter_standby':
             if getattr(self, 'on_standby_request', None) and callable(self.on_standby_request):
@@ -213,7 +231,7 @@ class UnifiedSkills:
                     res = {
                         'status': 'standby_requested',
                         'wake_phrase': 'Hey Jarvis',
-                        'message': "Entering standby mode. Say 'Hey Jarvis' to wake me up.",
+                        'message': "I am entering standby mode. Say 'Hey Jarvis' to wake me up.",
                     }
                 return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
             if self.desktop and hasattr(self.desktop, 'execute'):
@@ -251,6 +269,28 @@ class UnifiedSkills:
         if self._memory_skills and hasattr(self._memory_skills, "memory_context"):
             return self._memory_skills.memory_context()
         return ""
+
+    async def background_events(self) -> list[dict]:
+        events = await self.control.background_events() if self.control else []
+        agents = getattr(self.desktop, '_task_agents', None)
+        if agents is not None:
+            for job in agents.jobs.values():
+                if job['state'] in {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'} and not job.get('notice_acknowledged'):
+                    from orchestration.task_names import task_name
+                    name = job.get('name') or task_name(job.get('task'))
+                    events.append({'id': 'hermes:' + job['id'],
+                                   'text': f"{name}: {job['summary']}"})
+        return events[:10]
+
+    async def acknowledge_event(self, identity: str) -> None:
+        if identity.startswith('hermes:'):
+            agents = getattr(self.desktop, '_task_agents', None)
+            if agents is not None:
+                job = agents._get(identity[len('hermes:'):])
+                job['notice_acknowledged'] = True
+                agents._save(job)
+        elif self.control:
+            await self.control.acknowledge_event(identity)
 
     async def context_async(self) -> str:
         if self._memory_skills and hasattr(self._memory_skills, "context_async"):
