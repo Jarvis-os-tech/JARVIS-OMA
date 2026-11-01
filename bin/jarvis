@@ -25,6 +25,7 @@ Usage:
   jarvis task [cmd]    Submit, inspect, read, cancel or resume durable work
   jarvis vision [cmd]  Camera start, inspect, status or stop
   jarvis say [text]    Typed request to the configured planner
+  jarvis pair          Generate QR code to pair mobile companion app
   jarvis doctor       Check JARVIS dependencies and enabled features
 
 EOF
@@ -105,12 +106,27 @@ case "$cmd" in
             exec jarvis-voice standby "$@"
         fi
         ;;
+    wake)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
+            exec "${SCRIPT_DIR}/bin/jarvis-voice" wake "$@"
+        else
+            exec jarvis-voice wake "$@"
+        fi
+        ;;
     send|tell|prompt)
         shift || true
         if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
             exec "${SCRIPT_DIR}/bin/jarvis-voice" send "$@"
         else
             exec jarvis-voice send "$@"
+        fi
+        ;;
+    pair)
+        if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            exec "${SCRIPT_DIR}/.venv/bin/python" "${SCRIPT_DIR}/scripts/jarvis_pair.py" "$@"
+        else
+            exec python3 "${SCRIPT_DIR}/scripts/jarvis_pair.py" "$@"
         fi
         ;;
     control|task|vision|say|doctor)
