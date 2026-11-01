@@ -39,7 +39,8 @@
   },
   "alerts": {
     "cooldown_seconds": 300,
-    "enable_audio": true,
+    "enable_voice": true,
+    "enable_sound_effects": false,
     "enable_desktop_notifications": true
   }
 }

@@ -938,15 +938,97 @@ class AlertStateManager:
     def dispatch_actions(
         self,
         actions: List[AlertAction],
-        audio_engine: AlertAudioEngine,
-        notifier: DesktopNotifier,
-        quiet_audio: bool = False,
+        audio_engine: Optional[AlertAudioEngine] = None,
+        notifier: Optional[DesktopNotifier] = None,
+        jarvis_speaker: Optional[JarvisVoiceSpeaker] = None,
+        voice_alert: bool = True,
+        sound_alert: bool = False,
+        desktop_notify: bool = True,
     ) -> None:
         for act in actions:
-            title = f"[{'ALERT' if act.action_type == 'ALERT' else 'RESOLVED'}] {act.name}"
-            notifier.notify(title, act.message, urgency=act.urgency)
+            if desktop_notify and notifier:
+                title = f"[{'ALERT' if act.action_type == 'ALERT' else 'RESOLVED'}] {act.name}"
+                notifier.notify(title, act.message, urgency=act.urgency)
 
-            if not quiet_audio:
+            if voice_alert and jarvis_speaker:
+                speech_text = format_alert_speech(act)
+                jarvis_speaker.speak_alert(speech_text)
+
+            if sound_alert and audio_engine:
                 audio_engine.play_alert(act.alert_type, async_play=True)
+
+
+def format_alert_speech(action: AlertAction) -> str:
+    """Format an alert into natural conversational English for JARVIS to vocalize."""
+    if action.action_type == "RECOVERY":
+        return f"System update: {action.name} has recovered and is now back to a healthy state."
+
+    t = action.alert_type
+    if t == "network_down":
+        return f"Network alert: Connectivity failure detected. {action.message}."
+    elif t == "server_down":
+        return f"Server alert: Monitored service {action.name} is offline. {action.message}."
+    elif t == "cpu_overload":
+        return f"System alert: High CPU workload detected. {action.message}."
+    elif t == "memory_critical":
+        return f"System alert: Memory resources are critically low. {action.message}."
+    elif t == "disk_exhaustion":
+        return f"Storage alert: Disk volume {action.name} is running out of space. {action.message}."
+    elif t == "service_failure":
+        return f"Service alert: {action.name} is down or failed. {action.message}."
+    elif t == "thermal_critical":
+        return f"Hardware warning: High temperature alert on {action.name}. {action.message}."
+    else:
+        return f"System alert: Failure detected in {action.name}. {action.message}."
+
+
+class JarvisVoiceSpeaker:
+    """Dispatches verbal alerts directly into JARVIS's live voice pipeline via Unix socket IPC."""
+
+    def __init__(self, socket_path: Optional[Path] = None) -> None:
+        if socket_path:
+            self.socket_path = Path(socket_path)
+        else:
+            runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+            candidates = [
+                runtime_dir / "jarvis" / "control.sock",
+                runtime_dir / "jarvis.sock",
+                Path.home() / ".local/state/jarvis" / "control.sock",
+            ]
+            self.socket_path = candidates[0]
+            for cand in candidates:
+                if cand.exists():
+                    self.socket_path = cand
+                    break
+
+    def is_available(self) -> bool:
+        if not self.socket_path.exists():
+            return False
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                s.connect(str(self.socket_path))
+                s.sendall(b"status\n")
+                data = s.recv(512)
+                return bool(data)
+        except (OSError, socket.timeout):
+            return False
+
+    def speak_alert(self, text: str, timeout: float = 2.0) -> bool:
+        """Tell JARVIS Voice to vocalize this announcement."""
+        if not self.socket_path.exists():
+            return False
+
+        prompt = f"tell Announcement for user: {text.strip()} Please state this concisely.\n"
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                s.connect(str(self.socket_path))
+                s.sendall(prompt.encode("utf-8"))
+                resp = s.recv(1024)
+                return bool(resp)
+        except (OSError, socket.timeout):
+            return False
+
 
 

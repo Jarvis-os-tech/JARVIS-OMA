@@ -26,12 +26,14 @@ from core.system_monitor import (
     AlertAudioEngine,
     AlertStateManager,
     DesktopNotifier,
+    JarvisVoiceSpeaker,
     NetworkProbe,
     ProbeResult,
     ResourceProbe,
     ServerProbe,
     ServiceProbe,
     SUPPORTED_ALERTS,
+    format_alert_speech,
 )
 
 # ANSI terminal formatting
@@ -147,10 +149,17 @@ def run_checks(config: Dict[str, Any]) -> List[ProbeResult]:
     return results
 
 
-def print_formatted_report(results: List[ProbeResult], actions: List[AlertAction]) -> None:
+def print_formatted_report(
+    results: List[ProbeResult],
+    actions: List[AlertAction],
+    voice_connected: bool = False,
+) -> None:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    voice_badge = f"{C_GREEN}CONNECTED{C_RESET}" if voice_connected else f"{C_YELLOW}OFFLINE{C_RESET}"
+
     print(f"\n{C_BOLD}{C_CYAN}═════════════════════════════════════════════════════════════════════════════════════{C_RESET}")
     print(f"{C_BOLD}{C_CYAN}  JARVIS OS — SYSTEM INTEGRITY & HEALTH MONITOR [{now_str}]  {C_RESET}")
+    print(f"{C_BOLD}{C_CYAN}  Voice Alerts: {voice_badge} (Announcements spoken by JARVIS)  {C_RESET}")
     print(f"{C_BOLD}{C_CYAN}═════════════════════════════════════════════════════════════════════════════════════{C_RESET}")
 
     current_cat = ""
@@ -177,12 +186,36 @@ def print_formatted_report(results: List[ProbeResult], actions: List[AlertAction
     print(f"  {C_BOLD}Status Summary:{C_RESET} {summary_color}{ok_count} OK, {warn_count} Warning, {critical_count} Critical{C_RESET}")
 
     if actions:
-        print(f"\n  {C_BOLD}Dispatched Audio & Desktop Alerts:{C_RESET}")
+        print(f"\n  {C_BOLD}Dispatched Alerts & Vocalizations:{C_RESET}")
         for act in actions:
             act_color = C_RED if act.action_type == "ALERT" else C_GREEN
-            print(f"    • {act_color}{act.action_type}{C_RESET}: {act.name} -> {act.alert_type} ({act.message})")
+            speech = format_alert_speech(act)
+            print(f"    • {act_color}{act.action_type}{C_RESET}: {act.name}")
+            print(f"      {C_CYAN}JARVIS Spoken Announcement:{C_RESET} \"{speech}\"")
 
     print(f"{C_BOLD}{C_CYAN}═════════════════════════════════════════════════════════════════════════════════════{C_RESET}\n")
+
+
+def test_voice_mode(jarvis_speaker: JarvisVoiceSpeaker) -> bool:
+    print(f"\n{C_BOLD}{C_CYAN}Testing JARVIS Voice Announcement System...{C_RESET}")
+    if not jarvis_speaker.is_available():
+        print(f"{C_RED}[!] JARVIS Voice Core is not reachable at {jarvis_speaker.socket_path}.{C_RESET}")
+        print(f"    Start the service with: {C_BOLD}systemctl --user start jarvis-voice.service{C_RESET}\n")
+        return False
+
+    sample_alert = (
+        "This is JARVIS. All system diagnostics are complete, and your system monitoring "
+        "alert intimation pipeline is functioning properly."
+    )
+    print(f"  • Sending alert to JARVIS voice pipeline: {C_CYAN}\"{sample_alert}\"{C_RESET}")
+    ok = jarvis_speaker.speak_alert(sample_alert)
+    if ok:
+        print(f"{C_GREEN}[✓] Spoken alert successfully delivered to JARVIS Voice Core.{C_RESET}\n")
+        return True
+    else:
+        print(f"{C_RED}[!] Failed to deliver spoken alert to JARVIS Voice.{C_RESET}\n")
+        return False
+
 
 
 def test_audio_mode(audio_engine: AlertAudioEngine, quiet: bool = False) -> None:
@@ -201,7 +234,7 @@ def test_audio_mode(audio_engine: AlertAudioEngine, quiet: bool = False) -> None
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Comprehensive system monitoring script with specialized audio alerts for JARVIS OS.",
+        description="Comprehensive system monitoring script with verbal JARVIS announcements and audio alerts.",
     )
     parser.add_argument(
         "--once",
@@ -226,9 +259,24 @@ def main() -> int:
         help="Path to custom JSON configuration file.",
     )
     parser.add_argument(
+        "--test-voice",
+        action="store_true",
+        help="Test verbal alert announcement through JARVIS Voice Core.",
+    )
+    parser.add_argument(
         "--test-audio",
         action="store_true",
-        help="Preview and test all synthesized alert sounds.",
+        help="Preview and test all synthesized sound effects.",
+    )
+    parser.add_argument(
+        "--no-voice",
+        action="store_true",
+        help="Disable spoken voice announcements from JARVIS.",
+    )
+    parser.add_argument(
+        "--sound",
+        action="store_true",
+        help="Enable secondary sound effects in addition to JARVIS voice.",
     )
     parser.add_argument(
         "--json",
@@ -238,7 +286,7 @@ def main() -> int:
     parser.add_argument(
         "--quiet-audio",
         action="store_true",
-        help="Mute audio playback.",
+        help="Mute all audio (voice announcements and sound effects).",
     )
     parser.add_argument(
         "--quiet-notify",
@@ -250,6 +298,11 @@ def main() -> int:
 
     audio_engine = AlertAudioEngine()
     notifier = DesktopNotifier()
+    jarvis_speaker = JarvisVoiceSpeaker()
+
+    if args.test_voice:
+        ok = test_voice_mode(jarvis_speaker)
+        return 0 if ok else 1
 
     if args.test_audio:
         test_audio_mode(audio_engine, quiet=args.quiet_audio)
@@ -259,8 +312,9 @@ def main() -> int:
     cooldown = float(config.get("alerts", {}).get("cooldown_seconds", 300))
     state_manager = AlertStateManager(cooldown_seconds=cooldown)
 
-    quiet_audio = args.quiet_audio or not config.get("alerts", {}).get("enable_audio", True)
-    quiet_notify = args.quiet_notify or not config.get("alerts", {}).get("enable_desktop_notifications", True)
+    enable_voice = (not args.no_voice) and (not args.quiet_audio) and config.get("alerts", {}).get("enable_voice", True)
+    enable_sound = args.sound or (not args.quiet_audio and config.get("alerts", {}).get("enable_sound_effects", False))
+    enable_notify = not args.quiet_notify and config.get("alerts", {}).get("enable_desktop_notifications", True)
 
     # Daemon loop handling
     running = True
@@ -280,13 +334,16 @@ def main() -> int:
         results = run_checks(config)
         actions = state_manager.process_results(results)
 
-        # Dispatch alerts
-        for act in actions:
-            if not quiet_notify:
-                title = f"[{'ALERT' if act.action_type == 'ALERT' else 'RESOLVED'}] {act.name}"
-                notifier.notify(title, act.message, urgency=act.urgency)
-            if not quiet_audio:
-                audio_engine.play_alert(act.alert_type, async_play=True)
+        # Dispatch alerts to JARVIS voice, notifications, and audio
+        state_manager.dispatch_actions(
+            actions,
+            audio_engine=audio_engine,
+            notifier=notifier,
+            jarvis_speaker=jarvis_speaker,
+            voice_alert=enable_voice,
+            sound_alert=enable_sound,
+            desktop_notify=enable_notify,
+        )
 
         if args.json:
             critical_count = sum(1 for r in results if r.status == "CRITICAL")
@@ -300,6 +357,7 @@ def main() -> int:
                     "critical": critical_count,
                     "status": "healthy" if critical_count == 0 else "unhealthy",
                 },
+                "jarvis_voice_connected": jarvis_speaker.is_available(),
                 "results": [
                     {
                         "name": r.name,
@@ -318,6 +376,7 @@ def main() -> int:
                         "category": a.category,
                         "name": a.name,
                         "message": a.message,
+                        "speech": format_alert_speech(a),
                         "urgency": a.urgency,
                     }
                     for a in actions
@@ -325,7 +384,11 @@ def main() -> int:
             }
             print(json.dumps(payload, indent=2))
         else:
-            print_formatted_report(results, actions)
+            print_formatted_report(
+                results,
+                actions,
+                voice_connected=jarvis_speaker.is_available(),
+            )
 
         if not is_daemon:
             # Exit code 1 if critical failures detected, 0 otherwise
@@ -338,6 +401,7 @@ def main() -> int:
             time.sleep(0.5)
 
     return 0
+
 
 
 if __name__ == "__main__":
