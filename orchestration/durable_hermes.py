@@ -138,6 +138,14 @@ class DurableHermes(TaskAgents):
     def status(self, job_id=None):
         return super().status(job_id)
 
+    async def capabilities(self):
+        result = await super().capabilities()
+        result.update(maximum_active_tasks=2, durable_execution=True,
+                      execution_authority='Hermes native admissions',
+                      supervision='independent systemd receipt watchers',
+                      voice_disconnect_cancels_work=False)
+        return result
+
     def list(self):
         self._recover()
         return super().list()
