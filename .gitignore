@@ -15,5 +15,6 @@ connectors/.secrets/
 .claude/
 pairing_qr.png
 conversations/
+mobile/*.png
 
 

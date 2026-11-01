@@ -1,0 +1,188 @@
+"""Offline tests for JARVIS Desktop Awareness skills."""
+import json
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from skills import DesktopSkills, SkillError
+
+
+SAMPLE_CLIENTS = [
+    {
+        "address": "0x589612947f90",
+        "workspace": {"id": 1, "name": "1"},
+        "class": "foot",
+        "title": "terminal: bash",
+        "focusHistoryID": 0,
+        "floating": False,
+        "fullscreen": 0,
+        "at": [20, 40],
+        "size": [800, 600],
+    },
+    {
+        "address": "0x589612948abc",
+        "workspace": {"id": 2, "name": "2"},
+        "class": "firefox",
+        "title": "GitHub - Pull Requests",
+        "focusHistoryID": 1,
+        "floating": False,
+        "fullscreen": 1,
+        "at": [0, 0],
+        "size": [1920, 1080],
+    },
+]
+
+SAMPLE_WORKSPACES = [
+    {"id": 1, "name": "1", "windows": 1},
+    {"id": 2, "name": "2", "windows": 1},
+]
+
+
+class DesktopAwarenessTests(unittest.IsolatedAsyncioTestCase):
+    def make_desktop_skills(self):
+        skills = DesktopSkills()
+        for cmd in (
+            'hyprctl', 'grim', 'tesseract', 'ps', 'loginctl',
+            'omarchy-brightness-display', 'omarchy-audio-output-volume',
+            'notify-send', 'systemctl', 'nmcli', 'rfkill', 'wl-paste', 'wl-copy',
+            'omarchy-reminder', 'pactl', 'omarchy-battery-status',
+            'omarchy-network-status', 'omarchy-hyprland-monitor-focused',
+        ):
+            if not skills._commands.get(cmd):
+                skills._commands[cmd] = f'/usr/bin/{cmd}'
+        return skills
+
+    async def test_list_windows(self):
+        skills = self.make_desktop_skills()
+        skills._run = AsyncMock(return_value=json.dumps(SAMPLE_CLIENTS))
+
+        # List all windows
+        result = await skills.execute('list_windows', {})
+        self.assertEqual(result['count'], 2)
+        first = result['windows'][0]
+        self.assertEqual(first['class'], 'foot')
+        self.assertEqual(first['title'], 'terminal: bash')
+        self.assertEqual(first['workspace'], 1)
+        self.assertTrue(first['focused'])
+        self.assertFalse(first['fullscreen'])
+
+        second = result['windows'][1]
+        self.assertEqual(second['class'], 'firefox')
+        self.assertTrue(second['fullscreen'])
+
+        # Filter by workspace
+        filtered = await skills.execute('list_windows', {'workspace': 2})
+        self.assertEqual(filtered['count'], 1)
+        self.assertEqual(filtered['windows'][0]['class'], 'firefox')
+
+        # Invalid workspace argument
+        with self.assertRaises(SkillError):
+            await skills.execute('list_windows', {'workspace': 0})
+
+    async def test_focus_window(self):
+        skills = self.make_desktop_skills()
+        from skills import system_control
+        for query, app in [('foot', 'foot'), ('Pull Requests', 'firefox'), ('firefox textbar', 'firefox')]:
+            target = next(w for w in SAMPLE_CLIENTS if w['class'] == app)
+            with self.subTest(query=query), \
+                 patch.object(system_control, '_query_open_windows', new=AsyncMock(return_value=SAMPLE_CLIENTS)), \
+                 patch.object(system_control, '_query_active_window', new=AsyncMock(return_value=target)) as active, \
+                 patch.object(system_control, '_run_command', new=AsyncMock(return_value=(0, '', ''))) as dispatch, \
+                 patch('shutil.which', return_value='/fixture/hyprctl'):
+                result = await skills.execute('focus_window', {'query': query})
+                self.assertEqual(result['status'], 'focused')
+                self.assertTrue(result['verified'])
+                self.assertEqual(result['window']['address'], target['address'])
+                active.assert_awaited_once()
+                dispatch.assert_awaited_once_with('/fixture/hyprctl', 'dispatch',
+                    f'hl.dsp.focus({{ window = "address:{target["address"]}" }})', timeout=2)
+
+        with patch.object(system_control, '_query_open_windows', new=AsyncMock(return_value=SAMPLE_CLIENTS)), \
+             patch.object(system_control, '_run_command', new=AsyncMock()) as dispatch, \
+             patch('shutil.which', return_value='/fixture/hyprctl'):
+            result = await skills.execute('focus_window', {'query': 'nonexistent_app'})
+            self.assertFalse(result['verified'])
+            self.assertIn('not found', result['reason'])
+            dispatch.assert_not_awaited()
+
+    async def test_list_workspaces(self):
+        skills = self.make_desktop_skills()
+        skills._run = AsyncMock(side_effect=[
+            json.dumps(SAMPLE_WORKSPACES),
+            json.dumps({"id": 1, "name": "1"}),
+        ])
+
+        res = await skills.execute('list_workspaces', {})
+        self.assertEqual(res['active_workspace'], 1)
+        self.assertEqual(res['count'], 2)
+        self.assertEqual(res['workspaces'][0]['id'], 1)
+        self.assertEqual(res['workspaces'][1]['id'], 2)
+
+    async def test_inspect_screen_full_and_active(self):
+        skills = self.make_desktop_skills()
+        active_window_json = json.dumps({
+            "title": "Code Editor",
+            "class": "code",
+            "workspace": {"id": 1, "name": "1"},
+            "at": [100, 200],
+            "size": [1200, 800],
+        })
+
+        # Test active window inspection with OCR text
+        skills._run = AsyncMock(side_effect=[
+            active_window_json,  # hyprctl activewindow
+            '',                  # grim
+            'Error: module not found\nat app.py line 42',  # tesseract OCR
+        ])
+
+        with patch.dict('os.environ', {'XDG_RUNTIME_DIR': '/tmp'}):
+            res = await skills.execute('inspect_screen', {'region': 'active', 'extract_text': True})
+        self.assertEqual(res['status'], 'inspected')
+        self.assertEqual(res['region'], 'active')
+        self.assertEqual(res['active_window']['class'], 'code')
+        self.assertIn('Error: module not found', res['text_content'])
+        self.assertTrue(res['screenshot_path'].endswith('.jpg'))
+
+        # Test full screen inspection without text extraction
+        skills._run = AsyncMock(side_effect=[
+            active_window_json,
+            '',  # grim
+        ])
+        with patch.dict('os.environ', {'XDG_RUNTIME_DIR': '/tmp'}):
+            res_full = await skills.execute('inspect_screen', {'region': 'full', 'extract_text': False})
+        self.assertEqual(res_full['region'], 'full')
+        self.assertIsNone(res_full['text_content'])
+
+    async def test_get_system_resources(self):
+        skills = self.make_desktop_skills()
+        observation = {'section': 'overview', 'status': 'partial',
+                       'observed_at': '2026-10-20T08:00:00+00:00',
+                       'sources': ['/proc/stat'], 'data': {'cpu': {'data': {
+                           'utilization_percent': 15.2}}}, 'errors': []}
+        with patch('skills.system_information.get_system_information',
+                   new=AsyncMock(return_value=observation)) as query:
+            res = await skills.execute('get_system_resources', {})
+        self.assertEqual(res, observation)
+        self.assertNotIn('cpu_load_percent', res)
+        query.assert_awaited_once_with(section='overview', detail=None, limit=10)
+
+    async def test_desktop_context_includes_open_windows_count(self):
+        skills = self.make_desktop_skills()
+        skills._run = AsyncMock(side_effect=[
+            json.dumps({'title': 'Terminal', 'class': 'foot', 'workspace': {'id': 1}}),
+            json.dumps({'id': 1, 'name': '1'}),
+            'wifi\tHome\t80',
+            'Mute: no',
+            'front-left: 0% / 50% / 0%',
+            'alsa_output.pci',
+            'percentage=90\nstate=charging',
+            '60%',
+            'eDP-1',
+            json.dumps(SAMPLE_CLIENTS),  # clients for open_windows_count
+        ])
+
+        ctx = await skills.execute('get_desktop_context', {})
+        self.assertEqual(ctx['open_windows_count'], 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

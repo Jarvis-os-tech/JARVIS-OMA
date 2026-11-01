@@ -3,7 +3,7 @@
   "skills": [
     {
       "name": "phone_call",
-      "description": "Make an outgoing phone call to a contact name (e.g. 'Dad', 'China Mama', 'Annayya') or phone number (e.g. '+919949617551') through the connected phone plugin (OMyPhone/PipeWire telephony).",
+      "description": "Make a normal PC outgoing phone call through OMyPhone/PipeWire telephony to the user-requested contact or number. Keep using this for ordinary call requests on the PC. If the user explicitly says call FROM MY PHONE or using my mobile, use phone_control(action=call_contact, recipient=...) to call natively from Android instead.",
       "adapter": "phone.call",
       "parameters_json_schema": {
         "type": "object",
