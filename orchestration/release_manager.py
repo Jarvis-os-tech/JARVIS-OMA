@@ -303,26 +303,40 @@ class ReleaseManager:
         return items
 
     def _restart_services(self) -> None:
-        """Reload systemd daemon and restart operational user services."""
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+        """Fail explicitly if either service cannot be restarted."""
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=10)
         subprocess.run(
             ["systemctl", "--user", "restart", "jarvis-voice.service", "jarvis-device-bridge.service"],
-            check=False,
-            timeout=15,
+            check=True,
+            timeout=30,
         )
 
     def verify_health(self, timeout: float = 5.0) -> bool:
-        """Verify that jarvis-voice.service successfully reached active state."""
-        start = time.time()
-        while time.time() - start < timeout:
-            res = subprocess.run(
-                ["systemctl", "--user", "is-active", "jarvis-voice.service"],
-                capture_output=True,
-                text=True,
-            )
-            if res.stdout.strip() == "active":
-                return True
-            time.sleep(0.5)
+        """Require both operational services to remain active for one second."""
+        deadline = time.monotonic() + timeout
+        healthy_since: float | None = None
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                res = subprocess.run(
+                    ["systemctl", "--user", "is-active", "jarvis-voice.service",
+                     "jarvis-device-bridge.service"],
+                    capture_output=True, text=True, timeout=min(2.0, remaining),
+                )
+                healthy = res.returncode == 0 and res.stdout.split() == ["active", "active"]
+            except (OSError, subprocess.TimeoutExpired):
+                healthy = False
+            now = time.monotonic()
+            if healthy:
+                if healthy_since is None:
+                    healthy_since = now
+                if now - healthy_since >= 1.0:
+                    return True
+            else:
+                healthy_since = None
+            time.sleep(min(0.25, max(0.0, deadline - now)))
         return False
 
     def snapshot_state(self) -> list[Path]:
@@ -342,87 +356,72 @@ class ReleaseManager:
                 log.warning("Failed to backup %s: %s", db, e)
         return backed_up
 
-    def activate_release(self, release_dir: Path | str, timeout: float = 8.0) -> dict[str, Any]:
-        """Atomically switch to release_dir, restart services, and verify health."""
-        target = Path(release_dir).resolve()
-        if not target.is_dir() or not (target / "release.json").is_file():
-            raise ValueError(f"Invalid release directory: {release_dir}")
+    def _set_link(self, link: Path, target: Path | None) -> None:
+        """Replace a release pointer atomically, or restore an absent pointer."""
+        if target is None:
+            link.unlink(missing_ok=True)
+            return
+        temporary = link.with_name(link.name + ".tmp")
+        temporary.unlink(missing_ok=True)
+        temporary.symlink_to(target)
+        temporary.replace(link)
 
+    def _switch_release(self, target: Path, timeout: float) -> dict[str, Any]:
+        if not target.is_dir() or not (target / "release.json").is_file():
+            raise ValueError(f"Invalid release directory: {target}")
+        # Validate metadata before touching the active pointers.
+        metadata = json.loads((target / "release.json").read_text(encoding="utf-8"))
+        old_current = self.current_link.resolve() if self.current_link.exists() else None
+        old_previous = self.previous_link.resolve() if self.previous_link.exists() else None
+        try:
+            if old_current and old_current != target:
+                self._set_link(self.previous_link, old_current)
+            self._set_link(self.current_link, target)
+            self._restart_services()
+            if not self.verify_health(timeout=timeout):
+                raise RuntimeError("Health probe failed for voice or device bridge")
+        except Exception as activation_error:
+            # Restore BOTH pointers, including the earlier rollback target.
+            self._set_link(self.current_link, old_current)
+            self._set_link(self.previous_link, old_previous)
+            if old_current is None:
+                raise RuntimeError(
+                    f"Activation failed: {activation_error}; no previous active release to restore"
+                ) from activation_error
+            try:
+                self._restart_services()
+                if not self.verify_health(timeout=timeout):
+                    raise RuntimeError("restored services failed health verification")
+            except Exception as recovery_error:
+                raise RuntimeError(
+                    f"Activation failed: {activation_error}; release pointers restored, "
+                    f"but recovery failed: {recovery_error}"
+                ) from activation_error
+            raise RuntimeError(
+                f"Activation failed: {activation_error}; automatically rolled back to {old_current.name}"
+            ) from activation_error
+        return metadata
+
+    def activate_release(self, release_dir: Path | str, timeout: float = 8.0) -> dict[str, Any]:
+        """Activate a release, restoring the old state on restart or health failure."""
         self.init_directories()
         self.snapshot_state()
-
-        old_current: Path | None = None
-        if self.current_link.exists():
-            old_current = self.current_link.resolve()
-
-        # Update previous symlink
-        if old_current and old_current != target:
-            temp_prev = self.root_dir / "previous.tmp"
-            if temp_prev.exists() or temp_prev.is_symlink():
-                temp_prev.unlink()
-            temp_prev.symlink_to(old_current)
-            temp_prev.rename(self.previous_link)
-
-        # Atomic switch current link
-        temp_curr = self.root_dir / "current.tmp"
-        if temp_curr.exists() or temp_curr.is_symlink():
-            temp_curr.unlink()
-        temp_curr.symlink_to(target)
-        temp_curr.rename(self.current_link)
-
-        # Restart and verify health
-        self._restart_services()
-        if not self.verify_health(timeout=timeout):
-            # Auto-rollback if previous exists
-            if old_current and old_current.is_dir():
-                log.error("Release activation failed health probe; rolling back to %s", old_current.name)
-                temp_curr = self.root_dir / "current.tmp"
-                temp_curr.symlink_to(old_current)
-                temp_curr.rename(self.current_link)
-                self._restart_services()
-                self.verify_health(timeout=timeout)
-            raise RuntimeError(f"Health probe failed after activating {target.name}; automatically rolled back")
-
+        metadata = self._switch_release(Path(release_dir).resolve(), timeout)
         self.prune_releases(keep=3)
-        return json.loads((target / "release.json").read_text(encoding="utf-8"))
+        return metadata
 
     def rollback(self, timeout: float = 8.0) -> dict[str, Any]:
-        """Roll back to the previous release."""
-        prev_target: Path | None = None
-        if self.previous_link.exists():
-            prev_target = self.previous_link.resolve()
-        else:
-            # Fall back to the most recent historical release
-            for r in self.list_releases():
-                if not r.get("is_current") and Path(r["path"]).is_dir():
-                    prev_target = Path(r["path"])
-                    break
-
-        if not prev_target or not prev_target.is_dir():
+        """Switch to the previous release with the same recovery guarantees."""
+        current = self.current_link.resolve() if self.current_link.exists() else None
+        previous = self.previous_link.resolve() if self.previous_link.exists() else None
+        if previous is None or previous == current:
+            previous = next(
+                (Path(r["path"]) for r in self.list_releases()
+                 if not r.get("is_current") and Path(r["path"]).is_dir()), None,
+            )
+        if previous is None:
             raise RuntimeError("No previous release found for rollback")
-
-        curr_target = self.current_link.resolve() if self.current_link.exists() else None
-
-        # Swap current to previous
-        temp_curr = self.root_dir / "current.tmp"
-        if temp_curr.exists() or temp_curr.is_symlink():
-            temp_curr.unlink()
-        temp_curr.symlink_to(prev_target)
-        temp_curr.rename(self.current_link)
-
-        # Set previous to former current if it existed
-        if curr_target and curr_target != prev_target:
-            temp_prev = self.root_dir / "previous.tmp"
-            if temp_prev.exists() or temp_prev.is_symlink():
-                temp_prev.unlink()
-            temp_prev.symlink_to(curr_target)
-            temp_prev.rename(self.previous_link)
-
-        self._restart_services()
-        if not self.verify_health(timeout=timeout):
-            raise RuntimeError(f"Health check failed after rolling back to {prev_target.name}")
-
-        return json.loads((prev_target / "release.json").read_text(encoding="utf-8"))
+        return self._switch_release(previous, timeout)
 
     def apply_update(self, timeout: float = 8.0) -> dict[str, Any]:
         """Fetch upstream, compile release, activate it, and prune old releases."""
