@@ -11,6 +11,10 @@ log = logging.getLogger(__name__)
 
 
 ADAPTERS = {
+    'hermes.artifact': '_adapter_hermes_artifact',
+    'hermes.handoff': '_adapter_hermes_handoff',
+    'hermes.features': '_adapter_hermes_features',
+    'hermes.command': '_adapter_hermes_command',
     'hermes.goal': '_adapter_start_hermes_goal',
     'hermes.status': '_adapter_hermes_status',
     'personal_agents.create': '_adapter_create_task_agent',
@@ -60,12 +64,25 @@ ADAPTER_COMMANDS = {
 
 
 class OrchestrationDomain:
-    async def _adapter_start_hermes_goal(self, goal, context='', timeout_seconds=600):
+    async def _adapter_hermes_features(self, query='', include_unavailable=False):
+        try:
+            return await self._personal_agents().bridge.features(query, include_unavailable)
+        except (OSError, ValueError, TimeoutError) as error:
+            raise SkillError('Hermes feature discovery unavailable: ' + type(error).__name__) from None
+
+    async def _adapter_hermes_command(self, command, arguments=''):
+        try:
+            return await self._personal_agents().bridge.command(
+                command, arguments, workspace=str(Path(__file__).resolve().parents[2]))
+        except (OSError, ValueError, TimeoutError) as error:
+            raise SkillError('Hermes command outcome may be unknown; inspect native state before retrying: ' + type(error).__name__) from None
+
+    async def _adapter_start_hermes_goal(self, goal, context='', timeout_seconds=600, request_key=None, acceptance_checks=None):
         """Default coordinator; Jarvis's native tools remain independently usable."""
         try:
-            return self._personal_agents().start(
-                goal, role='main orchestrator', context=context,
-                timeout_seconds=timeout_seconds)
+            options = {'request_key': request_key, 'acceptance_checks': acceptance_checks} if request_key is not None or acceptance_checks is not None else {}
+            return self._personal_agents().start(goal, role='main orchestrator', context=context,
+                                                  timeout_seconds=timeout_seconds, **options)
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 
@@ -236,10 +253,10 @@ class OrchestrationDomain:
 
     def _personal_agents(self):
         if not hasattr(self, '_task_agents'):
-            from orchestration.task_agents import TaskAgents
+            from orchestration.durable_hermes import DurableHermes
             root = (self.learning_service.capture.store.root if self.learning_service is not None
                     else Path(__file__).resolve().parents[2] / '.jarvis-learning')
-            self._task_agents = TaskAgents(root / 'task-agents', events=self.task_events)
+            self._task_agents = DurableHermes(root / 'task-agents', events=self.task_events)
         return self._task_agents
 
     async def _adapter_hermes_status(self):
@@ -257,12 +274,27 @@ class OrchestrationDomain:
 
     async def _adapter_task_agent_status(self, job_id=None):
         try:
-            return self._personal_agents().status(job_id)
+            agents = self._personal_agents()
+            if hasattr(agents, 'refresh'):
+                await agents.refresh(job_id)
+            return agents.status(job_id)
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_list_task_agents(self):
         return self._personal_agents().list()
+
+    async def _adapter_hermes_artifact(self, job_id, path, offset=0):
+        try:
+            return self._personal_agents().artifact_read(job_id, path, offset)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_hermes_handoff(self, job_id, owner, expected_generation):
+        try:
+            return await self._personal_agents().handoff(job_id, owner, expected_generation)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
 
     async def _adapter_cancel_task_agent(self, job_id):
         try:

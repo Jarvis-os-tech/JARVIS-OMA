@@ -33,8 +33,10 @@ Use clear task names describing the actual work in session titles, progress and
 results. Keep session IDs, worker IDs and request keys internal unless requested.
 
 Understand the user's goal and constraints. Plan as needed, do the work, inspect
-evidence, and report the result honestly. Use the jarvis_orchestrator MCP tools
-to discover and delegate to installed agents or Jarvis's native durable worker.
+evidence, and report the result honestly. Prefer Hermes's prebuilt tools, skills,
+delegation, Kanban and cron. Jarvis consumes these features through the gateway;
+do not build replacements. Use jarvis_orchestrator MCP for Jarvis-specific tools
+or external worker adapters when a native integration does not cover the need.
 Choose agents from actual discovery; never invent support or silently replace a
 specifically requested agent. Antigravity requires a separately supported path.
 

@@ -24,6 +24,7 @@ from orchestration.agent_orchestrator import AgentOrchestrator, AGENTS, TERMINAL
 from orchestration.tool_tiers import routed_arguments_match
 from orchestration.executables import installed_executables, installed_path
 from orchestration.task_names import task_name
+import stat
 from proactive.verification import capture_workspace, verify_workspace_changes
 from jarvis_control.config import load as load_control_config
 from jarvis_control.tasks import TaskManager, SCHEMAS as TASK_SCHEMAS
@@ -47,6 +48,7 @@ TOOLS = [
            'Agent instructions are guidance, not OS confinement. Never use for unrelated tasks.',
            {'agent': {'type': 'string', 'enum': list(WORKERS)}, 'prompt': STRING,
             'request_key': STRING, 'workspace': STRING,
+            'parent_task_id': STRING, 'owner_generation': {'type': 'integer', 'minimum': 1},
             'timeout_seconds': {'type': 'integer', 'minimum': 10, 'maximum': 1800}},
            ('agent', 'prompt', 'request_key')),
     schema('jarvis_job_status', 'Read an owned worker result and independent workspace checks. '
@@ -126,24 +128,44 @@ class OrchestratorMCP:
             raise ValueError('Worker workspace could not be initialized')
         return root
 
-    async def delegate(self, agent, prompt, request_key, workspace='', timeout_seconds=600):
+    async def delegate(self, agent, prompt, request_key, workspace='', timeout_seconds=600,
+                       parent_task_id=None, owner_generation=None):
         if agent not in WORKERS or not self.orchestrator.executables.get(agent):
             raise ValueError('Named agent is not installed; no substitute was started')
         if not 1 <= len(request_key) <= 128 or not 1 <= len(prompt.strip()) <= 16000:
             raise ValueError('Use a request key of 1-128 characters and prompt of 1-16000 characters')
         prompt = sanitize(prompt)['data']
-        fingerprint = hashlib.sha256(json.dumps([agent, prompt, workspace, timeout_seconds]).encode()).hexdigest()
+        if parent_task_id:
+            from orchestration.task_agents import JOB_ID
+            if not JOB_ID.fullmatch(parent_task_id):
+                raise ValueError('Invalid parent goal')
+            parent_path = self.root.parent / '.jarvis-learning/task-agents' / (parent_task_id + '.json')
+            if parent_path.is_symlink():
+                raise ValueError('Invalid parent receipt')
+            parent = json.loads(parent_path.read_text())
+            if (parent.get('coordinator_owner') != 'hermes' or parent.get('owner_generation') != owner_generation
+                    or parent.get('cancel_requested') or parent.get('state') in TERMINAL | {'interrupted'}):
+                raise ValueError('Parent ownership is stale or stopped')
+        elif owner_generation is not None:
+            raise ValueError('An ownership generation requires a parent goal')
+        identity = [agent, prompt, workspace, timeout_seconds]
+        if parent_task_id is not None:
+            identity += [parent_task_id, owner_generation]
+        fingerprint = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         old = self.db.execute('SELECT fingerprint,data FROM jobs WHERE request_key=?', (request_key,)).fetchone()
         if old:
             if old[0] != fingerprint:
                 raise ValueError('request_key belongs to a different task')
             return json.loads(old[1])
         history = self._list()
+        if sum(job['state'] not in TERMINAL | {'interrupted'} for job in history) >= 2:
+            raise ValueError('Two external workers are active; wait or inspect their state')
         if any(job.get('execution') == 'unknown' for job in history):
             raise ValueError('Prior execution is unknown; inspect the ledger and worker effects before more work')
         if len(history) >= 200:
             raise ValueError('Bridge history is full; archive reviewed records before more work')
         job = {'id': uuid.uuid4().hex, 'name': task_name(prompt), 'agent': agent, 'coordinator_owner': 'hermes',
+               'parent_task_id': parent_task_id, 'owner_generation': owner_generation,
                'state': 'queued', 'execution': 'not_started', 'verified': False,
                'summary': 'Worker queued; no result yet.'}
         self.db.execute('INSERT INTO jobs VALUES(?,?,?,?)', (job['id'], request_key, fingerprint, json.dumps(job)))
@@ -265,6 +287,39 @@ class OrchestratorMCP:
         self.db.close()
         os.close(self.lock)
 
+    async def control(self, reader, writer):
+        try:
+            raw = await asyncio.wait_for(reader.readline(), 5)
+            if len(raw) > 4096:
+                raise ValueError('Control request is too large')
+            request = json.loads(raw)
+            if request.get('operation') != 'cancel_parent':
+                raise ValueError('Unsupported control operation')
+            parent, generation = request.get('parent_task_id'), request.get('owner_generation')
+            from orchestration.task_agents import JOB_ID
+            if not isinstance(parent, str) or not JOB_ID.fullmatch(parent) or type(generation) is not int:
+                raise ValueError('Invalid parent identity')
+            matching = [j for j in self._list() if j.get('parent_task_id') == parent
+                        and j.get('owner_generation') == generation]
+            for job in matching:
+                if job.get('worker_id') in self.orchestrator.jobs:
+                    await self.orchestrator.cancel(job['worker_id'])
+            # Wait for only these result projections, not unrelated work.
+            for _ in range(100):
+                if all(self._get(j['id'])['state'] in TERMINAL | {'interrupted'} for j in matching):
+                    break
+                await asyncio.sleep(0.1)
+            acknowledged = all(self._get(j['id'])['state'] in TERMINAL for j in matching)
+            result = {'acknowledged': acknowledged, 'matched_workers': len(matching)}
+        except (OSError, ValueError, TimeoutError):
+            result = {'acknowledged': False}
+        try:
+            writer.write(json.dumps(result).encode() + b'\n')
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
 
 async def serve(args):
     # Services do not inherit the interactive shell's mise PATH. Use installed
@@ -274,6 +329,14 @@ async def serve(args):
     if args.task_root:
         config.tasks_root = args.task_root
     bridge = OrchestratorMCP(args.state_dir, args.workspace_root, tasks=TaskManager(config))
+    socket = bridge.root / 'control.sock'
+    if socket.exists() or socket.is_symlink():
+        info = socket.lstat()
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError('Unsafe orchestration control path')
+        socket.unlink()
+    server = await asyncio.start_unix_server(bridge.control, path=socket, limit=4096)
+    socket.chmod(0o600)
     try:
         while True:
             raw = await asyncio.to_thread(sys.stdin.buffer.readline, 65537)
@@ -291,6 +354,9 @@ async def serve(args):
             if response is not None:
                 print(json.dumps(response), flush=True)
     finally:
+        server.close()
+        await server.wait_closed()
+        socket.unlink(missing_ok=True)
         await bridge.close()
 
 

@@ -24,6 +24,20 @@ async def operate(request):
                 'next_actions': ['Start Hermes normally and retry discovery.'], 'artifacts': []}
     async with connect_gateway(endpoint=discovery.endpoint) as client:
         operation = request['operation']
+        if operation == 'features':
+            catalog = await client.rpc('tools.list', _timeout=15)
+            commands = await client.rpc('commands.catalog', _timeout=15)
+            query = request.get('query', '').casefold().strip()
+            query = {'board': 'kanban', 'kanboard': 'kanban', 'cron': 'cronjob',
+                     'schedules': 'cronjob', 'scheduled jobs': 'cronjob'}.get(query, query)
+            rows = [row for row in catalog.get('toolsets', [])
+                    if (row.get('enabled') or request.get('include_unavailable', False))
+                    and (not query or query in json.dumps(row).casefold())]
+            return {'status': 'success', 'available': True,
+                    'summary': 'Live Hermes native features; no replacement services were created.',
+                    'features': rows, 'commands': commands,
+                    'availability_scope': 'Enabled by Hermes; external provider credentials and feature execution are not verified by discovery.',
+                    'next_actions': [], 'artifacts': []}
         if operation == 'capabilities':
             catalog = await client.rpc('tools.list', _timeout=10)
             rows = catalog.get('toolsets', [])
@@ -37,6 +51,31 @@ async def operate(request):
                 title=request.get('title') or 'Jarvis task', _timeout=15)
             return {'session_id': created['session_id']}
         session = request['session_id']
+        if operation == 'admit':
+            mounted = await client.rpc('session.resume', session_id=session, _timeout=15)
+            if mounted.get('session_id') != session:
+                raise ValueError('Session identity changed; refusing prompt')
+            return await client.rpc('prompt.submit', session_id=session, text=request['prompt'],
+                                    submission_id=request['submission_id'], finite=True, _timeout=15)
+        if operation == 'receipt':
+            receipt = await client.rpc('prompt.receipt', session_id=session,
+                                       admission_id=request['admission_id'], include_result=True, _timeout=15)
+            result = receipt.pop('result', None)
+            if isinstance(result, dict):
+                text = str(result.get('final_response') or '')
+                receipt['result'] = {key: result.get(key) for key in ('completed', 'failed', 'interrupted', 'error')}
+                receipt['result'].update(final_response=text[:32000], output_truncated=len(text) > 32000)
+            return receipt
+        if operation == 'cancel_admission':
+            return await client.rpc('prompt.cancel', session_id=session,
+                                    admission_id=request['admission_id'], _timeout=15)
+        if operation == 'command':
+            result = await client.rpc('command.dispatch', session_id=session,
+                                     name=request['command'], arg=request.get('arguments', ''), _timeout=110)
+            return {'status': 'success', 'native_result': result,
+                    'requires_agent': result.get('type') in {'send', 'prefill', 'skill'},
+                    'summary': 'Hermes returned its native command result. Interpret its directive before claiming completion.',
+                    'next_actions': [], 'artifacts': []}
         if operation == 'cancel':
             try:
                 # Canonical gateway resume is a read-only mount, not a prompt

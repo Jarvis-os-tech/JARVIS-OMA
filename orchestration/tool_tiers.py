@@ -23,6 +23,8 @@ DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
            'gui', 'cli_anything', 'orchestration', 'learning', 'phone', 'vision', 'composio')
 
 _ORCHESTRATION = frozenset({
+    'read_hermes_artifact', 'handoff_hermes_task',
+    'get_hermes_features', 'run_hermes_command',
     'start_hermes_goal',
     'start_agent_goal', 'list_system_agents', 'delegate_agent', 'delegate_team',
     'check_agent_team', 'cancel_agent_team', 'check_agent_job', 'list_agent_jobs',
@@ -66,7 +68,7 @@ def intent_domains(command):
         'github': r'\b(github|pull request|repository|repositories|issue)\b',
         'gui': r'\b(accessibility|cua|click|scroll|browser tab|double.click)\b',
         'cli_anything': r'\b(cli.anything|cli.hub|matrix|recipe)\b',
-        'orchestration': r'\b(delegate|agent|codex|claude|hermes|development|background job)\b',
+        'orchestration': r'\b(delegate|agent|codex|claude|hermes|kanban|kanboard|cron|cronjob|development|background job)\b',
         'learning': r'\b(harness|research feedback|refinement|learning)\b',
         'phone': r'\b(phone|call|contact|dtmf|hang up)\b',
         'vision': r'\b(camera|vision|video|webcam)\b',

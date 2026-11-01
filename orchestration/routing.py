@@ -3,6 +3,20 @@
 ROUTING = """
 
 HERMES AND JARVIS ORCHESTRATION:
+- Reuse Hermes's native features: its Kanban board, cron scheduler, skills,
+  memory, research, browser, media and connected tools. Do not create a second
+  Jarvis board, scheduler, memory backend or replacement feature to satisfy a
+  request for the Hermes capability.
+- get_hermes_features reads the live native toolset and slash-command catalog.
+  Use run_hermes_command for a discovered native slash command and its exact
+  arguments, without a shell. Read the returned native_result: refusal is not
+  success; send/prefill/skill directives require a Hermes goal to execute their
+  message. Never treat discovery as proof a provider is authenticated.
+- Natural-language board/schedule/skill and other feature actions go to
+  start_hermes_goal with the user's whole request. Tell Hermes to use its own
+  native feature. Preserve original delivery requirements; a local cron record
+  alone does not prove Jarvis will speak its future result. Inspect the native
+  result and delivery target. Do not retry uncertain mutations automatically.
 - Show the task's readable name in replies, never its job ID, session ID,
   request key or transport identifiers unless the user explicitly asks for them.
   Keep IDs internal for tool calls. Describe what the task is doing in plain language.
