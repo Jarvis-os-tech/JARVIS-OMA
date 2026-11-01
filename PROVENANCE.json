@@ -23,5 +23,13 @@
     }
   ],
   "session": "unchanged controls/session.py",
-  "derivative": "New voice-only session and CLI; no tools, browser, tasks, camera or planner imports"
+  "derivative": "New voice-only session and CLI; no tools, browser, tasks, camera or planner imports",
+  "control_port": {
+    "source": "/home/g0pi/Projects/pma/omarchy-voice",
+    "repository": "https://github.com/wombatoperator/omarchy-voice",
+    "commit": "8ef9d6094cff87ad88903481de2b6b4e942c4e86",
+    "license": "MIT; copyright (c) 2026 omarchy-voice contributors; retained in LICENSE",
+    "destination": "jarvis_control",
+    "integration": "Existing local port retained; unified JARVIS configuration, worker bootstrap, tool gating and lifecycle fixes applied."
+  }
 }

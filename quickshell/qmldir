@@ -1,0 +1,30 @@
+module qs
+
+ActionTile 1.0 components/ActionTile.qml
+ConnectionRow 1.0 components/ConnectionRow.qml
+IconButton 1.0 components/IconButton.qml
+PanelHeader 1.0 components/PanelHeader.qml
+ShellText 1.0 components/ShellText.qml
+StyledSlider 1.0 components/StyledSlider.qml
+
+CapturePanel 1.0 panels/CapturePanel.qml
+ClipboardPanel 1.0 panels/ClipboardPanel.qml
+ControlPanel 1.0 panels/ControlPanel.qml
+LauncherPanel 1.0 panels/LauncherPanel.qml
+PowerPanel 1.0 panels/PowerPanel.qml
+QuickNotesPanel 1.0 panels/QuickNotesPanel.qml
+ThemePanel 1.0 panels/ThemePanel.qml
+TodoPanel 1.0 panels/TodoPanel.qml
+WallpaperPanel 1.0 panels/WallpaperPanel.qml
+
+AppearanceState 1.0 AppearanceState.qml
+Backend 1.0 Backend.qml
+CaptureSelector 1.0 CaptureSelector.qml
+LowBatteryMonitor 1.0 LowBatteryMonitor.qml
+MarkdownBlocks 1.0 MarkdownBlocks.js
+Notch 1.0 Notch.qml
+NotificationCard 1.0 NotificationCard.qml
+NotificationPopups 1.0 NotificationPopups.qml
+NotesState 1.0 NotesState.qml
+ShellState 1.0 ShellState.qml
+Theme 1.0 Theme.qml

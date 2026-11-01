@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "api_anything_search",
+      "description": "Search local specs and shared catalog for existing website API operations (e.g., 'youtube', 'flight prices', 'github').",
+      "adapter": "api_anything.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Domain, site name, or search terms (e.g. 'youtube', 'hacker news')"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "api_anything_list_operations",
+      "description": "Inspect operations, input parameter schemas, and notes for an available site.",
+      "adapter": "api_anything.list_operations",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "type": "string",
+            "description": "Site identifier (e.g. 'youtube', 'github')"
+          }
+        },
+        "required": [
+          "site"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "api_anything_call",
+      "description": "Execute a learned web API operation directly using high-speed raw HTTP (Tier 1).",
+      "adapter": "api_anything.call",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "site": {
+            "type": "string",
+            "description": "Site identifier (e.g. 'youtube')"
+          },
+          "op": {
+            "type": "string",
+            "description": "Operation name (e.g. 'search')"
+          },
+          "args": {
+            "type": "object",
+            "description": "Key-value arguments matching the operation schema",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "site",
+          "op"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "api_anything_propose",
+      "description": "Scout an unmapped website or problem statement and synthesize an API Blueprint (trigger URL, 3 test arg sets, fields, auth strategy) with Gemini 2.5 Flash for human review.",
+      "adapter": "api_anything.propose",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "problem": {
+            "type": "string",
+            "description": "Description of the data or website to turn into an API (e.g. 'Track YouTube daily watch history')"
+          }
+        },
+        "required": [
+          "problem"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "api_anything_learn",
+      "description": "Execute Chromium browser network capture, parameter slot learning, and NVIDIA NIM schema integrity validation for an approved blueprint.",
+      "adapter": "api_anything.learn",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "blueprint": {
+            "type": "object",
+            "description": "Approved API blueprint object containing site, op, trigger, args, args2, args3, fields, and authStrategy",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "blueprint"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

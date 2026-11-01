@@ -3,7 +3,8 @@
 set -euo pipefail
 
 SERVICE="jarvis-voice.service"
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
 show_help() {
     cat << 'EOF'
@@ -17,7 +18,13 @@ Usage:
   jarvis start         Start the JARVIS service
   jarvis stop          Stop the JARVIS service
   jarvis logs [-f]     View JARVIS systemd logs
-  jarvis listen [cmd]  Control voice listening (toggle|start|stop|cancel)
+  jarvis listen [cmd]  Control voice listening (toggle|start|stop|cancel|confirm)
+  jarvis standby       Enter private local standby (Hey Jarvis wakes)
+  jarvis control [cmd] Desktop controlling & information retrieval (list|map|call)
+  jarvis task [cmd]    Submit, inspect, read, cancel or resume durable work
+  jarvis vision [cmd]  Camera start, inspect, status or stop
+  jarvis say [text]    Typed request to the configured planner
+  jarvis doctor       Check JARVIS dependencies and enabled features
 
 EOF
 }
@@ -87,6 +94,26 @@ case "$cmd" in
             exec "${SCRIPT_DIR}/bin/jarvis-voice" listen "$@"
         else
             exec jarvis-voice listen "$@"
+        fi
+        ;;
+    standby)
+        shift || true
+        if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
+            exec "${SCRIPT_DIR}/bin/jarvis-voice" standby "$@"
+        else
+            exec jarvis-voice standby "$@"
+        fi
+        ;;
+    control|task|vision|say|doctor)
+        control_cmd="$cmd"
+        shift || true
+        if [[ "$control_cmd" != "control" ]]; then
+            set -- "$control_cmd" "$@"
+        fi
+        if [[ -x "${SCRIPT_DIR}/bin/jarvis-control" ]]; then
+            exec "${SCRIPT_DIR}/bin/jarvis-control" "$@"
+        else
+            exec jarvis-control "$@"
         fi
         ;;
     help|--help|-h|"")

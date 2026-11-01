@@ -1,0 +1,704 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "lock_screen",
+      "description": "Lock the screen or computer session.",
+      "adapter": "system.lock",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "take_screenshot",
+      "description": "Capture a screenshot of the entire screen or active window.",
+      "adapter": "system.screenshot",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": [
+              "full",
+              "active"
+            ],
+            "description": "Screen region to capture: full screen or active window."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "manage_window",
+      "description": "Manage the active window: fullscreen, close, minimize, float, center, or maximize.",
+      "adapter": "window.manage",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "fullscreen",
+              "close",
+              "minimize",
+              "float",
+              "center",
+              "maximize"
+            ],
+            "description": "Window management action."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_power",
+      "description": "Manage system power profile and sleep states: sleep, hibernate, performance, balanced, power_saver, game_mode, stay_awake, or status.",
+      "adapter": "system.power",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "sleep",
+              "hibernate",
+              "performance",
+              "balanced",
+              "power_saver",
+              "game_mode",
+              "stay_awake",
+              "status"
+            ],
+            "description": "Power profile or state action."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_wifi",
+      "description": "Control Wi-Fi networking: turn on/off, check status, scan networks, connect, or disconnect.",
+      "adapter": "network.wifi",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "status",
+              "scan",
+              "connect",
+              "disconnect"
+            ],
+            "description": "Wi-Fi action: on, off, status, scan, connect, or disconnect."
+          },
+          "ssid": {
+            "type": "string",
+            "description": "Network SSID/name to connect to or disconnect from."
+          },
+          "password": {
+            "type": "string",
+            "description": "Optional Wi-Fi password for connecting to a secured network."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_bluetooth",
+      "description": "Control Bluetooth: turn on/off, check status, scan nearby devices, or connect/disconnect/pair/remove devices.",
+      "adapter": "network.bluetooth",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "status",
+              "scan",
+              "connect",
+              "disconnect",
+              "pair",
+              "remove"
+            ],
+            "description": "Bluetooth action: on, off, status, scan, connect, disconnect, pair, remove."
+          },
+          "device": {
+            "type": "string",
+            "description": "Device MAC address or name to connect, disconnect, pair, or remove."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_clipboard",
+      "description": "Read text content currently in the system clipboard.",
+      "adapter": "clipboard.read",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "write_clipboard",
+      "description": "Copy text content to the system clipboard.",
+      "adapter": "clipboard.write",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Text to place on the clipboard."
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "type_text",
+      "description": "Type text into a target application or window. If target_window is specified (e.g. 'antigravity', 'chrome', 'browser', 'terminal', or window title/class), automatically focuses and verifies the target window before typing. If the user mentions an application textbar (such as 'antigravity textbar'), target_window focuses that application. If target_window is omitted, types into the active non-terminal window or focused window.",
+      "adapter": "input.type",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to type into the focused application or target window."
+          },
+          "target_window": {
+            "type": "string",
+            "description": "Target window or application to type into (e.g. 'antigravity' or 'antigravity textbar', 'chrome', 'browser', 'terminal', or window title/class). Automatically focuses and verifies target before typing to prevent typing into the wrong window."
+          },
+          "press_enter": {
+            "type": "boolean",
+            "description": "Optional flag to press Return/Enter immediately after typing."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "press_key",
+      "description": "Press a keyboard key or key combination with modifiers (e.g. Return, Escape, Tab, Super+Return, Ctrl+C). If target_window is specified, focuses and verifies the target window before pressing key.",
+      "adapter": "input.key",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Key name, e.g. Return, Escape, BackSpace, Tab, Space, a, Down, Up."
+          },
+          "modifiers": {
+            "type": "string",
+            "description": "Optional modifier keys, e.g. super, ctrl, alt, shift, or combinations like ctrl+alt."
+          },
+          "target_window": {
+            "type": "string",
+            "description": "Optional target window or application to focus and verify before pressing key (e.g. 'textbar', 'terminal', 'browser')."
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_desktop_commands",
+      "description": "List installed Omarchy desktop commands and keybindings. Supports fuzzy search query.",
+      "adapter": "system.keybindings_list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional search query to filter keybinding titles or shortcut keys."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Maximum number of command entries to return (default 25)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "execute_desktop_command",
+      "description": "Execute an Omarchy desktop command or keybinding by title (e.g. Terminal, Close window, Browser, Omarchy menu).",
+      "adapter": "system.keybindings_exec",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Exact or fuzzy title of the Omarchy command/keybinding to execute."
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_bar_panels",
+      "description": "Discover all installed top-bar shell plugins, icons, and popups.",
+      "adapter": "shell.bar_list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_bar_panel",
+      "description": "Summon and open a top-bar settings panel by plugin ID (e.g. omarchy.bluetooth, dejan94.todos, omarchy.audio, omarchy.network).",
+      "adapter": "shell.bar_open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "panel_id": {
+            "type": "string",
+            "description": "Plugin ID from list_bar_panels, e.g. omarchy.audio or dejan94.todos."
+          }
+        },
+        "required": [
+          "panel_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "close_bar_panel",
+      "description": "Dismiss and close an open top-bar panel by plugin ID.",
+      "adapter": "shell.bar_close",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "panel_id": {
+            "type": "string",
+            "description": "Plugin ID to dismiss."
+          }
+        },
+        "required": [
+          "panel_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_volume",
+      "description": "Control system speaker output volume. Use mute only when the user explicitly says to mute the speakers, system audio, or computer sound. A bare 'mute', 'mute yourself', or 'mute Jarvis' means enter_standby instead and must not change system audio.",
+      "adapter": "audio.volume_set",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Exact volume level percentage (0 to 100)."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "raise",
+              "lower",
+              "mute",
+              "unmute",
+              "toggle"
+            ],
+            "description": "Relative adjustment or mute action."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Percentage points to raise or lower (default 5)."
+          },
+          "explicit_system_target": {
+            "type": "boolean",
+            "description": "Set true only when the user explicitly named speakers, system audio, or computer sound. Required for action=mute; otherwise mute is redirected to JARVIS standby."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_microphone",
+      "description": "Inspect, unmute, or adjust the system default microphone. JARVIS is not permitted to mute or toggle the microphone because doing so disables standby wake detection. Requests to mute Jarvis mean enter_standby.",
+      "adapter": "audio.mic_control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "mute",
+              "unmute",
+              "toggle",
+              "status",
+              "volume"
+            ],
+            "description": "Allowed microphone action: unmute, status, or volume."
+          },
+          "volume_percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Optional input volume level percentage (0 to 100)."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_brightness",
+      "description": "Control display brightness: set exact percentage (1 to 100) or adjust relatively ('raise' or 'lower').",
+      "adapter": "display.brightness_set",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Exact brightness level percentage (1 to 100)."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "raise",
+              "lower"
+            ],
+            "description": "Direction to adjust brightness: 'raise' or 'lower'."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Percentage points to adjust (default 5)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_window_to_workspace",
+      "description": "Move the currently focused window to a specified desktop workspace number.",
+      "adapter": "window.move_workspace",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Target workspace number (1 to 10)."
+          }
+        },
+        "required": [
+          "workspace"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "detect_desktop_dialogs",
+      "description": "Scan and list open desktop dialogs, confirmation prompts, file overwrite alerts, and authentication prompts across workspaces.",
+      "adapter": "system.detect_dialogs",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "handle_desktop_dialog",
+      "description": "Safely dismiss, cancel, or confirm an active desktop dialog or alert. Strictly blocks autonomous confirmation of authentication/polkit prompts for security.",
+      "adapter": "system.handle_dialog",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "dismiss",
+              "cancel",
+              "confirm"
+            ],
+            "description": "Action to take on the dialog: 'dismiss' (Escape / Close), 'cancel' (Escape), or 'confirm' (Enter)."
+          },
+          "dialog_id": {
+            "type": "string",
+            "description": "Optional window address of the dialog to handle. Defaults to active dialog."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "heal_window_focus",
+      "description": "Diagnose and restore window focus to a target application if focus was stolen by a background process, notification, or pop-up.",
+      "adapter": "system.heal_focus",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_window": {
+            "type": "string",
+            "description": "Target application name, title keyword, or window address to re-align focus to."
+          }
+        },
+        "required": [
+          "target_window"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "verify_ground_truth",
+      "description": "Deterministically verify physical ground truth on the system before completing tasks: checks real filesystem state, active process existence, window mapping/focus, or clipboard text.",
+      "adapter": "system.verify_ground_truth",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "process",
+              "window",
+              "clipboard"
+            ],
+            "description": "Category of ground-truth state to verify."
+          },
+          "criteria": {
+            "type": "object",
+            "description": "Validation criteria: path, min_bytes, expected_content for files; process_name or pid for processes; target_window, expected_active for windows; expected_snippet for clipboard.",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "min_bytes": {
+                "type": "integer"
+              },
+              "expected_content": {
+                "type": "string"
+              },
+              "is_dir": {
+                "type": "boolean"
+              },
+              "process_name": {
+                "type": "string"
+              },
+              "pid": {
+                "type": "integer"
+              },
+              "expected_running": {
+                "type": "boolean"
+              },
+              "query": {
+                "type": "string"
+              },
+              "window_query": {
+                "type": "string"
+              },
+              "target_window": {
+                "type": "string"
+              },
+              "expected_active": {
+                "type": "boolean"
+              },
+              "expected_open": {
+                "type": "boolean"
+              },
+              "expected_snippet": {
+                "type": "string"
+              },
+              "min_length": {
+                "type": "integer"
+              },
+              "timeout": {
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "target_type",
+          "criteria"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_night_light",
+      "description": "Control screen night light / blue light filter (on, off, toggle, status, or set color temperature).",
+      "adapter": "display.night_light",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off",
+              "toggle",
+              "status",
+              "temperature"
+            ],
+            "description": "Night light action: on, off, toggle, status, or temperature."
+          },
+          "temperature": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 10000,
+            "description": "Color temperature in Kelvin (e.g. 4000) when action is temperature."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_notifications",
+      "description": "Control system notifications and Do Not Disturb (DND) mode.",
+      "adapter": "notification.control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "dnd_status",
+              "dnd_on",
+              "dnd_off",
+              "dnd_toggle",
+              "clear",
+              "history",
+              "dismiss_all"
+            ],
+            "description": "Read status/history, explicitly set DND on/off, toggle, clear history, or dismiss current notifications."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "control_theme",
+      "description": "Read installed Omarchy themes and select an exact theme name. Use list/get/status before set. Dark/light aliases work only if such a theme is installed; do not assume a global dark/light toggle exists.",
+      "adapter": "theme.control",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "get",
+              "list",
+              "set",
+              "status",
+              "dark",
+              "light",
+              "toggle"
+            ],
+            "description": "Inspect get/list/status, or set an exact installed theme using theme_name."
+          },
+          "theme_name": {
+            "type": "string",
+            "description": "Exact installed theme from list; required for action set."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "open_control_panel",
+      "description": "Open or summon the Omarchy Control Panel GUI, optionally focused on a specific settings category.",
+      "adapter": "control_panel.open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "display",
+              "audio",
+              "network",
+              "bluetooth",
+              "power",
+              "notifications",
+              "defaults",
+              "storage"
+            ],
+            "description": "Optional category page to open in the Control Panel."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "open",
+              "close"
+            ],
+            "description": "Open or close the control-panel GUI."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

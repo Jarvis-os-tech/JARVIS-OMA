@@ -1,0 +1,26 @@
+[
+  {
+    "test": "open_page",
+    "passed": false,
+    "seconds": 8.517,
+    "window_identified": true,
+    "expected_text_found": false,
+    "result_excerpt": "opened https://example.com (window address:0x55e7dbfb9260) but could not read it: no readable text in that region"
+  },
+  {
+    "test": "open_page_cleanup",
+    "passed": true
+  },
+  {
+    "test": "web_search",
+    "passed": false,
+    "seconds": 6.75,
+    "window_identified": true,
+    "expected_text_found": true,
+    "result_excerpt": "the results for 'site:docs.python.org Python documentation' are on screen (window address:0x55e7dbebfbf0) but could not be read: no readable text in that region"
+  },
+  {
+    "test": "web_search_cleanup",
+    "passed": true
+  }
+]

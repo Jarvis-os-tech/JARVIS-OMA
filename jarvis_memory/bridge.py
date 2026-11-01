@@ -505,13 +505,14 @@ class MemoryBridge:
                 'obsidian_last_sync': self._vault_sync_result,
                 'native_vector_and_graph_backends': 'not installed'}
 
-    def sync_obsidian(self, force=True):
+    def sync_obsidian(self, force=True, vault_dir=None):
         with self._vault_sync_lock:
-            return self._sync_obsidian_locked(force)
+            return self._sync_obsidian_locked(force, vault_dir=vault_dir)
 
-    def _sync_obsidian_locked(self, force):
+    def _sync_obsidian_locked(self, force, vault_dir=None):
         self._require()
-        if not self.config.obsidian_vault:
+        vault = vault_dir or self.config.obsidian_vault
+        if not vault:
             raise MemoryError('configure memory.obsidian_vault first')
         files = ['memory_facts.jsonl', 'knowledge.db', 'knowledge.db-wal', 'sessions.db', 'sessions.db-wal',
                  'jarvis_documents.db', 'SOUL.md', 'MEMORY.md', 'USER.md']
@@ -521,7 +522,7 @@ class MemoryBridge:
         if not force and fingerprint == self._vault_fingerprint:
             return self._vault_sync_result
         from .obsidian import publish
-        result = publish(self, self.config.obsidian_vault)
+        result = publish(self, vault)
         self._vault_sync_result = result
         self._vault_fingerprint = fingerprint
         return result

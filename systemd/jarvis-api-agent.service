@@ -1,0 +1,18 @@
+[Unit]
+Description=JARVIS API Agent Daemon — api-anything dual-model web harvester
+After=graphical-session.target network.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/g0pi/.bun/bin/bun run /home/g0pi/Projects/api-anything/daemon/daemon.ts
+WorkingDirectory=/home/g0pi/Projects/api-anything/daemon
+Restart=always
+RestartSec=3
+Environment=NO_COLOR=1
+Environment=XDG_RUNTIME_DIR=%t
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target graphical-session.target

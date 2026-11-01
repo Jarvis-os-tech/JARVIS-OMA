@@ -154,7 +154,9 @@ class PlaybackReference:
             self.updated_at = time.monotonic() if now is None else now
 
     def correlation(self, microphone, now):
-        if now - self.updated_at > 1.2 or not self.samples:
+        if not self.samples:
+            return None
+        if now - self.updated_at > 1.2:
             return 0.0
         signal = np.asarray(microphone, dtype=np.float64)
         reference = np.asarray(self.samples, dtype=np.float64)
@@ -175,14 +177,21 @@ class PlaybackReference:
 
 
 class SpokenInterruption:
-    """Require 120 ms of speech evidence, independent of recent speaker output.
+    """Require speech evidence while rejecting speaker output echo."""
 
-    Fix 5: quiet frames still update _microphone deque for state continuity.
-    """
-
-    def __init__(self, reference, detector=None):
+    def __init__(self, reference, detector=None, *,
+                 min_rms: float = .004,
+                 echo_threshold: float = .45,
+                 vad_threshold: float = .50,
+                 min_voiced: int = 4,
+                 min_positives: int = 2):
         self.reference = reference
         self.detector = detector
+        self.min_rms = min_rms
+        self.echo_threshold = echo_threshold
+        self.vad_threshold = vad_threshold
+        self.min_voiced = min_voiced
+        self.min_positives = min_positives
         self._frames = deque(maxlen=10)
         self._microphone = deque(maxlen=240)
         self._positives = self._voiced_frames = 0
@@ -193,6 +202,9 @@ class SpokenInterruption:
         self._frames.clear()
         self._microphone.clear()
         self._positives = self._voiced_frames = 0
+        reset = getattr(self.detector, 'reset', None)
+        if callable(reset):
+            reset()
 
     def process(self, pcm, now):
         if len(pcm) != 640:
@@ -204,12 +216,11 @@ class SpokenInterruption:
         self._frames.append(pcm)
 
         rms = float(np.sqrt(np.mean(samples * samples))) / 32768
-        if rms < .025:
-            # Below 0.025 RMS is room tone or laptop speaker chassis bleed;
-            # real user speech interrupting over speakers is significantly louder.
+        if rms < self.min_rms:
             if self.detector is not None:
                 self.detector(pcm)
-            self._positives = self._voiced_frames = 0
+            self._positives = max(0, self._positives - 1)
+            self._voiced_frames = max(0, self._voiced_frames - 1)
             return None
         if self.detector is None:
             self.detector = SileroSpeechDetector()
@@ -218,18 +229,19 @@ class SpokenInterruption:
             raise RuntimeError('Interruption detector returned an invalid probability')
         correlation = self.reference.correlation(self._microphone, now)
         self.last_correlation = correlation if correlation is not None else 1.0
-        if correlation is not None and correlation >= .35:
+        if correlation is not None and correlation >= self.echo_threshold:
             self.rejected_echo_frames += 1
             self._positives = self._voiced_frames = 0
             self._frames.clear()
             return None
-        if probability < .88:
-            self._positives = self._voiced_frames = 0
+        if probability < self.vad_threshold:
+            self._positives = max(0, self._positives - 1)
+            self._voiced_frames = max(0, self._voiced_frames - 1)
             return None
         self._voiced_frames += 1
         if getattr(self.detector, 'fresh_prediction', True):
             self._positives += 1
-        if self._voiced_frames < 8 or self._positives < 6 or correlation is None:
+        if self._voiced_frames < self.min_voiced or self._positives < self.min_positives or correlation is None:
             return None
         frame = GateFrame(b''.join(self._frames), opened=True, barge_in=True)
         self.reset()

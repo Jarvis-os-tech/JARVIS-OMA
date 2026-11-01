@@ -1,0 +1,407 @@
+"""Command line entry point."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import textwrap
+import subprocess
+import sys
+from pathlib import Path
+
+from . import __version__, capabilities, config as cfg, realtime as realtime_mod
+from .planner import Planner
+from .session import daemon_running, send_control
+from .tools import Executor
+
+LISTEN_ACTIONS = ("toggle", "start", "stop", "quit", "confirm", "cancel", "say")
+
+
+def _bold(text: str) -> str:
+    return f"\033[1m{text}\033[0m" if sys.stdout.isatty() else text
+
+
+def _tick(ok: bool) -> str:
+    return "\033[32m✓\033[0m" if ok and sys.stdout.isatty() else ("✓" if ok else "✗")
+
+
+# --- commands ---------------------------------------------------------------
+
+def cmd_say(args, config) -> int:
+    """One command, typed instead of spoken. The whole pipeline minus the mic."""
+    text = " ".join(args.text)
+    executor = Executor(config)
+    planner = Planner(config, executor)
+    print(f'{_bold("heard")}   {text}')
+    turn = planner.think(text)
+    for action in turn.actions:
+        print(f'{_bold("action")}  {action}')
+    if turn.error:
+        print(f'{_bold("error")}   {turn.error}')
+    extra = ""
+    if turn.tokens:
+        extra = (f", {turn.tokens.get('in', 0)} in / {turn.tokens.get('out', 0)} out")
+    print(f'{_bold("reply")}   {turn.reply}   \033[2m({turn.elapsed:.1f}s{extra})\033[0m')
+    if executor.pending:
+        held = executor.describe(*executor.pending)
+        if sys.stdin.isatty() and not args.no_confirm:
+            print(f'\n{_bold("holding")} {held}')
+            if input("        run it? [y/N] ").strip().lower().startswith("y"):
+                outcome = executor.run_pending()
+                print(f'{_bold("reply")}   {outcome.output or "Done."}')
+                return 0 if outcome.ok else 1
+            print("        cancelled")
+        else:
+            print(f'\n{_bold("waiting")} confirm to run: {held}')
+        return 0
+    return 0 if not turn.error else 1
+
+
+def cmd_run(args, config) -> int:
+    if config.provider == "gemini":
+        from . import gemini_live
+        return gemini_live.run(config)
+    if config.engine == "live":
+        from . import live
+        return live.run(config)
+    if config.engine != "realtime":
+        print(f"unknown voice engine: {config.engine}", file=sys.stderr)
+        return 1
+    return realtime_mod.run(config)
+
+
+def cmd_listen(args, config) -> int:
+    command = args.action
+    if args.action == "say":
+        if not args.words:
+            print("error: listen say needs some text", file=sys.stderr)
+            return 1
+        command = "say " + " ".join(args.words)
+    try:
+        print(send_control(command))
+    except (ConnectionError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_task(args, config) -> int:
+    from .tasks import TaskManager
+    try:
+        manager = TaskManager(config)
+        action = args.task_action
+        if action == "submit":
+            spec = json.loads(Path(args.spec).read_text())
+            if config.dry_run:
+                print(json.dumps({"dry_run": True, "spec": spec}))
+                return 0
+            result = manager.submit(**spec)
+        elif action == "list":
+            result = manager.list()
+        elif action == "read":
+            result = manager.read(args.task_id, args.path, args.offset)
+        elif config.dry_run and action in {"cancel", "resume"}:
+            result = {"dry_run": True, "action": action, "task_id": args.task_id}
+        elif action == "resume":
+            result = manager.resume(args.task_id, args.guidance)
+        else:
+            result = getattr(manager, action)(args.task_id)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (ValueError, TypeError, RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        print(f"task error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_status(args, config) -> int:
+    state = {"status": "stopped", "text": "", "icon": "󰍭"}
+    if cfg.STATE_FILE.exists():
+        try:
+            state = json.loads(cfg.STATE_FILE.read_text())
+        except json.JSONDecodeError:
+            pass
+    if not daemon_running():
+        state["status"] = "stopped"
+        state["icon"] = "󰍭"
+        state["class"] = "stopped"
+        state["text"] = ""
+    if args.json:
+        print(json.dumps(state))
+    else:
+        print(f'{state["icon"]}  {state["status"]}'
+              + (f'  —  {state["text"]}' if state.get("text") else ""))
+    return 0
+
+
+def cmd_vision(args, config) -> int:
+    from .vision import VisionClient
+    try:
+        print(json.dumps(VisionClient(config).call(args.action, " ".join(args.question), args.region), indent=2))
+        return 0
+    except (ValueError, RuntimeError, OSError) as exc:
+        print(f"Vision: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_manifest(args, config) -> int:
+    print(capabilities.manifest(refresh=args.refresh))
+    if args.refresh:
+        print("\n# The desktop right now\n", file=sys.stderr)
+    return 0
+
+
+def cmd_map(args, config) -> int:
+    from .discovery import lookup
+    ok, output = lookup(args.topic, " ".join(args.query), args.limit, args.offset)
+    print(output)
+    return 0 if ok else 1
+
+
+def cmd_doctor(args, config) -> int:
+    print(_bold(f"omarchy-voice {__version__}\n"))
+
+    print(_bold("vision"))
+    from .vision import settings
+    try:
+        vision = settings(config)
+        print(f"  → {'enabled, capture off until requested' if vision['enabled'] else 'disabled'}; {vision['model']} via {vision['protocol']}")
+        for executable in ("ffmpeg", "ffplay"):
+            print(f"  {_tick(bool(shutil.which(executable)))} {executable}")
+        print(f"  {_tick(Path(vision['device']).exists())} camera {vision['device']}")
+    except ValueError as exc:
+        print(f"  ✗ {exc}")
+
+    if config.provider == "gemini":
+        print(_bold("gemini"))
+        key = bool(os.environ.get(config.gemini_api_key_env))
+        print(f"  {_tick(key)} {config.gemini_api_key_env}"
+              + ("" if key else f"  (put it in {cfg.ENV_FILE})"))
+        print(f"  → planner model {config.gemini_planner_model} (`omarchy-voice say`)")
+        print(f"  → Live model {config.realtime_model}, voice {config.realtime_voice}")
+    else:
+        print(_bold("openai"))
+        key = bool(os.environ.get(config.api_key_env))
+        print(f"  {_tick(key)} {config.api_key_env}"
+              + ("" if key else f"  (put it in {cfg.ENV_FILE})"))
+        print(f"  → planner model {config.planner_model} (`omarchy-voice say`)")
+        if config.engine == "live":
+            print(f"  → Live model {config.live_model}, voice {config.live_voice}")
+            print(f"  → backend {config.live_backend_model}, max output {config.live_max_output_tokens}")
+            print("  → Live voice: $0.05/minute plus backend usage; disconnects on mute")
+        else:
+            print(f"  → realtime model {config.realtime_model}, voice {config.realtime_voice}")
+    if config.tasks_enabled:
+        from .tasks import validate_config
+        try:
+            validate_config(config)
+            print(f"  → durable workers: {config.tasks_provider}; independent task budget {config.tasks_timeout_seconds}s")
+            for executable in ("bwrap", "systemd-run"):
+                print(f"  {_tick(bool(shutil.which(executable)))} task runtime {executable}")
+        except ValueError as exc:
+            print(f"  ✗ {exc}")
+    if cfg.ENV_FILE.exists():
+        mode = cfg.ENV_FILE.stat().st_mode & 0o777
+        print(f"  {_tick(mode & 0o077 == 0)} {cfg.ENV_FILE} mode {mode:o}")
+    else:
+        print(f"  {_tick(False)} {cfg.ENV_FILE} missing")
+    if cfg.SAFETY_ID_FILE.exists():
+        print(f"  {_tick(True)} per-install safety identifier at {cfg.SAFETY_ID_FILE}")
+
+    print(_bold("\nears"))
+    if config.provider == "gemini":
+        from . import gemini_live
+        problems = gemini_live.check_ready(config)
+    else:
+        problems = realtime_mod.check_ready(config)
+        if config.engine == "live":
+            from .live import config_problems
+            problems.extend(config_problems(config))
+        elif config.engine != "realtime":
+            problems.append(f"unknown voice engine: {config.engine}")
+    if problems:
+        for problem in problems:
+            print(f"  {_tick(False)} {problem}")
+    else:
+        print(f"  {_tick(True)} websockets, API key, and PipeWire tools all present")
+    if config.provider == "gemini":
+        print(f"  → Gemini Live ({config.realtime_model}), toggle-only")
+        print("  ! while listening is on, room audio streams continuously to Gemini.")
+    elif config.engine == "live":
+        print("  → OpenAI Live with Responses delegation, toggle-only")
+        print(f"  → session limit {config.live_max_session_seconds:g}s; no connection at boot")
+        print("  ! while listening is on, room audio streams continuously to OpenAI.")
+    else:
+        print(f"  → OpenAI Realtime (speech to speech), "
+              f"{config.realtime_turn_detection}, toggle-only")
+        print("  ! while listening is on, room audio streams continuously to OpenAI.")
+    print("    It starts off, and only SUPER + SHIFT + V turns it on. Toggling")
+    print("    off kills the recorder, so nothing is captured while muted.")
+    source = config.device or realtime_mod.default_source()
+    print(f"  default input: {source or '(none)'}")
+    print(f"  output:        {realtime_mod.default_sink() or '(none)'}")
+    if config.barge_in:
+        risk = realtime_mod.echo_risk(config)
+        print(f"  {_tick(not risk)} barge_in is on — you can interrupt her mid-sentence")
+        if risk:
+            for line in textwrap.wrap(risk, 72):
+                print(f"    {line}")
+    else:
+        print("  → the microphone is held shut while she speaks, so her own voice")
+        print("    cannot come back in as yours. Set barge_in = true (headphones,")
+        print("    or PipeWire echo-cancel) to interrupt her mid-sentence.")
+
+    print(_bold("\nhands"))
+    for tool in ("hyprctl", "omarchy", "wtype", "notify-send", "uwsm-app"):
+        print(f"  {_tick(bool(shutil.which(tool)))} {tool}")
+    print(f"  shell tool: {'enabled' if config.allow_shell else 'disabled'}"
+          f", {len(config.deny_patterns)} deny rules"
+          f", {len(config.confirm_patterns)} confirm rules")
+    if config.unknown_keys:
+        print(f"  {_tick(False)} unknown config keys (ignored): {', '.join(config.unknown_keys)}")
+    for key in config.retired_keys:
+        # A setting that used to work is a different problem from a typo, and
+        # deserves the reason rather than being lumped in with misspellings.
+        print(f"  {_tick(False)} `{key}` no longer does anything — {cfg.RETIRED_KEYS[key]}")
+
+    print(_bold("\nmanifest"))
+    manifest = capabilities.manifest()
+    versions = capabilities.system_versions()
+    print(f"  {_tick(True)} {len(manifest)} chars, built from Omarchy {versions['omarchy']}")
+    broken = capabilities.verify_essentials()
+    if broken:
+        print(f"  {_tick(False)} {len(broken)} common action(s) no longer resolve to an omarchy route:")
+        for item in broken:
+            print(f"      {item}")
+    else:
+        print(f"  {_tick(True)} all {len(capabilities.ESSENTIALS)} common actions resolve")
+    broken_hypr = capabilities.verify_hypr_essentials()
+    if broken_hypr:
+        print(f"  {_tick(False)} {len(broken_hypr)} dispatcher example(s) no longer exist:")
+        for item in broken_hypr:
+            print(f"      {item}")
+    else:
+        print(f"  {_tick(True)} all {len(capabilities.HYPR_ESSENTIALS)} dispatcher examples exist")
+    print(f"  cache: {cfg.CACHE_DIR}")
+
+    print(_bold("\ndaemon"))
+    running = daemon_running()
+    print(f"  {_tick(running)} {'running' if running else 'not running'}"
+          f"  ({cfg.SOCKET_PATH})")
+    hard = [p for p in problems if "audio input" not in p and "loopback" not in p]
+    return 1 if hard else 0
+
+
+def cmd_log(args, config) -> int:
+    if not cfg.LOG_FILE.exists():
+        print("no log yet")
+        return 0
+    if args.follow:
+        subprocess.run(["tail", "-f", str(cfg.LOG_FILE)])
+    else:
+        lines = cfg.LOG_FILE.read_text().splitlines()
+        print("\n".join(lines[-args.lines:]))
+    return 0
+
+
+# --- parser -----------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="omarchy-voice",
+        description="Drive Omarchy by voice with OpenAI Realtime or Live.",
+    )
+    parser.add_argument("--version", action="version", version=f"omarchy-voice {__version__}")
+    parser.add_argument("-n", "--dry-run", action="store_true",
+                        help="decide, but narrate actions instead of running them")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--config", type=Path, help="alternate config.toml")
+    parser.add_argument("--model", help="planner model for `say` (default: gpt-4.1)")
+
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("vision", help="native camera preview and on-demand inspection")
+    p.add_argument("action", choices=["start", "inspect", "status", "stop", "quit"])
+    p.add_argument("question", nargs="*")
+    p.add_argument("--region", nargs=4, type=int, metavar=("X", "Y", "W", "H"))
+    p.set_defaults(func=cmd_vision)
+
+    p = sub.add_parser("task", help="submit and manage durable coding/experiment workers")
+    commands = p.add_subparsers(dest="task_action", required=True)
+    command = commands.add_parser("submit", help="submit a JSON specification file")
+    command.add_argument("spec")
+    command.set_defaults(func=cmd_task)
+    for action in ("list", "status", "read", "cancel", "resume"):
+        command = commands.add_parser(action)
+        if action != "list":
+            command.add_argument("task_id")
+        if action == "read":
+            command.add_argument("path")
+            command.add_argument("--offset", type=int, default=0)
+        if action == "resume":
+            command.add_argument("--guidance", default="")
+        command.set_defaults(func=cmd_task)
+
+    p = sub.add_parser("say", help="run one command as if it had been spoken")
+    p.add_argument("text", nargs="+")
+    p.add_argument("--no-confirm", action="store_true",
+                   help="never prompt for held actions; just report them")
+    p.set_defaults(func=cmd_say)
+
+    p = sub.add_parser("run", help="start the listening daemon")
+    p.add_argument("--engine", choices=("realtime", "live"),
+                   help="override the configured voice backend")
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("listen", help="control a running daemon")
+    p.add_argument("action", choices=list(LISTEN_ACTIONS))
+    p.add_argument("words", nargs="*",
+                   help="text for `listen say`")
+    p.set_defaults(func=cmd_listen)
+
+    p = sub.add_parser("status", help="what the daemon is doing (for the bar)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("doctor", help="check every moving part")
+    p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("manifest", help="print what the model knows about this machine")
+    p.add_argument("--refresh", action="store_true")
+    p.set_defaults(func=cmd_manifest)
+
+    from .discovery import TOPICS
+    p = sub.add_parser("map", help="explore the installed Omarchy architecture without an API call")
+    p.add_argument("topic", choices=TOPICS, nargs="?", default="overview")
+    p.add_argument("query", nargs="*")
+    p.add_argument("--limit", type=int, default=12)
+    p.add_argument("--offset", type=int, default=0)
+    p.set_defaults(func=cmd_map)
+
+    p = sub.add_parser("log", help="what it heard and did")
+    p.add_argument("-n", "--lines", type=int, default=40)
+    p.add_argument("-f", "--follow", action="store_true")
+    p.set_defaults(func=cmd_log)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cfg.ensure_dirs()
+    env_warnings = cfg.load_env_file()
+    if args.command == "doctor":
+        cfg.warn_env_permissions(env_warnings)
+    config = cfg.load(
+        args.config,
+        dry_run=args.dry_run or None,
+        verbose=args.verbose or None,
+        planner_model=getattr(args, "model", None),
+        engine=getattr(args, "engine", None),
+    )
+    return args.func(args, config)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

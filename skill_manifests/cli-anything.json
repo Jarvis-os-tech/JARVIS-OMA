@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "cli_hub_list",
+      "description": "Browse all available CLI-Anything harnesses in the registry. Returns categorized list with install commands.",
+      "adapter": "cli_hub.list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "category": {"type": "string", "description": "Optional category filter (image, video, audio, 3d, productivity, ai, communication)"}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_search",
+      "description": "Search CLI-Anything registry by keyword. Returns matching harnesses with descriptions and install commands.",
+      "adapter": "cli_hub.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Search terms (e.g. 'video editing', '3d modeling', 'image generation')"}
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_info",
+      "description": "Show detailed information about a specific CLI harness including capabilities, commands, and requirements.",
+      "adapter": "cli_hub.info",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "CLI harness name (e.g. 'gimp', 'blender', 'kdenlive')"}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_install",
+      "description": "Install a CLI-Anything harness via pip. Idempotent - skips if already installed.",
+      "adapter": "cli_hub.install",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "CLI harness name to install"},
+          "dry_run": {"type": "boolean", "description": "Show install plan without executing", "default": false}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_uninstall",
+      "description": "Uninstall a CLI-Anything harness.",
+      "adapter": "cli_hub.uninstall",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "CLI harness name to uninstall"}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_launch",
+      "description": "Launch an installed CLI harness with arguments. Supports --json for machine-readable output.",
+      "adapter": "cli_hub.launch",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "CLI harness name (e.g. 'gimp')"},
+          "args": {"type": "array", "items": {"type": "string"}, "description": "Arguments to pass to the CLI"},
+          "json_output": {"type": "boolean", "description": "Request JSON output", "default": false}
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_matrix_list",
+      "description": "List available workflow matrices (capability × provider bundles like video-creation, 3d-modeling).",
+      "adapter": "cli_hub.matrix_list",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_matrix_preflight",
+      "description": "Check what's usable for a matrix capability. Exit code 3 = gaps with install hints.",
+      "adapter": "cli_hub.matrix_preflight",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "matrix": {"type": "string", "description": "Matrix name (e.g. 'video-creation')"},
+          "capability": {"type": "string", "description": "Optional capability filter (e.g. 'text.transcribe')"},
+          "fix_hints": {"type": "boolean", "description": "Show install hints for gaps", "default": false}
+        },
+        "required": ["matrix"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cli_hub_matrix_install",
+      "description": "Install a matrix workflow (or scoped subset via --capability/--recipe/--only).",
+      "adapter": "cli_hub.matrix_install",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "matrix": {"type": "string", "description": "Matrix name (e.g. 'video-creation')"},
+          "capability": {"type": "string", "description": "Install only CLIs for this capability"},
+          "recipe": {"type": "string", "description": "Install only CLIs used by this recipe"},
+          "only": {"type": "string", "description": "Comma-separated CLI names to install"},
+          "dry_run": {"type": "boolean", "description": "Show plan without executing", "default": false}
+        },
+        "required": ["matrix"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

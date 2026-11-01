@@ -47,6 +47,14 @@ class MemoryCLITests(unittest.TestCase):
         ret_json = main(["--config", str(self.config_path), "--json", "history"])
         self.assertEqual(ret_json, 0)
 
+    def test_cli_sync(self):
+        vault_dir = Path(self.directory.name) / "vault"
+        vault_dir.mkdir(parents=True, exist_ok=True)
+        ret = main(["--config", str(self.config_path), "sync", "--vault", str(vault_dir)])
+        self.assertEqual(ret, 0)
+        ret_json = main(["--config", str(self.config_path), "--json", "sync", "--vault", str(vault_dir)])
+        self.assertEqual(ret_json, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

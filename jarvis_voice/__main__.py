@@ -1,5 +1,6 @@
 """CLI entry point: python -m jarvis_voice"""
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -50,6 +51,8 @@ def _ipc_command(args):
     elif args.command == 'listen':
         action = args.action or 'toggle'
         cmd = f'listen {action}'
+    elif args.command == 'standby':
+        cmd = 'standby'
     else:
         cmd = args.command
 
@@ -72,7 +75,7 @@ def main(argv=None):
         prog='jarvis-voice',
         description='JARVIS Voice Core — sovereign voice foundation')
     parser.add_argument('command', nargs='?', default='run',
-        choices=['run', 'status', 'listen', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
+        choices=['run', 'status', 'listen', 'standby', 'restart', 'disable', 'disanble', 'enable', 'start', 'stop'],
         help='Command to execute (default: run)')
     parser.add_argument('action', nargs='?', help='Action for listen command')
     parser.add_argument('--model', default=os.getenv('GEMINI_LIVE_MODEL'))
@@ -84,6 +87,10 @@ def main(argv=None):
     parser.add_argument('--retries', type=int, default=5)
 
     args = parser.parse_args(argv)
+    if args.command == 'listen' and args.action not in (None, 'toggle', 'start', 'stop', 'cancel', 'confirm', 'standby'):
+        parser.error('listen action must be toggle, start, stop, cancel, confirm or standby')
+    if args.retries < 0:
+        parser.error('retries must be zero or a positive integer')
 
     if args.check:
         missing = [n for n in ('pw-record', 'pw-play', 'pactl', 'pw-cli')
@@ -92,6 +99,11 @@ def main(argv=None):
             print(f'Missing: {", ".join(missing)}', file=sys.stderr)
             return 1
         try:
+            missing_modules = [name for name in ('numpy', 'onnxruntime', 'openwakeword', 'google.genai')
+                               if importlib.util.find_spec(name) is None]
+            if missing_modules:
+                print('Missing Python dependencies: ' + ', '.join(missing_modules), file=sys.stderr)
+                return 1
             from jarvis_voice.config import load
             config = load()
             print(f'PASS: audio commands present, config valid (model={config.model})')
@@ -103,7 +115,7 @@ def main(argv=None):
     if args.command in ('restart', 'disable', 'disanble', 'enable', 'start', 'stop'):
         return _systemd_command(args.command)
 
-    if args.command in ('status', 'listen'):
+    if args.command in ('status', 'listen', 'standby'):
         return _ipc_command(args)
 
     if args.command == 'run':

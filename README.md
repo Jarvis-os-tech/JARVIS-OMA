@@ -21,6 +21,12 @@ JARVIS OS provides two tightly-integrated sovereign subsystems:
 - **Obsidian Synchronization**: Bidirectional synchronization with Obsidian Markdown vaults (`JARVIS-OMA Memory/`).
 - **MCP Server**: Stdio Model Context Protocol interface exposing memory tools to agent fleets.
 
+### 3. Sovereign Desktop Control & Retrieval System (`jarvis_control`)
+- **Desktop Actuators**: Hyprland window/workspace dispatch, application launching, typing, shortcut chords, clipboard control, and window composition.
+- **Information Retrieval**: Live system map and discovery (`omarchy_help`), system queries (battery, wifi, bluetooth, os, audio), web search and URL text extraction, terminal state inspection, and screen OCR.
+- **Policy Gate & Safety Boundary**: Protected execution boundary with regex deny rules, confirmation words gating, and dry-run preview.
+- **Unified Voice Integration**: `UnifiedSkills` seamlessly registers control, retrieval, and memory tools to Gemini Live sessions.
+
 ---
 
 ## Directory Structure
@@ -49,9 +55,23 @@ JARVIS OS/
 │   ├── skills.py              # Memory tool router & voice adapter
 │   └── config.py              # Memory configuration & validation
 │
+├── jarvis_control/            # Sovereign Control & Information Retrieval Package
+│   ├── tools.py               # Desktop actuators & tool execution engine
+│   ├── discovery.py           # System architecture map & discovery engine
+│   ├── capabilities.py        # Dynamic capability manifest
+│   ├── browser.py             # Browser automation & web search
+│   ├── page_text.py           # Clean browser text extraction & paste
+│   ├── keys.py                # Keysym normalization & shortcut chords
+│   ├── security.py            # Data-only boundaries & credential redaction
+│   ├── tasks.py               # Durable background task manager
+│   ├── skills.py              # ControlSkills & UnifiedSkills router
+│   └── __main__.py            # jarvis-control CLI
+│
 ├── bin/
+│   ├── jarvis                 # Unified system CLI
 │   ├── jarvis-voice           # Voice daemon CLI wrapper
-│   └── jarvis-memory          # Sovereign memory CLI wrapper
+│   ├── jarvis-memory          # Sovereign memory CLI wrapper
+│   └── jarvis-control         # Sovereign control CLI wrapper
 │
 ├── memory/                    # Upstream reference models, scripts & vault templates
 │   ├── memory-system/         # Reference implementations (Tiers 01-07)
@@ -59,8 +79,8 @@ JARVIS OS/
 │   └── data/obsidian-vault/   # Memory vault notes
 │
 ├── tests/
-│   ├── test_cli.py ...        # Voice unit & integration tests (66 tests)
-│   └── test_memory/           # Memory unit & integration test suites (119 tests)
+│   ├── test_cli.py ...        # Voice unit & integration tests
+│   └── test_memory/           # Memory unit & integration test suites
 │
 └── docs/                      # Architectural specifications & design plans
 ```
@@ -69,7 +89,7 @@ JARVIS OS/
 
 ## Quick Start & Verification
 
-### 1. Run Verification Suite (185 Tests)
+### 1. Run Verification Suite
 ```bash
 .venv/bin/pytest tests/ -v
 ```
@@ -128,3 +148,22 @@ unless `--model` or `GEMINI_LIVE_MODEL` overrides it.
 These are software timings, not measured sound reaching the speaker. A null
 value means the measurement is not available. Instant replies are not guaranteed:
 local endpoint detection, provider response time, network, and playback all add delay.
+
+## Voice checks
+
+See [voice test commands](docs/voice-test-commands.md) for spoken checks of reply speed,
+memory storage/search, persistence after restart, and removal of a test fact.
+Memory tools are attached by the production voice startup. Storage work is serialized
+off the audio event loop. The voice and memory CLIs use the same config at
+`$XDG_CONFIG_HOME/jarvis-voice/config.toml` (default `~/.config/jarvis-voice/config.toml`);
+`jarvis-memory --config` can select an explicit file.
+
+## Omarchy desktop skill
+
+JARVIS includes Omarchy command discovery, desktop control and on-demand skill
+guides. See [the integration guide](docs/omarchy-integration.md) for supported
+paths, safeguards and spoken checks. The full guides are bundled with the installed
+control package; they are not injected into every voice turn.
+
+The [omarchy-voice port guide](docs/omarchy-voice-port.md) documents the imported
+source, shared control settings, optional camera/task features and verification.

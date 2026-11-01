@@ -2,10 +2,37 @@ model = "gemini-3.8-live"
 voice = "Aoede"
 device = ""  # Microphone source
 output_device = ""  # Speaker sink; empty uses system default
-barge_in = false
+barge_in = true  # Natural interruptions: allow user speech to interrupt JARVIS
+barge_in_min_rms = 0.004  # Minimum RMS voice threshold for barge-in detection
+barge_in_echo_threshold = 0.45  # Correlation threshold to reject speaker echo
+barge_in_vad_threshold = 0.50  # Silero VAD probability threshold for speech
 autostart_listening = true
 greet_on_start = true
+turn_silence_frames = 35  # 35 frames * 20ms = 700ms silence threshold to prevent chopping long commands
+language = "en-US"  # Spoken response language
+language_codes = ["en-US", "en-IN", "en-GB"]  # Speech input transcription language hints
 api_key_env = "GEMINI_API_KEY"
+
+# Shared voice/control feature switches.
+enable_tools = true
+allow_shell = false
+dry_run = false
+tasks_enabled = true
+vision_enabled = false
+
+# Optional upstream settings; root switches above take precedence.
+[control]
+confirm_words = ["confirm", "yes do it", "go ahead"]
+
+[control.tasks]
+max_active = 1
+# root = "/absolute/path/to/task-data"
+
+[control.vision]
+# Set vision_enabled = true above before using the camera.
+# model = "your-vision-model"
+# api_key_env = "OPENAI_API_KEY"
+# base_url = "https://api.openai.com/v1"
 
 [memory]
 enabled = true
@@ -26,3 +53,9 @@ semantic_model = ""                     # Example: text-embedding-004
 semantic_url = "http://127.0.0.1:11434" # Used only when provider = "ollama"
 semantic_dimension = 768                 # Must match the selected embedding model
 semantic_min_score = 0.55               # Reject weak semantic-only matches
+
+[standby]
+enabled = true                           # Standby mode with local wake-word ("Hey Jarvis")
+threshold = 0.05                         # Wake-word detection threshold
+vad_threshold = 0.0                      # Optional VAD threshold
+

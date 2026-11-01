@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-ai.vision-pip",
+  "name": "JARVIS Vision PiP",
+  "version": "1.0.0",
+  "description": "Floating, draggable Picture-in-Picture (PiP) HUD for JARVIS live vision streaming (screen sharing and webcam feed).",
+  "kinds": [
+    "panel"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "VisionPip.qml"
+  }
+}

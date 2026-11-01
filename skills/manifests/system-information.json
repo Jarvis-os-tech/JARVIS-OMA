@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "get_system_information",
+      "description": "Read fresh, timestamped facts from this computer. Choose overview, cpu, memory, disks, battery, temperatures, hardware (CPU/GPU), os, network, displays, audio, services, processes, or packages. Results include sources and explicit partial/unavailable errors. Never infer missing values or reuse old readings as current facts.",
+      "adapter": "system.information",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": ["overview", "cpu", "memory", "disks", "battery", "temperatures", "hardware", "os", "network", "displays", "audio", "services", "processes", "packages"]
+          },
+          "detail": {
+            "type": "string",
+            "description": "Optional exact service/package or section-specific filter. This is data, never a shell command."
+          },
+          "limit": {"type": "integer", "minimum": 1, "maximum": 50}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_system_control_status",
+      "description": "Read current control settings and the installed control-panel integration. Reports source evidence and unsupported/unavailable states for audio, display, network, Bluetooth, power, notifications and theme without changing settings.",
+      "adapter": "system.control_status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "category": {"type": "string", "enum": ["all", "audio", "display", "network", "bluetooth", "power", "notifications", "theme"]}
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

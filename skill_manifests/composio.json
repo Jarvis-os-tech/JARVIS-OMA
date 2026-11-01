@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "composio_connection_status",
+      "description": "Check connection status for a Composio app or toolkit (e.g. github, gmail, slack, notion).",
+      "adapter": "composio.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "toolkit": {
+            "type": "string",
+            "description": "Toolkit slug to check (e.g. 'github', 'gmail', 'slack', 'notion')"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "toolkit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "composio_authorize",
+      "description": "Generate an authorization link to connect a Composio app or toolkit. Returns the redirect URL.",
+      "adapter": "composio.authorize",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "toolkit": {
+            "type": "string",
+            "description": "Toolkit slug to authorize (e.g. 'github', 'gmail', 'slack', 'notion')"
+          },
+          "open_in_browser": {
+            "type": "boolean",
+            "description": "Whether to automatically open the link in the desktop browser"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "toolkit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "composio_search_tools",
+      "description": "Search available Composio tools and actions at runtime.",
+      "adapter": "composio.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query describing the capability or app needed (e.g. 'github', 'weather', 'slack')"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "composio_execute_tool",
+      "description": "Execute a Composio tool using its exact tool slug and arguments.",
+      "adapter": "composio.execute",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "tool_slug": {
+            "type": "string",
+            "description": "Exact Composio tool slug (e.g. 'GITHUB_GET_A_REPOSITORY')"
+          },
+          "arguments": {
+            "type": "object",
+            "description": "Arguments matching the tool's input schema"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "tool_slug"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

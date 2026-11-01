@@ -94,3 +94,50 @@ def test_run_honors_configured_model_unless_overridden(monkeypatch):
         assert run.call_args.args[0].model is None
         assert main(['run', '--model', 'explicit-model']) == 0
         assert run.call_args.args[0].model == 'explicit-model'
+
+
+def test_cli_standby_command(tmp_path, monkeypatch):
+    import socket
+    import threading
+    sock_path = tmp_path / 'control.sock'
+    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(sock_path))
+    server.settimeout(3.0)
+    server.listen(1)
+
+    def handle():
+        try:
+            conn, _ = server.accept()
+            conn.settimeout(2.0)
+            data = conn.recv(1024)
+            if data == b'standby\n':
+                conn.sendall(b'{"standby": true, "status": "standby_requested"}\n')
+            conn.close()
+        except socket.timeout:
+            pass
+        finally:
+            server.close()
+
+    t = threading.Thread(target=handle)
+    t.start()
+
+    from jarvis_voice.__main__ import main
+    rc = main(['standby'])
+    assert rc == 0
+    t.join()
+
+
+def test_invalid_listen_action_is_rejected_before_connecting():
+    from jarvis_voice.__main__ import main
+    with pytest.raises(SystemExit) as result:
+        main(['listen', 'invalid-action'])
+    assert result.value.code == 2
+
+
+def test_check_detects_missing_python_dependency(monkeypatch):
+    from jarvis_voice.__main__ import main
+    monkeypatch.setattr('shutil.which', lambda name: '/usr/bin/' + name)
+    monkeypatch.setattr('importlib.util.find_spec', lambda name: None if name == 'onnxruntime' else object())
+    assert main(['--check']) == 1

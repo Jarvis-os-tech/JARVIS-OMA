@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "phone_call",
+      "description": "Make an outgoing phone call to a contact name (e.g. 'Dad', 'China Mama', 'Annayya') or phone number (e.g. '+919949617551') through the connected phone plugin (OMyPhone/PipeWire telephony).",
+      "adapter": "phone.call",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "description": "Contact name or phone number to call."
+          }
+        },
+        "required": [
+          "recipient"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_answer",
+      "description": "Answer or pick up an incoming phone call.",
+      "adapter": "phone.answer",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "Optional specific call path. If omitted, automatically answers the active incoming call."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_hangup",
+      "description": "Hang up or end the current phone call.",
+      "adapter": "phone.hangup",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "Optional specific call path. If omitted, hangs up the active call."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_decline",
+      "description": "Decline or reject an incoming phone call.",
+      "adapter": "phone.decline",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "Optional specific call path. If omitted, declines the incoming call."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_mute",
+      "description": "Mute, unmute, or toggle microphone during a phone call.",
+      "adapter": "phone.mute",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "mute",
+              "unmute",
+              "toggle",
+              "status"
+            ],
+            "description": "Action to perform on phone call microphone."
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_send_tones",
+      "description": "Send DTMF keypad tones (digits 0-9, *, #) during an active phone call to navigate automated menus/IVR.",
+      "adapter": "phone.send_tones",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "digits": {
+            "type": "string",
+            "description": "Keypad digits or tones to send (e.g. '1', '1234', '*#')."
+          }
+        },
+        "required": [
+          "digits"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_list_contacts",
+      "description": "Search or list contacts synced from the user's phone via OMyPhone.",
+      "adapter": "phone.list_contacts",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Optional contact name or phone number substring to search for."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of contacts to return (default 10)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_recent_calls",
+      "description": "Get recent call history (all, missed, incoming, outgoing calls).",
+      "adapter": "phone.recent_calls",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "missed",
+              "incoming",
+              "outgoing"
+            ],
+            "description": "Filter by call direction. Default is 'all'."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of calls to return (default 10)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_status",
+      "description": "Check the current phone and telephony connection status, including connected phone gateways and active calls.",
+      "adapter": "phone.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_open",
+      "description": "Open or show the OMyPhone phone dialer and contacts panel on the desktop.",
+      "adapter": "phone.open",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phone_close",
+      "description": "Close or dismiss the OMyPhone phone dialer panel on the desktop.",
+      "adapter": "phone.close",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

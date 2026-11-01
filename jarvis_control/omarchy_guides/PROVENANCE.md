@@ -1,0 +1,1 @@
+These guides were copied from the local Omarchy skill at /home/g0pi/.agents/skills/omarchy on 31 October 2026 at the user’s request. They are runtime reference documents, not executable code. Installed commands are discovered live; policy and protected shortcuts remain authoritative.

@@ -13,10 +13,19 @@ mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$SERVICE_DIR" "$CONFIG_DIR"
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Copy package and bin
-cp -r "$REPO_DIR/jarvis_voice" "$REPO_DIR/jarvis_memory" "$REPO_DIR/jarvis_control" "$INSTALL_DIR/"
-cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
-cp "$REPO_DIR/LICENSE" "$INSTALL_DIR/" 2>/dev/null || true
+# Copy package and bin if not symlinked directly to repo
+if [[ "$(readlink -f "$INSTALL_DIR")" != "$(readlink -f "$REPO_DIR")" ]]; then
+    for package in jarvis_voice jarvis_memory jarvis_control omarchy_voice skills \
+                   core connectors filesystem orchestration proactive audio ui \
+                   plugins skill_manifests quickshell scripts; do
+        cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"
+    done
+    cp "$REPO_DIR/agent.py" "$REPO_DIR/agent_orchestrator.py" "$REPO_DIR/task_runner.py" "$INSTALL_DIR/"
+    cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
+    cp "$REPO_DIR/LICENSE" "$REPO_DIR/PROVENANCE.json" "$INSTALL_DIR/"
+    mkdir -p "$INSTALL_DIR/docs"
+    cp "$REPO_DIR/docs/omarchy-voice-port.md" "$INSTALL_DIR/docs/"
+fi
 
 # Link python virtual environment with required dependencies
 if [[ -d "${REPO_DIR}/.venv" ]]; then

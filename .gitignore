@@ -4,5 +4,12 @@ __pycache__/
 .venv/
 deployment_backup/
 .gstack/
+.env
+.env.*
+*.env
+**/.secrets/
+connectors/.secrets/
+.agents/
+.claude/
 
 
