@@ -15,7 +15,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Copy package and bin if not symlinked directly to repo
 if [[ "$(readlink -f "$INSTALL_DIR")" != "$(readlink -f "$REPO_DIR")" ]]; then
-    for package in jarvis_voice jarvis_memory jarvis_control omarchy_voice skills \
+    for package in voice_layer jarvis_voice jarvis_memory jarvis_control omarchy_voice skills \
                    core connectors filesystem orchestration proactive audio ui \
                    plugins skill_manifests quickshell scripts; do
         cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"
