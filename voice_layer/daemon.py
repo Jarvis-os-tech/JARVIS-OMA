@@ -1470,6 +1470,9 @@ class LiveVoice:
             self._capture_queue = None
 
     async def _try_local_command(self, pcm, token):
+        # Never transcribe or execute local audio while assistant is muted or in standby
+        if self.muted or self.standby.engaged:
+            return True
         text = await self.local_speech.transcribe(pcm)
         command = command_for(text, self._local_apps) if text else None
         # Discard stale transcription if turn or generation changed during processing
@@ -1917,6 +1920,9 @@ async def _run_voice(args, key: str, config, skills):
             microphone = None
             retry_delay = 0.0
             try:
+                # Skip outbound cloud connection attempt if standby was requested during retry interval
+                if voice.standby.engaged:
+                    raise EnterStandby()
                 log.info('Connecting to %s (voice=%s)%s', model, voice_name,
                          ' [resuming]' if voice.resume_handle else '')
                 if not attempted_resume:
@@ -1968,6 +1974,8 @@ async def _run_voice(args, key: str, config, skills):
                             voice.monitor_standby(),
                         )
             except EnterStandby:
+                # Suspend offline capture during active standby
+                await stop_offline()
                 session_opened = False
                 voice.connected = False
                 voice.standby_active = True
@@ -2043,7 +2051,11 @@ async def _run_voice(args, key: str, config, skills):
                     voice.barge_gate.reset()
                 await player.interrupt()
             start_offline()
-            await asyncio.sleep(retry_delay)
+            try:
+                # Sleep for backoff duration but awake early if standby is engaged
+                await asyncio.wait_for(voice.standby.wait_until_requested(), retry_delay)
+            except TimeoutError:
+                pass
     finally:
         await stop_offline()
         local_speech_worker.cancel()

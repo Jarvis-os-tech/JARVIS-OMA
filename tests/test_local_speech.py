@@ -149,6 +149,20 @@ async def test_disabled_tools_also_disable_local_actions():
     voice.skills.execute.assert_not_awaited()
 
 
+# Verify that muted state or active standby prevents local transcription and execution
+@pytest.mark.asyncio
+@pytest.mark.parametrize('private', ['muted', 'standby'])
+async def test_private_modes_do_not_transcribe_local_audio(private):
+    voice = instance()
+    if private == 'muted':
+        voice.muted = True
+    else:
+        voice.standby._requested.set()
+    assert await voice._try_local_command(bytes(640), (0, 0))
+    voice.local_speech.transcribe.assert_not_awaited()
+    voice.skills.execute.assert_not_awaited()
+
+
 # Verify that general conversational speech is forwarded to cloud streaming after early prefix check
 @pytest.mark.asyncio
 async def test_ordinary_speech_streams_early_without_waiting_for_turn_end():

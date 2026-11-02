@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 
 
@@ -13,6 +14,12 @@ def test_installed_commands_and_distributed_config(tmp_path):
     systemctl = fake_bin / 'systemctl'
     systemctl.write_text('#!/bin/sh\nexit 0\n')
     systemctl.chmod(0o755)
+    # Stub desktop audio utilities in fake-bin if missing in headless CI environments
+    for tool in ('pw-record', 'pw-play', 'pw-cli', 'pactl'):
+        if shutil.which(tool) is None:
+            t = fake_bin / tool
+            t.write_text('#!/bin/sh\nexit 0\n')
+            t.chmod(0o755)
     env = dict(os.environ)
     env.pop('PYTHONPATH', None)
     env.update(JARVIS_INSTALL_HOME=str(destination),
