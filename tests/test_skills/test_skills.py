@@ -373,10 +373,11 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
     async def test_manage_window_adapter(self):
         skills = self.make_desktop_skills()
         skills._run = AsyncMock(return_value='')
-        result = await skills.execute('manage_window', {'action': 'fullscreen'})
-        self.assertIn(result['status'], ('done', 'unverified_effect'))
-        skills._run.assert_awaited_once_with(
-            skills._commands['hyprctl'], 'dispatch', 'hl.dsp.window.fullscreen({ mode = "fullscreen" })')
+        with patch('skills.ground_truth.prepare_action_target', return_value={'verified': True, 'window': {'address': '0x123', 'fullscreen': 0}}):
+            result = await skills.execute('manage_window', {'action': 'fullscreen'})
+            self.assertIn(result['status'], ('done', 'unverified_effect'))
+            skills._run.assert_awaited_once_with(
+                skills._commands['hyprctl'], 'dispatch', 'hl.dsp.window.fullscreen({ mode = "fullscreen" })')
 
         with self.assertRaises(SkillError):
             await skills.execute('manage_window', {'action': 'destroy_everything'})

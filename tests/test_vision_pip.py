@@ -11,7 +11,9 @@ from skills.skills import DesktopSkills
 
 class VisionPipTests(unittest.TestCase):
     def setUp(self):
-        self.plugin_dir = Path("/home/g0pi/.config/omarchy/plugins/omarchy-ai.vision-pip")
+        repo_plugin = Path(__file__).resolve().parents[1] / "ui" / "omarchy-ai.vision-pip"
+        installed_plugin = Path.home() / ".config" / "omarchy" / "plugins" / "omarchy-ai.vision-pip"
+        self.plugin_dir = installed_plugin if installed_plugin.exists() else repo_plugin
         self.manifest_path = self.plugin_dir / "manifest.json"
         self.qml_path = self.plugin_dir / "VisionPip.qml"
 

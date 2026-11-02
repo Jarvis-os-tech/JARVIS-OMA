@@ -1,6 +1,36 @@
 """Tests for system discovery and architecture map information retrieval."""
+import json
+import shutil
 import pytest
 from jarvis_control.discovery import TOPICS, lookup
+
+
+@pytest.fixture(autouse=True)
+def mock_omarchy_if_missing(monkeypatch):
+    if not shutil.which("omarchy"):
+        sample_commands = json.dumps({
+            "ok": True,
+            "commands": [
+                {
+                    "route": "omarchy audio volume",
+                    "binary": "omarchy-audio-volume",
+                    "group": "audio",
+                    "name": "volume",
+                    "summary": "Control system audio volume",
+                    "args": "<level>",
+                },
+                {
+                    "route": "omarchy theme set",
+                    "binary": "omarchy-theme-set",
+                    "group": "theme",
+                    "name": "set",
+                    "summary": "Apply a desktop theme",
+                }
+            ]
+        })
+        from jarvis_control import capabilities as cap
+        orig_run = cap._run
+        monkeypatch.setattr(cap, "_run", lambda cmd, **kwargs: sample_commands if list(cmd[:2]) == ["omarchy", "commands"] else orig_run(cmd, **kwargs))
 
 
 def test_topics_complete():

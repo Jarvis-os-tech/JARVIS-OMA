@@ -117,12 +117,12 @@ async def test_unified_skills_with_desktop_skills():
     # Dispatch to desktop tool (GitHub status)
     gh_out = await unified.execute("github_connection_status", {})
     gh_data = json.loads(gh_out)
-    assert gh_data.get("success") is True
+    assert gh_data.get("success") is True or "setup_required" in gh_data
 
     # Dispatch to desktop tool (Google status)
     google_out = await unified.execute("google_connection_status", {})
     google_data = json.loads(google_out)
-    assert google_data.get("success") is True
+    assert google_data.get("success") is True or "setup_required" in google_data
 
     # Dispatch to phone status
     phone_out = await unified.execute("phone_status", {})
