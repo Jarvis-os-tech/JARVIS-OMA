@@ -27,8 +27,8 @@ import time
 import uuid
 from urllib.parse import urlsplit
 import filesystem as fs
-from task_runner import TaskPlanError, TaskRunner
-from agent_orchestrator import AgentOrchestrator, OrchestrationError
+from filesystem.task_runner import TaskPlanError, TaskRunner
+from orchestration.agent_orchestrator import AgentOrchestrator, OrchestrationError
 from orchestration.desktop_execution import DesktopAgentOrchestrator
 from orchestration.evolution import EvolutionManager
 from connectors import google_workspace

@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import ANY, AsyncMock, patch
 
-import system_control
+from skills import system_control
 from skills.skills import DesktopSkills
 
 
