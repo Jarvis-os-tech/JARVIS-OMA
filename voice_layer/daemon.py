@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import contextlib
 import copy
+from dataclasses import replace
 import getpass
 import json
 import logging
@@ -26,6 +27,7 @@ from .microphone import read_microphone_state
 from .playback import Playback, MicrophoneBacklogError, stop_process, audio_environment
 from .recovery import ConnectionRecovery
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
+from .local_speech import LocalSpeechConfig, WhistleClient, app_names, command_for, could_be_command
 from jarvis_control.outcomes import classify_result
 
 log = logging.getLogger('jarvis_voice')
@@ -281,6 +283,10 @@ class LiveVoice:
         self._greeted = False
         self.skills = skills
         self.config = config
+        self.local_speech = WhistleClient(getattr(config, 'local_speech', LocalSpeechConfig()))
+        self._local_apps = {}
+        self.local_commands_executed = 0
+        self.last_local_outcome = None
         self._memory_user = ''
         self._memory_assistant = ''
         self.microphone_rms = 0.0
@@ -411,6 +417,11 @@ class LiveVoice:
             'spoken_reply_recovery': self._reply_recovery_active,
             'local_fillers_played': self.local_fillers_played,
             'last_filler_context': self.last_filler_context,
+            'local_speech': {'ready': self.local_speech.ready,
+                             'error': self.local_speech.error,
+                             'last_decode_ms': self.local_speech.last_decode_ms,
+                             'commands_executed': self.local_commands_executed,
+                             'last_outcome': self.last_local_outcome},
             'error': input_issue or self.last_error,
             'memory_enabled': bool(self.skills and getattr(getattr(self.config, 'memory', None), 'enabled', False)),
             'tools_in_flight': self._tools_in_flight,
@@ -1424,7 +1435,7 @@ class LiveVoice:
                     self.activity_end_sent_at = None
                     self.provider_first_audio_ms = None
                     self._user_text = self._assistant_text = ''
-                    self._reply_authorized = self._waiting = True
+                    self._reply_authorized = self._waiting = not self.local_speech.ready
                     self._reply_started = self._drop_response = self._model_active = False
                     self._last_progress = now
                     activity_open = True
@@ -1439,6 +1450,7 @@ class LiveVoice:
                 if not self.gate.active and not frame.closed:
                     frame = GateFrame(bytes(INPUT_BYTES), closed=True)
                 try:
+                    frame = replace(frame, turn_id=self.gate.accepted_turns)
                     queue.put_nowait((frame, self.player.generation))
                 except asyncio.QueueFull:
                     raise MicrophoneBacklogError(
@@ -1456,7 +1468,114 @@ class LiveVoice:
         finally:
             self._capture_queue = None
 
+    async def _try_local_command(self, pcm, token):
+        text = await self.local_speech.transcribe(pcm)
+        command = command_for(text, self._local_apps) if text else None
+        if command is None:
+            return False
+        if (token != (self.gate.accepted_turns, self.player.generation)
+                or self.muted or self.standby.engaged or self.gate.active):
+            return True  # Stale speech is consumed, never sent for a second owner.
+        name, arguments = command
+        if name == 'stop':
+            self.interrupt()
+            return True
+        if self.skills is None:
+            return False
+        self._reply_authorized = True
+        self._waiting = False
+        self._reply_wait_started_at = None
+        self._play_filler_reflex('system_mutation')
+        self._reply_authorized = False  # The cloud does not own this local turn.
+        self._barge_pending = False
+        self._tools_in_flight += 1
+        self._active_tool = name
+        self.local_commands_executed += 1
+        # Once admitted, a failed/uncertain action must not be replayed by Gemini.
+        action = asyncio.create_task(self.skills.execute(name, arguments))
+        try:
+            try:
+                result = await asyncio.shield(action)
+            except asyncio.CancelledError:
+                await action
+                raise
+            outcome = classify_result(result)
+            self.last_local_outcome = outcome.status
+            if not outcome.completed and token == (self.gate.accepted_turns, self.player.generation):
+                self._play_reply_notice('reply_unavailable')
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.last_local_outcome = 'failed'
+            if token == (self.gate.accepted_turns, self.player.generation):
+                self._play_reply_notice('reply_unavailable')
+        finally:
+            self._tools_in_flight -= 1
+            self._active_tool = ''
+            if token == (self.gate.accepted_turns, self.player.generation):
+                self._reply_authorized = self._waiting = False
+        log.info('Local voice command %s finished: %s', name, self.last_local_outcome)
+        return True
+
     async def _send_frames(self, session, queue):
+        if not self.local_speech.config.enabled:
+            await self._send_frames_cloud(session, queue)
+            return
+        forwarded = asyncio.Queue(maxsize=CAPTURE_QUEUE_FRAMES)
+
+        async def route():
+            buffered = []
+            held_bytes = 0
+            streaming = False
+            checked_prefix = False
+            limit = int(self.local_speech.config.max_command_seconds * 32000)
+            while True:
+                frame, generation = item = await queue.get()
+                if frame.opened:
+                    buffered, held_bytes, streaming = [], 0, False
+                    checked_prefix = False
+                if not streaming:
+                    buffered.append(item)
+                    held_bytes += len(frame.pcm)
+                release_early = False
+                if (session is not None and not streaming and not checked_prefix
+                        and not frame.closed and held_bytes >= 25600):
+                    checked_prefix = True
+                    prefix = await self.local_speech.transcribe(b''.join(f.pcm for f, _ in buffered))
+                    release_early = not prefix or not could_be_command(prefix)
+                if held_bytes > limit or release_early or (not self.local_speech.ready and not streaming):
+                    streaming = True
+                    if session is not None:
+                        for held in buffered:
+                            await forwarded.put(held)
+                    buffered = []
+                    held_bytes = 0
+                    if frame.closed and session is None:
+                        self._waiting = self._reply_authorized = False
+                        self._play_reply_notice('reply_unavailable')
+                    continue
+                if streaming:
+                    if session is not None:
+                        await forwarded.put(item)
+                    elif frame.closed:
+                        self._play_reply_notice('reply_unavailable')
+                    continue
+                if not frame.closed:
+                    continue
+                token = (frame.turn_id or self.gate.accepted_turns, generation)
+                handled = await self._try_local_command(b''.join(f.pcm for f, _ in buffered), token)
+                if not handled:
+                    if session is not None:
+                        for held in buffered:
+                            await forwarded.put(held)
+                    else:
+                        self._waiting = self._reply_authorized = False
+                        self._play_reply_notice('reply_unavailable')
+                buffered, held_bytes = [], 0
+
+        await supervise(route(), self._send_frames_cloud(session, forwarded))
+
+    async def _send_frames_cloud(self, session, queue):
         from google.genai import types
 
         activity_open = False
@@ -1476,6 +1595,7 @@ class LiveVoice:
                 if blocked:
                     chunk = bytes(len(chunk))
                 elif frame.opened or (self.gate.active and not activity_open):
+                    self._reply_authorized = self._waiting = True
                     if activity_open:
                         await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
                         activity_open = False
@@ -1684,6 +1804,13 @@ async def _run_voice(args, key: str, config, skills):
     )
     voice.model = model
     voice.muted = not config.autostart_listening
+    await voice.local_speech.start()
+    if voice.local_speech.ready:
+        from jarvis_control.discovery import applications
+        voice._local_apps = app_names(await asyncio.to_thread(applications))
+        log.info('Whistle ready: short local commands and offline fallback enabled')
+    elif voice.local_speech.config.enabled:
+        log.warning('Local speech unavailable: %s; retaining direct cloud streaming', voice.local_speech.error)
 
     if skills is not None:
         skills.on_standby_request = voice.standby.request
@@ -1734,9 +1861,42 @@ async def _run_voice(args, key: str, config, skills):
     recovery = ConnectionRecovery(retry_budget=getattr(args, 'retries', 5))
     from .background import monitor as monitor_background
     background_worker = asyncio.create_task(monitor_background(voice, skills))
+    local_speech_worker = asyncio.create_task(voice.local_speech.maintain())
+    offline_worker = None
+
+    async def offline_listener():
+        """Keep local commands available while cloud setup/retries are pending."""
+        mic_args = ['pw-record', '--rate', '16000', '--channels', '1',
+                    '--format', 's16', '--latency', '20ms',
+                    '--properties', 'application.id=jarvis-voice node.name=jarvis-offline-microphone']
+        if mic_target:
+            mic_args.extend(['--target', mic_target])
+        mic_args.extend(['-a', '-'])
+        microphone = await asyncio.create_subprocess_exec(
+            *mic_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            env=audio_environment())
+        try:
+            await supervise(voice.send_audio(None, microphone.stdout), player.run(),
+                            voice.publish_status(), voice.monitor_microphone())
+        finally:
+            await stop_process(microphone)
+            voice.gate.reset()
+
+    async def stop_offline():
+        nonlocal offline_worker
+        if offline_worker is not None:
+            offline_worker.cancel()
+            await asyncio.gather(offline_worker, return_exceptions=True)
+            offline_worker = None
+
+    def start_offline():
+        nonlocal offline_worker
+        if voice.local_speech.ready and offline_worker is None and not voice.standby.engaged:
+            offline_worker = asyncio.create_task(offline_listener())
 
     try:
         while True:
+            start_offline()
             started = time.monotonic()
             session_opened = False
             attempted_resume = bool(voice.resume_handle)
@@ -1755,6 +1915,7 @@ async def _run_voice(args, key: str, config, skills):
                                           skills=skills, config=config, memory_context=context)
                 async with genai.Client(api_key=key).aio as client:
                     async with connect_session(client, model=model, config=session_cfg) as session:
+                        await stop_offline()
                         session_opened = True
                         voice.connected = True
                         voice._session = session
@@ -1843,6 +2004,7 @@ async def _run_voice(args, key: str, config, skills):
                 log.warning('Voice session disconnected (%s), retry in %.2fs', error, decision.delay)
                 retry_delay = decision.delay
             finally:
+                await stop_offline()
                 voice.connected = False
                 voice._session = None
                 voice._background_active = False
@@ -1864,8 +2026,13 @@ async def _run_voice(args, key: str, config, skills):
                 if voice.barge_gate is not None:
                     voice.barge_gate.reset()
                 await player.interrupt()
+            start_offline()
             await asyncio.sleep(retry_delay)
     finally:
+        await stop_offline()
+        local_speech_worker.cancel()
+        await asyncio.gather(local_speech_worker, return_exceptions=True)
+        await voice.local_speech.close()
         background_worker.cancel()
         await asyncio.gather(background_worker, return_exceptions=True)
         await echo.close()

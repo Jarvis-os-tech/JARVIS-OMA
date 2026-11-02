@@ -8,7 +8,15 @@ barge_in_echo_threshold = 0.45  # Correlation threshold to reject speaker echo
 barge_in_vad_threshold = 0.50  # Silero VAD probability threshold for speech
 autostart_listening = true
 greet_on_start = true
-turn_silence_frames = 100  # Wait for 2 seconds of silence; shorter pauses stay in the same sentence
+turn_silence_frames = 20  # Finish the turn after 400 ms of silence
+
+# Optional: install with scripts/install_whistle.py before enabling.
+# Short exact desktop commands run locally; other requests use Gemini.
+# [local_speech]
+# enabled = true
+# max_command_seconds = 2.5
+# decode_timeout = 0.35
+# minimum_word_probability = 0.65
 language = "en-US"  # Spoken response language
 language_codes = ["en-US", "en-IN", "en-GB"]  # Speech input transcription language hints
 api_key_env = "GEMINI_API_KEY"
@@ -58,7 +66,7 @@ semantic_min_score = 0.55               # Reject weak semantic-only matches
 enabled = true                           # Standby mode with local wake-word ("Hey Jarvis")
 threshold = 0.50                         # Wake-word detection threshold (0.50 = 50% confidence)
 vad_threshold = 0.50                     # Voice Activity Detection threshold to filter background noise
-arming_delay = 1.0                       # Delay (seconds) before arming detector to prevent residual echo
+arming_delay = 0.1                       # Brief delay (seconds) before arming the wake detector
 
 [fillers]
 # Enable instant local reflex loops bypassing cloud round-trip times

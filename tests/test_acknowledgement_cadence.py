@@ -33,7 +33,7 @@ async def tick(instance, monkeypatch, now):
 async def test_fast_conversation_does_not_need_filler(monkeypatch):
     instance = voice()
     instance._reply_wait_started_at = instance._last_progress = 10
-    await tick(instance, monkeypatch, 10.9)
+    await tick(instance, monkeypatch, 10.1)
     assert instance.player.queue.empty()
 
 

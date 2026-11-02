@@ -261,7 +261,7 @@ async def test_first_audio_latency_stays_fixed_across_response_chunks(monkeypatc
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 250
 
 
-def test_default_turn_wait_keeps_sentence_pauses_open_for_two_seconds():
+def test_default_turn_wait_closes_after_400ms():
     from jarvis_voice.daemon import LiveVoice
     from jarvis_voice.playback import Playback
     import struct
@@ -272,9 +272,9 @@ def test_default_turn_wait_keeps_sentence_pauses_open_for_two_seconds():
     # A sub-threshold frame remains quiet regardless of detector probability.
     voice.gate.detector = lambda pcm: 0.0
     quiet = struct.pack('<320h', *([1] * 320))
-    for i in range(99):
+    for i in range(19):
         assert not voice.gate.process(quiet, now=i * .02).closed
-    assert voice.gate.process(quiet, now=1.98).closed
+    assert voice.gate.process(quiet, now=.38).closed
 
 
 @pytest.mark.asyncio

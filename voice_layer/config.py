@@ -6,6 +6,7 @@ import stat
 import tomllib
 
 from jarvis_memory.config import MemoryConfig, load_config as load_memory_config
+from .local_speech import LocalSpeechConfig
 
 CONFIG_HOME = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
 STATE_HOME = Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state'))
@@ -130,6 +131,7 @@ class Config:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     standby: StandbyConfig = field(default_factory=StandbyConfig)
     fillers: FillerConfig = field(default_factory=FillerConfig)
+    local_speech: LocalSpeechConfig = field(default_factory=LocalSpeechConfig)
 
     def validate(self):
         for name in ('barge_in', 'autostart_listening', 'greet_on_start', 'enable_tools',
@@ -153,6 +155,7 @@ class Config:
         self.memory.validate()
         self.standby.validate()
         self.fillers.validate()
+        self.local_speech.validate()
         return self
 
 
@@ -180,9 +183,10 @@ def load() -> Config:
         if unknown:
             raise ValueError('Unsupported jarvis-voice setting: ' + ', '.join(sorted(unknown)))
         standby_data = data.pop('standby', {})
+        local_speech = LocalSpeechConfig(**data.pop('local_speech', {}))
         standby_cfg = StandbyConfig(**standby_data) if isinstance(standby_data, dict) else StandbyConfig()
         data.pop('memory', None)
-        return Config(**data, standby=standby_cfg, fillers=fillers_cfg, memory=load_memory_config(path).memory).validate()
+        return Config(**data, standby=standby_cfg, fillers=fillers_cfg, local_speech=local_speech, memory=load_memory_config(path).memory).validate()
     return Config(memory=load_memory_config().memory).validate()
 
 

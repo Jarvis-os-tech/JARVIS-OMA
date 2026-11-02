@@ -53,6 +53,7 @@ class GateFrame:
     opened: bool = False
     closed: bool = False
     barge_in: bool = False
+    turn_id: int = 0
 
 
 class SpeechTurnGate:

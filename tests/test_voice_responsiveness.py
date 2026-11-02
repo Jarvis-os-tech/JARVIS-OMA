@@ -28,7 +28,7 @@ async def test_local_filler_does_not_complete_real_tool_answer(tmp_path):
     await voice.handle(content(turn_complete=True))
     assert voice._reply_authorized
     await voice.handle(content(model_turn=NS(parts=[NS(inline_data=NS(data=pcm))])))
-    assert voice.player.queued_bytes == len(pcm) * 2
+    assert voice.player.queued_bytes == len(pcm)  # Real speech replaces queued filler.
     await voice.handle(content(turn_complete=True))
     assert not voice._reply_authorized
 

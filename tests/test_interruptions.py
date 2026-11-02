@@ -128,12 +128,11 @@ def test_local_interruption_immediately_flushes_buffered_speech():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('with_config', [False, True])
-async def test_sentence_pauses_do_not_close_the_user_turn(with_config):
+async def test_sentence_pauses_do_not_close_the_user_turn():
     from jarvis_voice.config import Config
 
     voice = LiveVoice(Playback('default'), barge_in=True,
-                      config=Config() if with_config else None)
+                      config=Config(turn_silence_frames=100))
     voice.gate.detector = lambda _: 0.95
     speech = struct.pack('<320h', *([2000] * 320))
     # A sentence with 1.2 s and 1.8 s thinking/breathing pauses, followed by

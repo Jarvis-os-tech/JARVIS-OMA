@@ -1,5 +1,6 @@
 """Tests for PipeWire monitor echo-cancellation module."""
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,7 +19,8 @@ def test_monitor_properties_structure():
 
 
 @pytest.mark.asyncio
-async def test_echo_cancellation_lifecycle_mocked():
+@pytest.mark.parametrize('source_muted', [False, True])
+async def test_echo_cancellation_lifecycle_mocked(source_muted):
     echo = MonitorEchoCancellation()
     assert not echo.active
 
@@ -30,6 +32,8 @@ async def test_echo_cancellation_lifecycle_mocked():
             ("get-default-source",): "alsa_mic",
             ("get-default-sink",): "alsa_speaker",
             ("list", "short", "sources"): f"1\t{echo.source}\tmodule-echo-cancel\ts16le 1ch 48000Hz\tIDLE",
+            ('--format=json', 'list', 'sources'): json.dumps([{'name': 'alsa_mic', 'mute': source_muted}]),
+            ('set-source-mute', echo.source, '1' if source_muted else '0'): '',
         }[args]
 
         mock_process = AsyncMock()
@@ -42,6 +46,9 @@ async def test_echo_cancellation_lifecycle_mocked():
         assert success is True
         assert echo.active is True
         assert echo.sink == "alsa_speaker"
+        mock_pactl.assert_any_await('set-source-mute', echo.source, '1' if source_muted else '0')
+        assert not any(call.args[:2] == ('set-source-mute', 'alsa_mic') for call in mock_pactl.await_args_list)
+        assert sum(call.args[:1] == ('set-source-mute',) for call in mock_pactl.await_args_list) == 1
 
         await echo.close()
         assert not echo.active
