@@ -76,3 +76,50 @@ recovered **37,922 bytes of new provider audio**, completed the turn and had
 no tools available. Its first connection attempt timed out; one retry
 succeeded. This verifies real cloud recovery but is not a microphone test or
 a guarantee against provider outages. Source and installed-daemon hashes match.
+
+## Existing conversational fillers
+
+The existing filler hook referenced external recordings that were absent on
+this installation; its fallback was a procedural 180 Hz tone. The active voice
+daemon now has bundled, preloaded Aoede recordings for “Hmm”, “Ah”, “Sure” and
+“On it”. Explicit configured recordings retain priority.
+
+The five-second waiting guard uses this same hook. A request gets at most one
+short filler; a new user turn resets that budget. If an early filler already
+played, the waiting guard can instead use the longer status notice. Failure
+feedback remains explicit. Muting, standby, active speech and the existing
+disable-fillers preference suppress short fillers. Filler playback never marks
+the provider answer started. The active daemon no longer constructs the old
+DownstreamRouter or generates a placeholder tone to play a filler.
+
+Verification: **72 passed** across spoken-filler, reply-guard, daemon,
+responsiveness and crossfade checks. This includes real PCM asset validation
+and tests for each context, per-turn limits, alternate thinking sounds and
+privacy/preferences. Only the daemon and bundled audio are installed; previous
+runtime state and device/memory code are preserved.
+
+## Automatic acknowledgement trigger repair
+
+The first filler deployment still depended on a provider tool call or the
+five-second delay warning. A normal reply could therefore produce no filler
+at all. The new regression probe (a closed request waiting 800 ms with no
+cloud tool call) failed before this repair and passes afterward.
+
+Installed release `20261101-224343-automatic-filler-ack` arms a local 650 ms
+timer when microphone ActivityEnd is sent, or when a text request is
+dispatched. The 250 ms monitor triggers the cached filler independently of
+the cloud. Actual answers, active speech, mute, standby, interrupted turns,
+greetings, wake acknowledgements and background announcements suppress early
+fillers. One filler remains the per-request maximum. Runtime status includes
+the cumulative filler count and last context for direct verification.
+
+Verification: **81 passed**, including the failed-before/passing-after trigger
+probe, microphone upload-boundary arming and seven early-ack suppression
+cases. Real speaker-monitor capture confirmed the explicitly requested
+“On it” clip (normalized correlation **0.995**). After installing the trigger
+repair, a normal request that explicitly prohibited cloud tool calls played
+the local “Hmm” clip at **724 ms** after dispatch. Speaker capture matched
+that recording at **0.997**; runtime reported exactly one local filler and
+the provider answer followed. This validates speaker output and automatic
+request dispatch; physical microphone recognition was not part of that live
+probe. Previous release retained for rollback.

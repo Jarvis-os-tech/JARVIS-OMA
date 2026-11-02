@@ -33,6 +33,7 @@ CAPTURE_QUEUE_FRAMES = 200
 RESPONSE_WARNING_SECONDS = 10
 RESPONSE_TIMEOUT_SECONDS = 35
 REPLY_NOTICE_SECONDS = 5
+FILLER_ACK_SECONDS = .65
 CONNECT_TIMEOUT_SECONDS = 12
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
@@ -264,9 +265,14 @@ class LiveVoice:
         self._reply_recovery_active = False
         self._tool_answer_pending = False
         self._waiting_notice_played = False
+        self._filler_played = False
+        self._reply_wait_started_at = None
+        self.local_fillers_played = 0
+        self.last_filler_context = ''
         self._reply_serial = 0
         self._reply_notices = {}
-        for notice in ('reply_waiting', 'reply_unavailable'):
+        for notice in ('reply_waiting', 'reply_unavailable', 'filler_hmm',
+                       'filler_ah', 'filler_sure', 'filler_on_it'):
             try:
                 pcm = (Path(__file__).with_name('assets') / (notice + '.pcm')).read_bytes()
                 if pcm and len(pcm) % 2 == 0 and len(pcm) <= 480000:
@@ -360,6 +366,8 @@ class LiveVoice:
             'accepted_speech_turns': self.gate.accepted_turns,
             'response_delayed': self.response_delayed,
             'spoken_reply_recovery': self._reply_recovery_active,
+            'local_fillers_played': self.local_fillers_played,
+            'last_filler_context': self.last_filler_context,
             'error': input_issue or self.last_error,
             'memory_enabled': bool(self.skills and getattr(getattr(self.config, 'memory', None), 'enabled', False)),
             'tools_in_flight': self._tools_in_flight,
@@ -534,6 +542,8 @@ class LiveVoice:
         self._reply_recovery_attempted = self._reply_recovery_active = False
         self._tool_answer_pending = False
         self._waiting_notice_played = False
+        self._filler_played = False
+        self._reply_wait_started_at = None
 
     def _play_reply_notice(self, name):
         """Queue cached speech without pretending the provider has answered."""
@@ -598,12 +608,13 @@ class LiveVoice:
 
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
         """Triggers PipeWire audio playback for local conversational filler reflex."""
-        if self.muted or self._drop_response or not self._reply_authorized:
-            return
+        if (self.muted or self._drop_response or not self._reply_authorized
+                or self.gate.active or self.standby.engaged or self._filler_played):
+            return False
         try:
             filler_cfg = getattr(self.config, 'fillers', None)
             if filler_cfg and not getattr(filler_cfg, 'enable_local_fillers', True):
-                return
+                return False
             audio_dir = Path(getattr(filler_cfg, 'filler_audio_dir', '~/.local/share/jarvis-oma/audio/fillers/')).expanduser() if filler_cfg else None
             filename = None
             if filler_cfg and getattr(filler_cfg, 'phrases', None):
@@ -625,18 +636,27 @@ class LiveVoice:
             if pcm_path and pcm_path.is_file():
                 pcm_data = pcm_path.read_bytes()
             else:
-                from audio.downstream import DownstreamRouter
-                router = DownstreamRouter()
-                pcm_data = router._precharged_fillers.get(context_type) or router._precharged_fillers.get('generic_deep_thought')
+                builtins = {
+                    'generic_deep_thought': 'filler_hmm' if self._reply_serial % 2 else 'filler_ah',
+                    'system_mutation': 'filler_on_it',
+                    'filesystem_grep': 'filler_hmm',
+                    'sub_agent_spawn': 'filler_sure',
+                }
+                pcm_data = self._reply_notices.get(builtins.get(context_type, 'filler_hmm'))
 
             if pcm_data and len(pcm_data) >= 960 and self.player is not None and hasattr(self.player, 'enqueue'):
                 self.player.begin_reply()
                 # A local thinking sound is not the provider's answer. Marking
                 # it as one lets a tool boundary revoke the real reply.
                 self.player.enqueue(pcm_data)
+                self._filler_played = True
+                self.local_fillers_played += 1
+                self.last_filler_context = context_type
                 log.info('Local filler reflex played: %s (%d bytes)', context_type, len(pcm_data))
+                return True
         except Exception as error:
             log.warning('Could not play local filler reflex: %s', error)
+        return False
 
     def _accept_interruption(self):
         self._start_reply_watch()
@@ -921,6 +941,7 @@ class LiveVoice:
                 self._reply_started = False
                 self._model_active = True
                 self._last_progress = time.monotonic()
+                self._reply_wait_started_at = self._last_progress
                 await asyncio.wait_for(session.send_client_content(
                     turns=[types.Content(role='user', parts=parts)],
                     turn_complete=True,
@@ -1353,6 +1374,7 @@ class LiveVoice:
                 if activity_open and (frame.closed or (blocked and not self.gate.active)):
                     await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
                     self.activity_end_sent_at = time.monotonic()
+                    self._reply_wait_started_at = self.activity_end_sent_at
                     log.info('Speech uploaded; waiting for provider audio')
                     activity_open = False
                     self._barge_pending = False
@@ -1430,12 +1452,25 @@ class LiveVoice:
         while True:
             await asyncio.sleep(0.25)
             playing = self.player.busy
+            context = ('sub_agent_spawn' if 'agent' in self._active_tool else
+                       'filesystem_grep' if self._active_tool in {'search_files', 'read_file'} else
+                       'system_mutation' if self._active_tool == 'system_control' else
+                       'generic_deep_thought')
             if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
+                    and not self.standby.engaged and not playing and not self._barge_pending
+                    and not self._greeting_active and not self._background_active
+                    and not self._wake_confirmation_in_flight and not self._wake_confirmation_pending
+                    and not self._reply_started and not self._filler_played
+                    and self._reply_wait_started_at is not None
+                    and time.monotonic() - self._reply_wait_started_at >= FILLER_ACK_SECONDS):
+                self._play_filler_reflex(context)
+            elif (self.connected and self._reply_authorized and not self.muted and not self.gate.active
                     and not self.standby.engaged and not playing
                     and not self._waiting_notice_played
                     and time.monotonic() - self._last_progress > REPLY_NOTICE_SECONDS):
                 self._waiting_notice_played = True
-                self._play_reply_notice('reply_waiting')
+                if not self._play_filler_reflex(context):
+                    self._play_reply_notice('reply_waiting')
             if (self._barge_pending and not self._tools_in_flight and self._barge_started_at is not None and
                     time.monotonic() - self._barge_started_at > 5):
                 self.resume_handle = None

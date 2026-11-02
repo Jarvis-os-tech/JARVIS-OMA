@@ -25,7 +25,8 @@ def completed():
 
 def test_bundled_feedback_contains_bounded_non_silent_pcm():
     assets = Path(__file__).resolve().parents[1] / 'jarvis_voice/assets'
-    for name in ('reply_waiting.pcm', 'reply_unavailable.pcm'):
+    for name in ('reply_waiting.pcm', 'reply_unavailable.pcm', 'filler_hmm.pcm',
+                 'filler_ah.pcm', 'filler_sure.pcm', 'filler_on_it.pcm'):
         pcm = (assets / name).read_bytes()
         assert 12000 <= len(pcm) <= 480000
         assert len(pcm) % 2 == 0
