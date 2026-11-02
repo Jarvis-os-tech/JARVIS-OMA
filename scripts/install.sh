@@ -30,6 +30,13 @@ fi
 # Link python virtual environment with required dependencies
 if [[ -d "${REPO_DIR}/.venv" ]]; then
     ln -sfn "$(readlink -f "${REPO_DIR}/.venv")" "$INSTALL_DIR/.venv"
+elif [[ -n "${VIRTUAL_ENV:-}" && -d "${VIRTUAL_ENV}" ]]; then
+    ln -sfn "${VIRTUAL_ENV}" "$INSTALL_DIR/.venv"
+elif command -v python3 &>/dev/null; then
+    PY_BIN="$(command -v python3)"
+    mkdir -p "$INSTALL_DIR/.venv/bin"
+    ln -sfn "$PY_BIN" "$INSTALL_DIR/.venv/bin/python"
+    ln -sfn "$PY_BIN" "$INSTALL_DIR/.venv/bin/python3"
 fi
 
 # Ensure default config exists

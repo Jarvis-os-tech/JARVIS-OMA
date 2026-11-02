@@ -36,7 +36,7 @@ from proactive.attention import AttentionPolicy
 from proactive.system_watch import SystemWatch, sample_system
 from core.harness_config import live_config
 from core.tool_dispatch import run_skill_call
-from echo_cancel import EchoCancellation
+from voice_layer.echo import EchoCancellation
 from skills import DesktopSkills, SkillError
 from audio.engine import NativeAudioEngine, StreamLostError
 from audio.downstream import DownstreamRouter

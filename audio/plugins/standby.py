@@ -1,5 +1,5 @@
-"""Compatibility alias for jarvis_voice.standby."""
-from jarvis_voice.standby import (
+"""Compatibility alias for voice_layer.standby."""
+from voice_layer.standby import (
     OpenWakeWordDetector,
     StandbyController,
     WakeWordUnavailable,

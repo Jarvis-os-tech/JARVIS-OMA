@@ -8,7 +8,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 if __name__ == '__main__':
-    from core.stable_voice import main
+    from voice_layer.daemon import main
     raise SystemExit(main())
 else:
     import core.agent

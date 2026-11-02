@@ -1,9 +1,5 @@
+"""Compatibility shim redirecting echo_cancel to voice_layer.echo."""
 import sys
-from pathlib import Path
+import voice_layer.echo
 
-REPO_ROOT = Path(__file__).resolve().parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-import audio.echo_cancel
-sys.modules[__name__] = audio.echo_cancel
+sys.modules[__name__] = voice_layer.echo
