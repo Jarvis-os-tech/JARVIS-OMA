@@ -31,6 +31,7 @@ Usage:
   jarvis update [--check] Check or apply updates strictly from GitHub
   jarvis rollback      Instantly roll back to previous operational release
   jarvis releases      List all installed releases and active status
+  jarvis mode [cmd]    Switch mode between test (workspace) and prod (standalone)
   jarvis doctor       Check JARVIS dependencies and enabled features
 
 EOF
@@ -183,6 +184,16 @@ case "$cmd" in
             PYTHON="${SCRIPT_DIR}/.venv/bin/python"
         fi
         exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_release.py" list "$@"
+        ;;
+    mode)
+        shift || true
+        PYTHON="python3"
+        if [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+            PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
+        elif [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+            PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+        fi
+        exec "$PYTHON" "${SCRIPT_DIR}/scripts/jarvis_mode.py" "$@"
         ;;
     control|task|vision|say|doctor)
         control_cmd="$cmd"

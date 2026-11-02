@@ -6,6 +6,7 @@ intent classification, entity extraction, and semantic tool gating for JARVIS.
 from __future__ import annotations
 
 import enum
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -47,6 +48,9 @@ class NLUEngine:
         (r'\b(reserva|reservas)\b', 'reservations'),
         (r'\b(padmasan|padmasana)\b', 'Padmasana lotus pose'),
         (r'\b(stand by|stand-by|sleep mode)\b', 'standby'),
+        (r'\b(testing mood|test mood)\b', 'test mode'),
+        (r'\b(production mood|prod mood)\b', 'production mode'),
+        (r'\b(actavtethe|actavte|activatethe)\b', 'activate the'),
         (r'\b(wi fi|wi-fi)\b', 'wifi'),
     ]
 
@@ -97,6 +101,39 @@ class NLUEngine:
         r'\b(not working|showing|unavailable|failed|error|reason why|problem|issue|troubleshoot|help me with)\b',
         r'\b(what should (i|we) do|how do (i|we))\b',
     ]
+
+    @staticmethod
+    def device_targets(text: str) -> set[str]:
+        """Select devices from this utterance, never from previous model context.
+
+        Quoted content is data (e.g. text being typed), not a device instruction.
+        Negated phone references cannot authorize the Android adapter.
+        """
+        text = re.sub(r'"[^"\n]*"|`[^`\n]*`|“[^”\n]*”|(?<!\w)\x27[^\x27\n]*\x27(?!\w)',
+                      ' ', text or '').casefold()
+        text = re.sub(
+            r"\b(?:not|never|don't|do not|without)\s+"
+            r'(?:(?:on|from|using|use|control|touch|the|my|this|a|your|android)\s+)*'
+            r'(?:phone|mobile|smartphone)\b', ' ', text)
+        targets = set()
+        if re.search(r'\b(phone|mobile|android|smartphone|vivo)\b', text):
+            targets.add('phone')
+        if re.search(r'\b(pc|computer|desktop|laptop)\b', text):
+            targets.add('pc')
+        return targets or {'pc'}
+
+    @staticmethod
+    def _is_action_request(text: str) -> bool:
+        text = re.sub(r'^\s*(?:hey\s+jarvis|jarvis)\b[\s,:-]*', '', text)
+        for _ in range(4):
+            stripped = re.sub(r'^(?:(?:can|could|would|will) you\s+|(?:please|kindly|first|then|now)\b[\s,:-]*)', '', text)
+            if stripped == text:
+                break
+            text = stripped
+        return bool(re.match(
+            r'^(open|launch|close|focus|switch|move|resize|maximize|minimize|set|increase|'
+            r'decrease|reduce|raise|lower|turn|mute|unmute|play|pause|resume|stop|start|'
+            r'click|tap|scroll|type|press|copy|paste|send|call|dial|pair|connect|disconnect)\b', text))
 
     @classmethod
     def normalize_text(cls, text: str) -> str:
@@ -163,6 +200,42 @@ class NLUEngine:
                 category=IntentCategory.PHONE_PAIRING,
                 confidence=0.95,
                 suggested_action="phone_pair",
+            )
+
+        # 4. Check JARVIS Mode Intent (test mode / production mode / mode status)
+        if re.search(r'\b(activate (the )?test(ing)? mode|switch to (the )?test(ing)? mode|enter test(ing)? mode|test(ing)? mode|dev mode|switch to (the )?dev(elopment)? mode)\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="switch_to_test_mode",
+            )
+        if re.search(r'\b(activate (the )?production mode|switch to (the )?production mode|enter production mode|production mode|prod mode|switch to (the )?prod mode)\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="switch_to_production_mode",
+            )
+        if re.search(r'\b(what mode are you in|check (jarvis )?mode|current (jarvis )?mode|jarvis mode status|which mode)\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="get_jarvis_mode",
+            )
+
+        # Polite action requests are commands, even when phrased as a question.
+        # Keep explanatory questions such as "why/how does ..." conversational.
+        if cls._is_action_request(lower):
+            return NLUResult(
+                raw_text=text, normalized_text=normalized,
+                category=(IntentCategory.PHONE_CONTROL if 'phone' in cls.device_targets(normalized)
+                          else IntentCategory.SYSTEM_CONTROL),
+                confidence=0.90,
             )
 
         # 4. Check Conversational Inquiry or Troubleshooting Report
@@ -235,6 +308,7 @@ class NLUEngine:
                 suggested_action="control_vision_mode",
             )
 
+
         # Default to Conversational / Unknown
         return NLUResult(
             raw_text=text,
@@ -250,7 +324,36 @@ class NLUEngine:
 
         Returns (allowed: bool, guidance_message: str).
         """
-        if not user_text:
+        if tool_name == 'execute_domain_tool':
+            nested_name = arguments.get('tool_name')
+            payload = arguments.get('arguments_json', '{}')
+            if (not isinstance(nested_name, str) or nested_name == tool_name
+                    or not isinstance(payload, str) or len(payload) > 65536):
+                return False, 'Invalid domain tool request.'
+            try:
+                nested_args = json.loads(payload)
+            except (ValueError, RecursionError):
+                return False, 'Invalid domain tool arguments.'
+            if not isinstance(nested_args, dict):
+                return False, 'Domain tool arguments must be an object.'
+            return cls.validate_tool_intent(nested_name, nested_args, user_text)
+
+        targets = cls.device_targets(user_text)
+        if tool_name == 'phone_control' and 'phone' not in targets:
+            return False, (
+                'This request targets the PC by default. Use the matching PC tool. '
+                'Android phone control requires an explicit phone/mobile target in the current user request; '
+                'previous phone requests do not change the default.'
+            )
+        pc_tools = {'launch_app', 'open_application', 'open_website', 'open_page', 'browser_task',
+                    'system_control', 'system_control_extension', 'hypr_dispatch', 'hypr_query',
+                    'list_applications', 'list_windows', 'list_workspaces', 'read_screen',
+                    'type_text', 'press_key', 'send_shortcut', 'set_volume', 'set_brightness',
+                    'switch_workspace', 'manage_window', 'focus_window'}
+        if targets == {'phone'} and tool_name in pc_tools:
+            return False, 'The user explicitly targeted the phone. Use phone_control; do not act on the PC.'
+
+        if not user_text and tool_name != 'phone_pair':
             return True, ""
 
         analysis = cls.analyze(user_text)

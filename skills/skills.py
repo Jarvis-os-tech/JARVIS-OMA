@@ -2477,22 +2477,27 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         except Exception as error:
             raise SkillError(f"Failed to query JARVIS mode: {error}") from None
 
-    async def _adapter_switch_jarvis_mode(self, mode, sync=True):
+    async def _adapter_switch_jarvis_mode(self, mode, sync=False):
         """Switch JARVIS between production and test modes and schedule service restart."""
-        if mode not in ("production", "test"):
+        norm = str(mode).lower().strip()
+        if norm in ("dev", "test"):
+            target_mode = "test"
+        elif norm in ("prod", "production"):
+            target_mode = "production"
+        else:
             raise SkillError("mode must be 'production' or 'test'")
         try:
             from scripts.jarvis_mode import switch_mode
-            result = await self._file_worker.run(switch_mode, mode, sync=sync, restart=False)
+            result = await self._file_worker.run(switch_mode, target_mode, restart=False)
             asyncio.create_task(self._deferred_service_restart(delay=2.0))
-            branch = result.get("branch", mode)
+            branch = result.get("branch", target_mode)
             return {
                 "status": "switching",
-                "target_mode": mode,
+                "target_mode": target_mode,
                 "branch": branch,
                 "root": result.get("root"),
                 "message": (
-                    f"Switched configuration to {mode} mode on branch {branch}. "
+                    f"Switched configuration to {target_mode} mode on branch {branch}. "
                     "Restarting JARVIS service in two seconds to load changes."
                 ),
             }

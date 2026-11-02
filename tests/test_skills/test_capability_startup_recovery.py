@@ -288,7 +288,8 @@ class DesktopStartupEnvironmentTests(unittest.IsolatedAsyncioTestCase):
             scripts = root / '.venv/bin'
             scripts.mkdir(parents=True)
             python = scripts / 'python'
-            python.write_text(f'#!{sys.executable}\n' + '''import json, os, shutil, sys
+            interpreter = '/usr/bin/python3' if ' ' in sys.executable else sys.executable
+            python.write_text(f'#!{interpreter}\n' + '''import json, os, shutil, sys
 if sys.argv[1:3] == ['-m', 'core.desktop_session']:
     args = sys.argv[3:]
     wait = args[1] if len(args) == 2 and args[0] == '--wait-seconds' else '0'

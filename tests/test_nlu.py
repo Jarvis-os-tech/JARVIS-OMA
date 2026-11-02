@@ -91,3 +91,68 @@ def test_standby_farewells():
         allowed, _ = NLUEngine.validate_tool_intent("enter_standby", {}, phrase)
         assert allowed is True
 
+
+@pytest.mark.parametrize('text', [
+    'Could you increase the volume?', 'Jarvis, please open the browser.',
+    'Can you set brightness to forty percent?', 'First send hi message to me.',
+    'Please play the next song.',
+])
+def test_polite_action_requests_are_not_classified_as_advice(text):
+    result = NLUEngine.analyze(text)
+    assert not result.is_conversational_inquiry
+    allowed, _ = NLUEngine.validate_tool_intent(
+        'system_control_extension', {'action': 'next', 'category': 'media'}, text)
+    assert allowed
+
+
+@pytest.mark.parametrize('text', [
+    '', 'Open WhatsApp', 'Increase volume', 'What is my PC connection status?',
+    'Open the browser, not on my phone', 'Do not use my phone; open the browser on my PC',
+    'Type "open it on my phone" in the editor',
+])
+def test_phone_control_requires_explicit_current_phone_target(text):
+    allowed, guidance = NLUEngine.validate_tool_intent('phone_control', {'action': 'status'}, text)
+    assert not allowed
+    assert 'PC' in guidance
+
+
+@pytest.mark.parametrize('text', [
+    'Open WhatsApp on my phone', 'On my mobile, open the browser',
+    'Check my Android phone connection', 'Increase volume on my phone',
+])
+def test_explicit_phone_target_allows_phone_tools(text):
+    assert NLUEngine.validate_tool_intent('phone_control', {'action': 'status'}, text)[0]
+
+
+def test_phone_domain_wrapper_cannot_bypass_device_routing():
+    args = {'domain': 'phone', 'tool_name': 'phone_pair', 'arguments_json': '{}'}
+    assert not NLUEngine.validate_tool_intent('execute_domain_tool', args, 'Open the browser')[0]
+
+
+def test_explicit_phone_app_request_cannot_use_pc_launcher():
+    assert not NLUEngine.validate_tool_intent('launch_app', {'app': 'WhatsApp'},
+                                            'Open WhatsApp on my phone')[0]
+
+
+def test_troubleshooting_with_embedded_action_stays_conversational():
+    result = NLUEngine.analyze('Why does increasing the volume not work?')
+    assert result.is_conversational_inquiry
+
+
+@pytest.mark.parametrize('text,expected_action', [
+    ('actavtethe testing mood', 'switch_to_test_mode'),
+    ('activate the testing mood', 'switch_to_test_mode'),
+    ('activate testing mode', 'switch_to_test_mode'),
+    ('switch to dev mode', 'switch_to_test_mode'),
+    ('activate production mode', 'switch_to_production_mode'),
+    ('switch to production mode', 'switch_to_production_mode'),
+    ('what mode are you in', 'get_jarvis_mode'),
+    ('jarvis mode status', 'get_jarvis_mode'),
+    ('check mode', 'get_jarvis_mode'),
+])
+def test_jarvis_mode_voice_phrases(text, expected_action):
+    result = NLUEngine.analyze(text)
+    assert result.category == IntentCategory.SYSTEM_CONTROL
+    assert result.suggested_action == expected_action
+
+

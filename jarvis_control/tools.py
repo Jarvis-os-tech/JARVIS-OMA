@@ -16,6 +16,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -39,7 +40,7 @@ QUERY_KINDS = {
 # Read-only tools still run under --dry-run so the planner can see the desktop.
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
-                   "read_url", "fetch_web_page"}
+                   "read_url", "fetch_web_page", "get_jarvis_mode"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -542,7 +543,8 @@ TOOL_SCHEMAS = [
         "description": (
             "Type literal text into the focused window, as if from the keyboard. For "
             "content — a sentence, a search query, a path. Not for key commands; use "
-            "send_shortcut for those."
+            "send_shortcut for those. Delivery is not proof of the application effect. "
+            "Inspect the exact input field before typing and read back afterward; never infer that a message was sent."
         ),
         "input_schema": {
             "type": "object",
@@ -1075,6 +1077,45 @@ SYSTEM_UPDATE_SCHEMA = {
 }
 TOOL_SCHEMAS.append(SYSTEM_UPDATE_SCHEMA)
 
+JARVIS_MODE_SCHEMA = {
+    'name': 'switch_jarvis_mode',
+    'description': (
+        'Switch JARVIS operating mode between production mode (standalone compiled runtime) '
+        'and testing mode (local development workspace). Use when the user says "activate testing mode", '
+        '"testing mood", "test mode", "switch to dev mode", "switch to testing mode", '
+        '"activate production mode", "switch to production mode", or asks to test changes in the current folder.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'mode': {
+                'type': 'string',
+                'enum': ['production', 'test'],
+                'description': "Target mode: 'test' for local workspace testing, 'production' for standalone runtime."
+            }
+        },
+        'required': ['mode'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(JARVIS_MODE_SCHEMA)
+
+GET_JARVIS_MODE_SCHEMA = {
+    'name': 'get_jarvis_mode',
+    'description': (
+        'Check whether JARVIS is currently connected to production mode (standalone runtime) '
+        'or testing mode (local development workspace), and inspect the active folder path and service state. '
+        'Use when the user asks "what mode are you in?", "check mode", or "are you in test mode?".'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {},
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(GET_JARVIS_MODE_SCHEMA)
+
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -1530,6 +1571,10 @@ class Executor:
 
     @staticmethod
     def describe(name: str, args: dict) -> str:
+        if name == "switch_jarvis_mode":
+            return f"switch mode: {args.get('mode', '')}"
+        if name == "get_jarvis_mode":
+            return "check jarvis mode"
         if name == "system_update":
             return f"system update: {args.get('action', 'check')}"
         if name == "phone_control":
@@ -1617,7 +1662,7 @@ class Executor:
     # -- helpers ------------------------------------------------------------
     @staticmethod
     def _shell(cmd: list[str], timeout: float = 20.0, grace: float | None = None,
-               limit: int = OUTPUT_LIMIT) -> Result:
+               limit: int = OUTPUT_LIMIT, input_text: str | None = None) -> Result:
         """Run a command and read its result.
 
         `grace` is for commands that start an application. `omarchy launch
@@ -1638,11 +1683,16 @@ class Executor:
         """
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=child_env())
+                                    stderr=subprocess.PIPE,
+                                    stdin=subprocess.PIPE if input_text is not None else None,
+                                    text=True, env=child_env())
         except FileNotFoundError:
             return Result(False, f"{cmd[0]} is not installed")
         try:
-            stdout, stderr = proc.communicate(timeout=grace if grace is not None else timeout)
+            if input_text is None:
+                stdout, stderr = proc.communicate(timeout=grace if grace is not None else timeout)
+            else:
+                stdout, stderr = proc.communicate(input=input_text, timeout=grace if grace is not None else timeout)
         except subprocess.TimeoutExpired:
             if grace is None:
                 proc.kill()
@@ -1803,6 +1853,16 @@ class Executor:
         keysym, error = normalise_key(key)
         if error:
             return Result(False, error)
+        target, why = self._window_geometry(window)
+        if target is None:
+            return Result(False, why or 'The shortcut target could not be verified')
+        window = 'address:' + target['address']
+        if target.get('focusHistoryID') == 0:
+            # Use conventional physical keycodes and a full map. Tiny text
+            # injector maps can deliver Return without activating GTK bindings.
+            result = self._shell([sys.executable, str(Path(__file__).with_name('wayland_keyboard.py')),
+                                  clean_mods, keysym], timeout=3)
+            return self._input_delivery(target, f'pressed {_chord(clean_mods, keysym)} with a full keyboard map') if result.ok else result
         lua = (
             f'hl.dsp.send_shortcut({{ mods = {json.dumps(clean_mods)}, '
             f'key = {json.dumps(keysym)}, window = {json.dumps(window)} }})'
@@ -1828,14 +1888,22 @@ class Executor:
                 command += ["-m", mod]
             result = self._shell(command)
             if result.ok:
-                return Result(True, f"pressed {_chord(clean_mods, keysym)} in address:{target['address']} "
-                              "using virtual-keyboard fallback")
+                return self._input_delivery(target, f"pressed {_chord(clean_mods, keysym)} using virtual-keyboard fallback")
         # Say so when the name was translated, but not for a mere case fold —
         # "read 'T' as t" is noise the model would repeat out loud.
         if result.ok and keysym.lower() != (key or "").strip().lower():
-            return Result(True, f"pressed {_chord(clean_mods, keysym)} "
-                                f"(read {key!r} as {keysym})")
-        return result
+            return self._input_delivery(target, f"pressed {_chord(clean_mods, keysym)} (read {key!r} as {keysym})")
+        return self._input_delivery(target, f"pressed {_chord(clean_mods, keysym)}") if result.ok else result
+
+    @staticmethod
+    def _input_delivery(window: dict, message: str) -> Result:
+        return Result(True, json.dumps({
+            'status': 'dispatched_unverified', 'dispatched': True, 'verified': False,
+            'target': 'address:' + window['address'], 'pid': window.get('pid'),
+            'message': message + '. Input delivery does not prove the requested application effect.',
+            'reobserve_required': True,
+            'next_step': 'Inspect this exact window and verify the intended field or final state before continuing. Do not repeat the input blindly.',
+        }))
 
     def _validate_omarchy_cli(self, command: str) -> str | None:
         return normalise_omarchy(command)[1]
@@ -1950,7 +2018,28 @@ class Executor:
         if not launcher:
             return Result(False, "no desktop launcher (uwsm-app or gtk-launch)")
         target = f"{app}.desktop:{action}" if action else f"{app}.desktop"
-        return self._shell([launcher, target], timeout=10, grace=LAUNCH_GRACE)
+        result = self._shell([launcher, target], timeout=10, grace=LAUNCH_GRACE)
+        if not result.ok:
+            return result
+        from .discovery import read_desktop
+        entry_path = _desktop_entry_path(app)
+        parser = read_desktop(entry_path) if entry_path is not None else None
+        entry = parser['Desktop Entry'] if parser is not None and parser.has_section('Desktop Entry') else {}
+        identities = {app.casefold(), str(entry.get('StartupWMClass', '')).casefold()}
+        identities.discard('')
+        deadline = time.monotonic() + 2
+        while True:
+            matches = [client for client in self._query_json('clients')
+                       if str(client.get('class', '')).casefold() in identities
+                       or str(client.get('initialClass', '')).casefold() in identities]
+            if matches:
+                return Result(True, json.dumps({'status': 'opened', 'verified': True, 'app': app,
+                    'windows': [{key: client.get(key) for key in ('address', 'pid', 'class', 'workspace')}
+                                for client in matches], 'message': 'Application window observed; inspect its fields before input.'}))
+            if time.monotonic() >= deadline:
+                return Result(True, json.dumps({'status': 'unverified', 'verified': False, 'app': app,
+                    'message': 'Launcher accepted the request, but no matching application window was observed. Inspect windows before retrying.'}))
+            time.sleep(.05)
 
     def _tool_omarchy_help(self, query: str = "", topic: str = "commands",
                            limit: int = 12, offset: int = 0) -> Result:
@@ -2607,7 +2696,9 @@ class Executor:
         return Result(True, summary)
 
     def _tool_type_text(self, text: str) -> Result:
-        window, _ = self._window_geometry('activewindow')
+        window, why = self._window_geometry('activewindow')
+        if window is None:
+            return Result(False, why or 'No focused window was observed; text was not typed')
         browser = (window or {}).get('class', '').lower()
         if window and window.get('xwayland') and (browser.startswith('chrome-') or browser in {
                 'google-chrome', 'chromium', 'brave-browser', 'firefox'}):
@@ -2621,12 +2712,23 @@ class Executor:
                     raise RuntimeError(result.output)
             try:
                 page_text.paste_text(text, paste_shortcut, focused)
-                return Result(True, 'Pasted text into the focused Xwayland browser; verify the field before submitting.')
+                return self._input_delivery(window, 'Pasted text into the focused Xwayland browser')
             except (OSError, RuntimeError, page_text.SelectionError) as exc:
                 return Result(False, str(exc))
         if not shutil.which("wtype"):
             return Result(False, "wtype is not installed")
-        return self._shell(["wtype", "--", text])
+        # Keep the virtual keyboard/keymap alive long enough for the target to
+        # consume the final events. Zero-delay typing followed by immediate
+        # disconnect can deliver only a prefix on real GTK/Wayland clients.
+        # stdin keeps leading '-' and other literal text out of option parsing.
+        result = self._shell(["wtype", "-d", "5", "-", "-s", "150"], input_text=text)
+        if not result.ok:
+            return result
+        current, _ = self._window_geometry('activewindow')
+        if not current or current.get('address') != window.get('address') or current.get('pid') != window.get('pid'):
+            return Result(True, json.dumps({'status': 'unknown', 'verified': False, 'dispatched': True,
+                'message': 'Focus changed during typing; inspect the application before retrying.'}))
+        return self._input_delivery(window, 'Text delivered to the focused window')
 
     def _tool_run_shell(self, command: str) -> Result:
         if not self.config.allow_shell:
@@ -3144,6 +3246,11 @@ class Executor:
             if window is None:
                 return None, "nothing is focused"
             return window, ""
+        if target.startswith('class:'):
+            matches = [client for client in clients if client.get('class') == target[6:]]
+            if len(matches) != 1:
+                return None, 'Class target must identify exactly one window; use its address instead'
+            return matches[0], ''
         address = target[8:] if target.startswith("address:") else target
         window = next((c for c in clients if c.get("address") == address), None)
         if window is None:
@@ -3360,6 +3467,22 @@ class Executor:
             return Result(False, f"Unknown action: {action}")
         except Exception as e:
             return Result(False, f"System update failed: {e}")
+
+    def _tool_switch_jarvis_mode(self, mode: str) -> Result:
+        try:
+            from scripts.jarvis_mode import switch_mode
+            res = switch_mode(mode, restart=True)
+            return Result(True, res.get("message", f"Switched to {mode} mode."))
+        except Exception as e:
+            return Result(False, f"Failed to switch mode: {e}")
+
+    def _tool_get_jarvis_mode(self) -> Result:
+        try:
+            from scripts.jarvis_mode import current_mode
+            res = current_mode()
+            return Result(True, f"JARVIS is currently running in {res['mode'].upper()} mode connected to {res['root']}.")
+        except Exception as e:
+            return Result(False, f"Failed to get mode: {e}")
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.
