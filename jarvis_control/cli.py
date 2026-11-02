@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import __version__, capabilities, config as cfg, realtime as realtime_mod
+from . import __version__, capabilities, config as cfg
 from .planner import Planner
 from .session import daemon_running, send_control
 from .tools import Executor
@@ -59,17 +59,43 @@ def cmd_say(args, config) -> int:
     return 0 if not turn.error else 1
 
 
+def default_source() -> str:
+    """The current default PipeWire source name, or '' if there is none."""
+    try:
+        out = subprocess.run(["pactl", "get-default-source"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return "" if out in ("", "@DEFAULT_SOURCE@") else out
+
+
+def default_sink() -> str:
+    """The current default PipeWire sink name, or '' if there is none."""
+    try:
+        out = subprocess.run(["pactl", "get-default-sink"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return "" if out in ("", "@DEFAULT_SINK@") else out
+
+
+def echo_risk(config) -> str:
+    """Report configurations where speaker output may reenter the microphone."""
+    if not getattr(config, "barge_in", False):
+        return ""
+    source = (getattr(config, "device", "") or default_source()).lower()
+    sink = default_sink().lower()
+    if not source or not sink or "echo-cancel" in source or "echo_cancel" in source:
+        return ""
+    if any(word in source for word in ("headset", "headphone")):
+        return ""
+    return ""
+
+
 def cmd_run(args, config) -> int:
-    if config.provider == "gemini":
-        from . import gemini_live
-        return gemini_live.run(config)
-    if config.engine == "live":
-        from . import live
-        return live.run(config)
-    if config.engine != "realtime":
-        print(f"unknown voice engine: {config.engine}", file=sys.stderr)
-        return 1
-    return realtime_mod.run(config)
+    """Run the voice layer daemon."""
+    import runpy
+    return runpy.run_module("voice_layer.daemon", run_name="__main__")
 
 
 def cmd_listen(args, config) -> int:
@@ -210,16 +236,20 @@ def cmd_doctor(args, config) -> int:
         print(f"  {_tick(True)} per-install safety identifier at {cfg.SAFETY_ID_FILE}")
 
     print(_bold("\nears"))
-    if config.provider == "gemini":
-        from . import gemini_live
-        problems = gemini_live.check_ready(config)
-    else:
-        problems = realtime_mod.check_ready(config)
-        if config.engine == "live":
-            from .live import config_problems
-            problems.extend(config_problems(config))
-        elif config.engine != "realtime":
-            problems.append(f"unknown voice engine: {config.engine}")
+    problems = []
+    key_env = getattr(config, "gemini_api_key_env" if config.provider == "gemini" else "api_key_env", "")
+    if key_env and not os.environ.get(key_env):
+        problems.append(f"{key_env} is not set")
+    for tool in ("pw-record", "pw-cat"):
+        if not shutil.which(tool):
+            problems.append(f"{tool} is missing — install pipewire-audio")
+    source = default_source()
+    if not source:
+        problems.append("PipeWire reports no audio input — is a microphone plugged in?")
+    elif source.endswith(".monitor"):
+        problems.append(
+            f"the default input is {source}, which is a loopback of speaker "
+            "output, not a microphone — plug one in, or set `device` in config")
     if problems:
         for problem in problems:
             print(f"  {_tick(False)} {problem}")
@@ -227,22 +257,18 @@ def cmd_doctor(args, config) -> int:
         print(f"  {_tick(True)} websockets, API key, and PipeWire tools all present")
     if config.provider == "gemini":
         print(f"  → Gemini Live ({config.realtime_model}), toggle-only")
-        print("  ! while listening is on, room audio streams continuously to Gemini.")
     elif config.engine == "live":
         print("  → OpenAI Live with Responses delegation, toggle-only")
-        print(f"  → session limit {config.live_max_session_seconds:g}s; no connection at boot")
-        print("  ! while listening is on, room audio streams continuously to OpenAI.")
     else:
         print(f"  → OpenAI Realtime (speech to speech), "
               f"{config.realtime_turn_detection}, toggle-only")
-        print("  ! while listening is on, room audio streams continuously to OpenAI.")
     print("    It starts off, and only SUPER + SHIFT + V turns it on. Toggling")
     print("    off kills the recorder, so nothing is captured while muted.")
-    source = config.device or realtime_mod.default_source()
+    source = config.device or default_source()
     print(f"  default input: {source or '(none)'}")
-    print(f"  output:        {realtime_mod.default_sink() or '(none)'}")
+    print(f"  output:        {default_sink() or '(none)'}")
     if config.barge_in:
-        risk = realtime_mod.echo_risk(config)
+        risk = echo_risk(config)
         print(f"  {_tick(not risk)} barge_in is on — you can interrupt her mid-sentence")
         if risk:
             for line in textwrap.wrap(risk, 72):
