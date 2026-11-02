@@ -1,0 +1,14 @@
+# JARVIS Core Runtime Dependencies
+google-genai==2.24.0
+sounddevice>=0.5.1
+numpy>=1.26.0
+openwakeword>=0.4.0,<0.5
+httpx>=0.27.0
+cli-anything-hub>=0.4.0
+pydantic>=2.0
+websockets>=13.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+onnxruntime>=1.16.0
+qrcode>=8.0
+pillow>=10.0.0

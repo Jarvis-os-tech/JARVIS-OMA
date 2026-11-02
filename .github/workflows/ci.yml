@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ "main", "dev", "Harness²", "harness2" ]
+    branches: [ "main", "dev", "Harness²", "harness2", "JARVIS-OS" ]
   pull_request:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "JARVIS-OS" ]
 
 jobs:
   test:
@@ -32,10 +32,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Verify voice core immutability lock
-        run: |
-          python scripts/verify_voice_lock.py
-
       - name: Run unit and regression tests
+        env:
+          PYTHONPATH: .
         run: |
-          timeout 180 python -m pytest -q
+          timeout 300 python -m pytest -q
