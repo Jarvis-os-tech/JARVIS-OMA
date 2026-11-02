@@ -1,2 +1,7 @@
-"""JARVIS Voice Core — sovereign voice foundation for JARVIS OS."""
-__version__ = '0.1.0'
+"""Compatibility shim redirecting jarvis_voice to voice_layer."""
+import sys
+import voice_layer
+
+sys.modules[__name__] = voice_layer
+from voice_layer import *
+from voice_layer import __version__
