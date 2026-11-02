@@ -40,7 +40,8 @@ QUERY_KINDS = {
 # Read-only tools still run under --dry-run so the planner can see the desktop.
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
-                   "read_url", "fetch_web_page", "get_jarvis_mode"}
+                   "read_url", "fetch_web_page", "get_jarvis_mode",
+                   "reach_search", "reach_transcript"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -617,6 +618,32 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "The complete http:// or https:// URL to fetch and read."},
+            },
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "reach_search",
+        "description": "Search platforms (reddit, youtube, github, bilibili, v2ex, xueqiu, twitter) via Agent Reach.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel": {"type": "string", "description": "Platform channel (e.g. reddit, youtube, github, bilibili, v2ex, xueqiu)"},
+                "query": {"type": "string", "description": "Search keyword or query string"},
+                "limit": {"type": "integer", "description": "Maximum number of results to return (default: 5)"},
+            },
+            "required": ["channel", "query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "reach_transcript",
+        "description": "Extract speech-to-text transcript or subtitles from a YouTube video, Bilibili video, or Xiaoyuzhou podcast link.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The video or podcast URL."},
             },
             "required": ["url"],
             "additionalProperties": False,
@@ -3223,14 +3250,61 @@ class Executor:
     def _tool_read_url(self, url: str) -> Result:
         if not url or urlparse(url or "").scheme.lower() not in ("http", "https"):
             return Result(False, "url must be a valid http or https address")
+
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        reach_domains = (
+            "reddit.com", "redd.it", "youtube.com", "youtu.be",
+            "twitter.com", "x.com", "linkedin.com", "bilibili.com",
+            "v2ex.com", "xueqiu.com", "zhipin.com", "xiaoyuzhoufm.com",
+            "github.com"
+        )
+        is_reach_platform = any(host == d or host.endswith("." + d) for d in reach_domains)
+
+        if is_reach_platform:
+            try:
+                import asyncio
+                from connectors.agent_reach import get_client
+                res = asyncio.run(get_client().read(url))
+                if res.get("ok"):
+                    return Result(True, res.get("text", ""))
+            except Exception:
+                pass
+
         from .web_text import bounded_page_text, PageReadError
         try:
             text = bounded_page_text(url, timeout=12)
             return Result(True, text)
         except PageReadError as err:
+            try:
+                import asyncio
+                from connectors.agent_reach import get_client
+                res = asyncio.run(get_client().read(url))
+                if res.get("ok"):
+                    return Result(True, res.get("text", ""))
+            except Exception:
+                pass
             return Result(False, f"could not read page {url}: {err}")
         except Exception as err:
             return Result(False, f"error reading {url}: {err}")
+
+    def _tool_reach_search(self, channel: str, query: str, limit: int = 5) -> Result:
+        try:
+            import asyncio
+            from connectors.agent_reach import get_client
+            res = asyncio.run(get_client().search(channel, query, limit=limit))
+            return Result(res.get("ok", False), res.get("text", ""))
+        except Exception as err:
+            return Result(False, f"reach search error: {err}")
+
+    def _tool_reach_transcript(self, url: str) -> Result:
+        try:
+            import asyncio
+            from connectors.agent_reach import get_client
+            res = asyncio.run(get_client().transcript(url))
+            return Result(res.get("ok", False), res.get("text", ""))
+        except Exception as err:
+            return Result(False, f"reach transcript error: {err}")
 
     def _tool_fetch_web_page(self, url: str) -> Result:
         return self._tool_read_url(url)
