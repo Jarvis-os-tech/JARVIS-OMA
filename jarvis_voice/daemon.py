@@ -20,12 +20,13 @@ import sys
 import time
 from pathlib import Path
 
-from .config import load as load_config, load_env
+from .config import Config, load as load_config, load_env
 from .ipc import ControlServer
 from .microphone import read_microphone_state
 from .playback import Playback, MicrophoneBacklogError, stop_process, audio_environment
 from .recovery import ConnectionRecovery
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
+from jarvis_control.outcomes import classify_result
 
 log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
@@ -109,7 +110,7 @@ def build_instruction(tools: list | None = None) -> str:
         "ACTIVE REASONING & INTELLECTUAL DEPTH:\n"
         "1. REASONING ALOUD: When the user asks you to analyze tasks, review backlogs, examine code, or decide what to implement, DO NOT give empty dismissive answers (such as 'I have pulled up your tasks' or 'I have added the task').\n"
         "2. SYNTHESIZE & EVALUATE: Actively evaluate the options! Name the top 2-3 specific items or issues by title, explain their importance and dependencies, and provide a clear, reasoned recommendation on what to do next.\n"
-        "3. TO-DO & BACKLOG REASONING: When discussing the to-do list, mention the critical items (e.g. 'In your backlog, you have key priorities: 1) Fixing the PC wireless control connection issue that we added after USB debugging disconnected, 2) Integrating WhatsApp, and 3) Optimizing memory recall latency. The wireless PC control fix is the highest impact right now because it restores phone-to-PC control.').\n"
+        "3. TO-DO & BACKLOG REASONING: Retrieve the actual current backlog before naming priorities. Do not invent tasks or assume a phone connection problem from past examples.\n"
         "4. LOCAL CODEBASES & AGENTS: All codebase repositories, project files, and 279+ Agency agents exist LOCALLY on this computer (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). Never assume 'repository' means GitHub OAuth. Use local tools (search_files, list_files, read_file, start_task) or direct knowledge. NEVER invoke 'github_authorize' unless the user explicitly commands you to log in to GitHub.\n\n"
         "DUAL-TRACK CONTINUOUS TALKING WHILE PROCESSING WORK:\n"
         "1. WORK AND TALK SIMULTANEOUSLY: You can execute tasks in the background while continuing to talk with the user freely. NEVER pause, freeze, or hold replies when work is in progress.\n"
@@ -121,6 +122,21 @@ def build_instruction(tools: list | None = None) -> str:
         "2. ACCENT & PHONETIC TOLERANCE: The user speaks in English with natural regional accents (including Indian English, global accents, colloquial phrasing, or occasional bilingual words). ALWAYS understand their meaning, intent, and desktop requests. Match the user's conversational pace.\n"
         "3. NEVER REFUSE LANGUAGE: Under no circumstances should you ever tell the user 'I cannot respond in that language' or refuse to understand. If words sound unfamiliar or are transcribed phonetically, deduce their intent in the context of computer controls, questions, or conversation, and respond helpfully in English.\n"
         "4. CONVERSATIONAL VS TOOL INTENT: When the user asks questions, seeks clarification, explains problems, or discusses what is happening, ANSWER CONVERSATIONALLY AND DIRECTLY. Do NOT execute tools (such as phone_pair or media controls) unless the user explicitly commands that specific action.\n\n"
+        "DEVICE TARGET AND AUTOMATIC EXECUTION:\n"
+        "1. The PC is the default target for EVERY new request. Use the phone only when the current request explicitly targets the phone/mobile/Android. Previous phone work never changes this default.\n"
+        "2. Clear ordinary requests such as 'open the browser', 'could you increase the volume', and 'set brightness to forty percent' authorize immediate PC tool execution. Do not ask an extra permission question or only describe the steps.\n"
+        "3. Prefer system_control for common settings, launch_app for PC apps, and observed PC window state for desktop workflows. Never check phone connectivity to operate the PC.\n"
+        "4. Keep tool-required confirmations for sensitive actions. If a tool fails, is unavailable or is unverified, report that and inspect/replan; do not claim it completed.\n"
+        "5. TOOL RETRY & CIRCUIT BREAKER: If a tool call fails, is rejected by NLU, or reports that PC is targeted, NEVER retry the same tool or loop calling other tools. You must immediately speak directly to the user in voice to explain what happened or ask for clarification.\n\n"
+        "FAST DESKTOP RESPONSES:\n"
+        "For a clear short PC command, call the matching native tool immediately. "
+        "Do not enumerate capabilities, search the web, delegate to an agent, or add a filler before ordinary volume, brightness, workspace or app controls. "
+        "After verification, give one short acknowledgement with the observed result.\n\n"
+        "COMPLETE WORK AND VERIFY RESULTS:\n"
+        "1. Track every requested step and constraint. Opening an app, typing text, pressing Enter, or starting a task is not the same as completing the user's goal.\n"
+        "2. Continue remaining authorized steps after each verified result. If blocked or uncertain, inspect the exact current state and use a supported alternative; never stop halfway and say everything is done.\n"
+        "3. Verify the final application state before claiming success. Delivered input or a started process alone does not prove the requested effect.\n"
+        "4. A queued or running background job is only submitted. Keep its real task ID and distinguish pending, partial, blocked, failed and verified completion. Report what remains when the full request could not be verified.\n\n"
         f"{tool_status}\n\n"
         "GROUNDING & CAPABILITY SELF-AWARENESS RULES:\n"
         "1. Your real-world capabilities are strictly bounded by your declared tools in this session.\n"
@@ -136,6 +152,15 @@ def build_instruction(tools: list | None = None) -> str:
     if 'omarchy_help' in active_tools:
         from jarvis_control.omarchy_skill import ROUTING
         inst += ROUTING
+    if 'discover_domain_tools' in active_tools and 'execute_domain_tool' in active_tools:
+        inst += (
+            '\nSPECIALIST CAPABILITIES: The initial catalog contains fast everyday controls. '
+            'For other capabilities, use discover_domain_tools for the relevant domain, then '
+            'execute_domain_tool with the exact returned name and JSON arguments. Domains include '
+            'workspace, github, gui, phone, vision, filesystem, memory, orchestration, learning and composio. '
+            'An omitted specialist schema is not proof that the capability is unavailable. '
+            'Do not perform discovery for an already attached everyday control.\n'
+        )
     if 'phone_control' in active_tools:
         from jarvis_control.phone_control import ROUTING
         inst += ROUTING
@@ -267,6 +292,9 @@ class LiveVoice:
         self._reply_recovery_attempted = False
         self._reply_recovery_active = False
         self._tool_answer_pending = False
+        self._turn_tool_invocations = 0
+        self._turn_rejected_tools = 0
+        self._turn_blocked_tools = set()
         self._waiting_notice_played = False   # Set once 'reply_waiting' has played for this turn
         self._filler_played = False           # Limits to at most one conversational filler per speech turn
         self._reply_wait_started_at = None    # Monotonic timestamp when user input upload/dispatch completed
@@ -305,7 +333,7 @@ class LiveVoice:
         self.activity_end_sent_at: float | None = None
         self.provider_first_audio_ms: int | None = None
         self.broadcast = None
-        silence_frames = getattr(config, 'turn_silence_frames', 15) if config else 15
+        silence_frames = getattr(config, 'turn_silence_frames', Config.turn_silence_frames)
         self.gate = speech_gate or SpeechTurnGate(silence_frames=silence_frames, tail_seconds=.35)
         self.barge_in_enabled = bool(barge_in)
         ref = getattr(player, 'reference', None)
@@ -379,6 +407,7 @@ class LiveVoice:
             'last_tool': self._last_tool,
             'control_enabled': bool(self.skills and getattr(self.skills, 'control', None)),
             'tool_count': len(self.skills.declarations) if self.skills else 0,
+            'voice_tool_count': len(getattr(self.skills, 'live_declarations', self.skills.declarations)) if self.skills else 0,
             'vision_mode': self.vision_mode,
             'latency': {
                 'speech_end_to_first_audio_ms': self.response_first_audio_ms,
@@ -547,6 +576,9 @@ class LiveVoice:
         self._tool_answer_pending = False
         self._waiting_notice_played = False
         self._filler_played = False
+        self._turn_tool_invocations = 0
+        self._turn_rejected_tools = 0
+        self._turn_blocked_tools = set()
         self._reply_wait_started_at = None
         self._last_reply_sound_at = None
 
@@ -1120,7 +1152,7 @@ class LiveVoice:
                             self.player.enqueue(blob.data)
 
             if getattr(content, 'turn_complete', False):
-                if self._tool_response_pending and (self._pending_tool_batches or self._tools_in_flight):
+                if self._pending_tool_batches or self._tools_in_flight:
                     self._tool_intermediate_received = True
                     return
                 # Live emits an intermediate boundary after a function call;
@@ -1177,9 +1209,32 @@ class LiveVoice:
         for call in getattr(tool_call, 'function_calls', []) or []:
             name = call.name
             call_id = getattr(call, 'id', None)
+            self._turn_tool_invocations += 1
             if stop_batch or batch_token != (self.gate.accepted_turns, self.player.generation):
                 response = {'ok': False, 'status': 'not_run',
                             'error': 'Earlier action failed, needs confirmation, or its speech turn ended. Inspect state before continuing.'}
+            elif self._turn_rejected_tools >= 2 or self._turn_tool_invocations >= 6:
+                log.warning('Tool loop circuit breaker triggered in turn %d for tool %s',
+                            self.gate.accepted_turns, name)
+                response = {
+                    'ok': False, 'status': 'stopped',
+                    'error': (
+                        f"Action limit reached for this turn. Do NOT call tool '{name}' or any other tools. "
+                        "You must immediately respond directly to the user in spoken words."
+                    )
+                }
+                stop_batch = True
+            elif name in self._turn_blocked_tools:
+                self._turn_rejected_tools += 1
+                log.warning('Tool %s was already blocked in this turn; refusing repeated call', name)
+                response = {
+                    'ok': False, 'status': 'blocked',
+                    'error': (
+                        f"Tool '{name}' was already rejected in this turn. "
+                        "STOP calling tools. Respond directly to the user with spoken audio."
+                    )
+                }
+                stop_batch = True
             elif self.muted or self._drop_response or self._barge_pending or not self._reply_authorized or self._greeting_active or self._background_active or self._reply_recovery_active:
                 response = {'ok': False, 'status': 'rejected',
                             'error': 'No active authorized user speech turn for this action.'}
@@ -1193,8 +1248,15 @@ class LiveVoice:
                     allowed_by_nlu, nlu_guidance = NLUEngine.validate_tool_intent(name, arguments, self._user_text)
                     if not allowed_by_nlu:
                         log.info('NLU Gate intercepted tool %s: %s', name, nlu_guidance)
+                        self._turn_rejected_tools += 1
+                        self._turn_blocked_tools.add(name)
+                        guidance_msg = (
+                            f"{nlu_guidance} Do NOT retry '{name}' or call further tools for this request. "
+                            "Respond directly to the user with spoken words."
+                        )
                         response = {'ok': False, 'status': 'conversational_intent_required',
-                                    'error': nlu_guidance, 'guidance': nlu_guidance}
+                                    'error': guidance_msg, 'guidance': guidance_msg}
+                        stop_batch = True
                     else:
                         allowed = {tool['name'] for tool in self.skills.declarations} if self.skills else set()
                         if name not in allowed:
@@ -1224,7 +1286,7 @@ class LiveVoice:
                                        else 30 if name == 'system_control' else 15)
                             self._tools_in_flight += 1
                             self._active_tool = name
-                            log.info('Executing tool %s: %s', name, json.dumps(arguments))
+                            log.info('Executing tool %s', name)
                             try:
                                 result = await asyncio.wait_for(self.skills.execute(name, arguments), timeout=timeout)
                             finally:
@@ -1233,17 +1295,11 @@ class LiveVoice:
                                 if self._barge_pending and not self._tools_in_flight:
                                     self._barge_started_at = self._last_progress = time.monotonic()
                             log.info('Tool %s finished in %.2fs', name, time.monotonic() - started)
-                            if isinstance(result, str) and result.startswith('ERROR:'):
-                                detail = result[len('ERROR:'):].strip()
-                                held = 'needs spoken confirmation' in detail
-                                response = {'ok': False, 'status': 'needs_confirmation' if held else 'failed',
-                                            'error': detail, 'result': result}
-                                if held:
-                                    self._confirmation_gate_turn = self.gate.accepted_turns
-                            else:
-                                response = {'ok': True, 'status': 'completed', 'result': result}
-                                if name == 'enter_standby':
-                                    self._drop_response = True
+                            response = classify_result(result).response(result)
+                            if response['status'] == 'needs_confirmation':
+                                self._confirmation_gate_turn = self.gate.accepted_turns
+                            if response['ok'] and name == 'enter_standby':
+                                self._drop_response = True
                 except TimeoutError:
                     response = {'ok': False, 'status': 'unknown',
                                 'error': 'Tool timed out; outcome is unknown. Inspect current state before retrying any action.'}
@@ -1256,7 +1312,7 @@ class LiveVoice:
                         self._tool_results.pop(next(iter(self._tool_results)))
                 self._last_tool = {'name': name, 'ok': response['ok'], 'status': response['status'],
                                    'duration_ms': max(0, round((time.monotonic() - started) * 1000))}
-            if not response['ok']:
+            if not response['ok'] or response.get('completed') is False:
                 stop_batch = True
             responses.append(types.FunctionResponse(id=call_id, name=name, response=response))
         if responses:
@@ -1516,10 +1572,18 @@ class LiveVoice:
                     and not self._waiting_notice_played
                     and time.monotonic() - feedback_since > REPLY_NOTICE_SECONDS):
                 self._waiting_notice_played = True
-                self._play_reply_notice('reply_waiting')
+                if self._turn_rejected_tools > 0:
+                    # Do not play "still working on your request" if actions were blocked or rejected.
+                    # Prompt the provider to respond verbally instead.
+                    asyncio.create_task(self._recover_empty_reply(self._session))
+                else:
+                    self._play_reply_notice('reply_waiting')
 
             # 6. Safety timeout if barge-in acknowledgement was not answered within 5 seconds:
-            if (self._barge_pending and not self._tools_in_flight and self._barge_started_at is not None and
+            if self._barge_pending and self.gate.active:
+                # Long user speech is progress, not a missing-provider failure.
+                self._barge_started_at = time.monotonic()
+            if (self._barge_pending and not self.gate.active and not self._tools_in_flight and self._barge_started_at is not None and
                     time.monotonic() - self._barge_started_at > 5):
                 self.resume_handle = None
                 self._barge_pending = self._barge_turn = False
@@ -1640,7 +1704,8 @@ async def _run_voice(args, key: str, config, skills):
                 if not attempted_resume:
                     voice._tool_results.clear()
                 context = await skills.context_async()
-                tools = [{'function_declarations': skills.declarations}] if skills.declarations else None
+                declarations = getattr(skills, 'live_declarations', skills.declarations)
+                tools = [{'function_declarations': declarations}] if declarations else None
                 session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle,
                                           barge_in=voice.barge_in_enabled, tools=tools,
                                           skills=skills, config=config, memory_context=context)

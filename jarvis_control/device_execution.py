@@ -9,6 +9,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .outcomes import classify_result
+
 
 class SharedToolExecutor:
     def __init__(self, skills, ledger: Path):
@@ -40,7 +42,11 @@ class SharedToolExecutor:
             self.db.commit()
             try:
                 output = await self.skills.execute(name, args)
-                result = {'status': 'completed', 'device': 'pc', 'output': output}
+                outcome = classify_result(output)
+                result = {'status': outcome.status, 'device': 'pc', 'output': output,
+                          'ok': outcome.ok, 'completed': outcome.completed}
+                if not outcome.ok:
+                    result['error'] = outcome.detail or outcome.status
             except Exception:
                 result = {'status': 'unknown', 'error': 'Execution did not return a result; inspect effects. Action will not be replayed.'}
             self.db.execute('UPDATE calls SET result=? WHERE id=?', (json.dumps(result), identity))

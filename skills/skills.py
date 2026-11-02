@@ -2461,11 +2461,11 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         return await system_control.manage_window(action)
 
     async def _deferred_service_restart(self, delay=2.0):
-        """Wait for spoken turn confirmation to complete, then restart jarvis-oma.service."""
+        """Wait for spoken turn confirmation to complete, then restart both operational services."""
         try:
             await asyncio.sleep(delay)
-            from scripts.jarvis_mode import restart_service
-            restart_service()
+            from scripts.jarvis_mode import restart_services
+            await self._file_worker.run(restart_services)
         except Exception as error:
             log.warning("Deferred service restart error: %s", type(error).__name__)
 
@@ -2487,20 +2487,8 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         else:
             raise SkillError("mode must be 'production' or 'test'")
         try:
-            from scripts.jarvis_mode import switch_mode
-            result = await self._file_worker.run(switch_mode, target_mode, restart=False)
-            asyncio.create_task(self._deferred_service_restart(delay=2.0))
-            branch = result.get("branch", target_mode)
-            return {
-                "status": "switching",
-                "target_mode": target_mode,
-                "branch": branch,
-                "root": result.get("root"),
-                "message": (
-                    f"Switched configuration to {target_mode} mode on branch {branch}. "
-                    "Restarting JARVIS service in two seconds to load changes."
-                ),
-            }
+            from scripts.jarvis_mode import schedule_mode_switch
+            return await self._file_worker.run(schedule_mode_switch, target_mode)
         except Exception as error:
             raise SkillError(f"Failed to switch JARVIS mode: {error}") from None
 

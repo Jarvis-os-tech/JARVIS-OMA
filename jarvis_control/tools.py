@@ -3470,8 +3470,8 @@ class Executor:
 
     def _tool_switch_jarvis_mode(self, mode: str) -> Result:
         try:
-            from scripts.jarvis_mode import switch_mode
-            res = switch_mode(mode, restart=True)
+            from scripts.jarvis_mode import schedule_mode_switch
+            res = schedule_mode_switch(mode)
             return Result(True, res.get("message", f"Switched to {mode} mode."))
         except Exception as e:
             return Result(False, f"Failed to switch mode: {e}")

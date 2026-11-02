@@ -187,3 +187,62 @@ async def test_connection_timeout_only_bounds_setup(monkeypatch):
     with pytest.raises(TimeoutError):
         async with connect_session(client):
             pytest.fail('Stalled setup must not connect')
+
+
+@pytest.mark.asyncio
+async def test_tool_circuit_breaker_terminates_loop():
+    instance = voice()
+    session = NS(send_tool_response=AsyncMock())
+    instance._user_text = 'Open the browser'  # PC request, no phone
+
+    # First attempt: phone_control should be intercepted by NLU Gate
+    tool_call1 = NS(function_calls=[NS(id='c1', name='phone_control', args={'action': 'status'})])
+    await instance.handle_tools(tool_call1, session)
+    res1 = session.send_tool_response.call_args.kwargs['function_responses'][0].response
+    assert not res1['ok']
+    assert res1['status'] == 'conversational_intent_required'
+    assert instance._turn_rejected_tools == 1
+    assert 'phone_control' in instance._turn_blocked_tools
+
+    # Second attempt to call the same blocked tool: circuit breaker blocks it immediately
+    tool_call2 = NS(function_calls=[NS(id='c2', name='phone_control', args={'action': 'status'})])
+    await instance.handle_tools(tool_call2, session)
+    res2 = session.send_tool_response.call_args.kwargs['function_responses'][0].response
+    assert not res2['ok']
+    assert res2['status'] == 'blocked'
+    assert 'already rejected' in res2['error']
+
+    # Third attempt with another tool: circuit breaker trips due to limit
+    tool_call3 = NS(function_calls=[NS(id='c3', name='enter_standby', args={})])
+    await instance.handle_tools(tool_call3, session)
+    res3 = session.send_tool_response.call_args.kwargs['function_responses'][0].response
+    assert not res3['ok']
+    assert res3['status'] == 'stopped'
+    assert 'Action limit reached' in res3['error']
+
+
+@pytest.mark.asyncio
+async def test_rejected_tool_suppresses_reply_waiting(monkeypatch):
+    instance = voice()
+    instance._start_reply_watch()
+    instance._turn_rejected_tools = 1  # Tool was rejected
+    instance._last_progress = 10
+    instance._session = NS(send_client_content=AsyncMock())
+
+    cycles = 0
+
+    async def cycle(_):
+        nonlocal cycles
+        cycles += 1
+        if cycles > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 16)
+    with pytest.raises(asyncio.CancelledError):
+        await instance.monitor_response()
+
+    # "reply_waiting" audio clip MUST NOT be queued!
+    assert instance.player.queue.empty()
+    assert instance._waiting_notice_played
+

@@ -39,6 +39,29 @@ async def test_uncertain_call_is_not_replayed(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('output,status', [
+    ('ERROR: action did not run', 'failed'),
+    ('{"status":"blocked","verified":false}', 'blocked'),
+    ('{"status":"unverified_effect","verified":false}', 'unverified'),
+    ('{"status":"queued","id":"fixture"}', 'queued'),
+    ('{"task":{"status":"running","id":"fixture"}}', 'running'),
+])
+async def test_shared_executor_does_not_promote_incomplete_results(tmp_path, output, status):
+    skills = type('Skills', (), {'declarations': [{'name': 'action'}],
+                                'execute': AsyncMock(return_value=output)})()
+    router = SharedToolExecutor(skills, tmp_path / 'calls.sqlite')
+    try:
+        request = {'request_id': 'fixture:incomplete', 'name': 'action', 'args': {}}
+        result = await router.call(request)
+        assert result['status'] == status
+        assert result['completed'] is False
+        assert await router.call(request) == result
+        skills.execute.assert_awaited_once()
+    finally:
+        router.close()
+
+
+@pytest.mark.asyncio
 async def test_bridge_authentication_and_existing_executor(tmp_path):
     skills = type('Skills', (), {'declarations': [{'name': 'system_query'}], 'execute': AsyncMock(return_value='existing executor')})()
     router = SharedToolExecutor(skills, tmp_path / 'calls.sqlite')

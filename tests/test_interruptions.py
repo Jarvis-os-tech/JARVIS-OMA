@@ -128,6 +128,33 @@ def test_local_interruption_immediately_flushes_buffered_speech():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('with_config', [False, True])
+async def test_sentence_pauses_do_not_close_the_user_turn(with_config):
+    from jarvis_voice.config import Config
+
+    voice = LiveVoice(Playback('default'), barge_in=True,
+                      config=Config() if with_config else None)
+    voice.gate.detector = lambda _: 0.95
+    speech = struct.pack('<320h', *([2000] * 320))
+    # A sentence with 1.2 s and 1.8 s thinking/breathing pauses, followed by
+    # a full 2 s end-of-turn pause. Keep every phrase in one activity.
+    reader = asyncio.StreamReader()
+    reader.feed_data(speech * 5 + bytes(640 * 60) + speech * 5
+                     + bytes(640 * 90) + speech * 5 + bytes(640 * 100))
+    reader.feed_eof()
+    queue = asyncio.Queue()
+
+    with pytest.raises(EOFError, match='Microphone stream ended'):
+        await voice._capture_audio(reader, queue)
+
+    frames = [queue.get_nowait()[0] for _ in range(queue.qsize())]
+    assert sum(frame.opened for frame in frames) == 1
+    assert sum(frame.closed for frame in frames) == 1
+    assert frames[-1].closed
+    assert voice.gate.accepted_turns == 1
+
+
+@pytest.mark.asyncio
 async def test_capture_keeps_interruption_preroll_and_closing_boundary():
     pcm = struct.pack('<320h', *([2000] * 320))
     preroll = struct.pack('<320h', *([1000] * 320))
@@ -287,6 +314,31 @@ async def test_pending_ack_watchdog_waits_for_tool_then_keeps_five_second_bound(
             await running
         except asyncio.CancelledError:
             pass
+
+
+@pytest.mark.asyncio
+async def test_long_spoken_interruption_does_not_trigger_ack_timeout(monkeypatch):
+    voice = LiveVoice(Playback('default'), barge_in=True)
+    voice._barge_pending = True
+    voice._barge_started_at = 10.0
+    voice._reply_authorized = True
+    voice.gate.active = True
+    voice.resume_handle = 'existing-session'
+    cycles = 0
+
+    async def one_tick(_):
+        nonlocal cycles
+        cycles += 1
+        if cycles > 1:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 20.0)
+    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', one_tick)
+    with pytest.raises(asyncio.CancelledError):
+        await voice.monitor_response()
+    assert voice.resume_handle == 'existing-session'
+    assert voice._barge_pending
+    assert voice._barge_started_at == 20.0
 
 
 def test_live_voice_initializes_calibrated_barge_gate_from_config():

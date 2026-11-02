@@ -179,6 +179,17 @@ class UnifiedSkills:
                     self.declarations.append(d)
                     self._desktop_names.add(d["name"])
         self._desktop_names = frozenset(self._desktop_names)
+        # Keep the full registry for execution/IPC, but avoid sending every
+        # specialist schema on every low-latency voice turn. Advanced domains
+        # retain the existing discover/execute tools.
+        desktop_live = getattr(self.desktop, 'live_declarations', None)
+        if desktop_live is None:
+            self._live_declarations = self.declarations
+        else:
+            live_names = {tool['name'] for tool in desktop_live}
+            live_names.update({'start_hermes_goal', 'get_hermes_status'})
+            self._live_declarations = [tool for tool in self.declarations
+                                      if tool['name'] not in self._desktop_names or tool['name'] in live_names]
         self.on_standby_request = None
         if not any(d.get("name") == "enter_standby" for d in self.declarations):
             self.declarations.append({
@@ -191,6 +202,14 @@ class UnifiedSkills:
                     "additionalProperties": False,
                 },
             })
+
+    @property
+    def live_declarations(self):
+        if self._live_declarations is self.declarations:
+            return self.declarations
+        names = {item['name'] for item in self._live_declarations}
+        return [*self._live_declarations, *[item for item in self.declarations
+                if item['name'] == 'enter_standby' and item['name'] not in names]]
 
     @property
     def _closed(self) -> bool:
@@ -280,21 +299,52 @@ class UnifiedSkills:
         if agents is not None:
             if hasattr(agents, 'refresh'):
                 await agents.refresh()
+            if hasattr(agents, 'native_notices'):
+                events.extend(await agents.native_notices.events())
             for job in agents.jobs.values():
+                for prompt in (job.get('pending_approvals', []) if job['state'] not in {'completed','failed','cancelled','timed_out','interrupted'} else []):
+                    if prompt.get('prompt_id') not in job.get('approval_notices_acknowledged', []):
+                        from orchestration.task_names import task_name
+                        name = job.get('name') or task_name(job.get('task'))
+                        detail = prompt.get('description') or prompt.get('question') or prompt.get('command') or 'A concrete response is needed.'
+                        events.append({'id': 'hermes-approval:' + job['id'] + ':' + prompt['prompt_id'],
+                                       'text': f"{name}: Hermes needs your response. {detail}"})
                 if job['state'] in {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'} and not job.get('notice_acknowledged'):
                     from orchestration.task_names import task_name
                     name = job.get('name') or task_name(job.get('task'))
-                    events.append({'id': 'hermes:' + job['id'],
+                    suffix = ':' + str(job.get('event_sequence', 0)) if job.get('native_authority') else ''
+                    events.append({'id': 'hermes:' + job['id'] + suffix,
                                    'text': f"{name}: {job['summary']}"})
         return events[:10]
 
     async def acknowledge_event(self, identity: str) -> None:
-        if identity.startswith('hermes:'):
+        if identity.startswith('hermes-approval:'):
             agents = getattr(self.desktop, '_task_agents', None)
             if agents is not None:
-                job = agents._get(identity[len('hermes:'):])
-                job['notice_acknowledged'] = True
-                agents._save(job)
+                _, job_id, prompt_id = identity.split(':', 2)
+                if hasattr(agents, 'transaction'):
+                    with agents.transaction():
+                        job = agents._get(job_id)
+                        job['approval_notices_acknowledged'] = list(set(job.get('approval_notices_acknowledged', []) + [prompt_id]))
+                        agents._save(job)
+        elif identity.startswith('hermes-cron:'):
+            agents = getattr(self.desktop, '_task_agents', None)
+            if agents is not None and hasattr(agents, 'native_notices'):
+                agents.native_notices.acknowledge(identity)
+        elif identity.startswith('hermes:'):
+            agents = getattr(self.desktop, '_task_agents', None)
+            if agents is not None:
+                parts = identity.split(':')
+                if hasattr(agents, 'transaction'):
+                    with agents.transaction():
+                        job = agents._get(parts[1])
+                        if len(parts) == 3 and str(job.get('event_sequence', 0)) == parts[2]:
+                            job['notice_acknowledged'] = True
+                            agents._save(job)
+                else:
+                    job = agents._get(parts[1])
+                    job['notice_acknowledged'] = True
+                    agents._save(job)
         elif self.control:
             await self.control.acknowledge_event(identity)
 

@@ -18,3 +18,11 @@ def test_pc_keeps_omyphone_calls_and_routes_explicit_phone_calls_natively():
     prompt = build_instruction([{'function_declarations': [{'name': 'phone_control'}, {'name': 'phone_call'}]}])
     assert 'Normal PC call requests continue to use OMyPhone/phone_call' in prompt
     assert 'phone_control(action=call_contact' in prompt
+
+
+def test_prompt_defaults_each_new_request_to_pc_and_executes_ordinary_commands():
+    prompt = build_instruction([{'function_declarations': [{'name': 'phone_control'}, {'name': 'system_control'}]}])
+    assert 'The PC is the default target for EVERY new request' in prompt
+    assert 'Previous phone work never changes this default' in prompt
+    assert 'authorize immediate PC tool execution' in prompt
+    assert 'Never check phone connectivity to operate the PC' in prompt

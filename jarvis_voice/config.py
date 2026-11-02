@@ -116,7 +116,8 @@ class Config:
     barge_in_vad_threshold: float = 0.50
     autostart_listening: bool = True
     greet_on_start: bool = True
-    turn_silence_frames: int = 50
+    # Allow breathing/thinking pauses before handing the turn to the provider.
+    turn_silence_frames: int = 100  # 2 seconds at 20 ms per capture frame
     language: str = 'en-US'
     language_codes: list = field(default_factory=lambda: ['en-US', 'en-IN', 'en-GB'])
     api_key_env: str = 'GEMINI_API_KEY'

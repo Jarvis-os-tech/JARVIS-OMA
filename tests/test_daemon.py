@@ -261,7 +261,7 @@ async def test_first_audio_latency_stays_fixed_across_response_chunks(monkeypatc
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 250
 
 
-def test_default_turn_wait_is_300ms_without_cutting_short_pauses():
+def test_default_turn_wait_keeps_sentence_pauses_open_for_two_seconds():
     from jarvis_voice.daemon import LiveVoice
     from jarvis_voice.playback import Playback
     import struct
@@ -272,9 +272,9 @@ def test_default_turn_wait_is_300ms_without_cutting_short_pauses():
     # A sub-threshold frame remains quiet regardless of detector probability.
     voice.gate.detector = lambda pcm: 0.0
     quiet = struct.pack('<320h', *([1] * 320))
-    for i in range(14):
+    for i in range(99):
         assert not voice.gate.process(quiet, now=i * .02).closed
-    assert voice.gate.process(quiet, now=.28).closed
+    assert voice.gate.process(quiet, now=1.98).closed
 
 
 @pytest.mark.asyncio
@@ -371,10 +371,13 @@ async def test_production_setup_attaches_memory_and_drains_on_exit(tmp_path, mon
     assert seen['config'] is config
     assert seen['tools'][0]['function_declarations']
     tool_names = {t['name'] for t in seen['tools'][0]['function_declarations']}
-    assert 'github_connection_status' in tool_names
-    assert 'google_connection_status' in tool_names
+    registered = {tool['name'] for tool in seen['skills'].declarations}
+    assert 'github_connection_status' in registered
+    assert 'google_connection_status' in registered
+    assert 'discover_domain_tools' in tool_names
+    assert 'execute_domain_tool' in tool_names
     assert 'system_query' in tool_names
-    assert len(tool_names) > 200
+    assert len(tool_names) < len(registered)
     ipc.close.assert_awaited_once()
 
 

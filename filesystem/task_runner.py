@@ -6,6 +6,8 @@ from datetime import datetime
 import json
 import uuid
 
+from jarvis_control.outcomes import classify_result
+
 
 TASK_TOOLS = frozenset({
     'make_directory', 'write_file', 'append_file', 'edit_file',
@@ -81,10 +83,10 @@ class TaskRunner:
                 job['updated_at'] = _now()
                 try:
                     result = await self._execute(step['tool'], step['args'])
-                    if isinstance(result, dict) and (result.get('verified') is False or
-                            result.get('status') in ('unverified', 'unverified_effect', 'dispatched_unverified', 'error', 'blocked')):
+                    outcome = classify_result(result)
+                    if not outcome.completed:
                         step['result'] = result
-                        raise TaskPlanError('Action outcome is unverified or failed; inspect the result before retrying')
+                        raise TaskPlanError(outcome.detail or 'Action is incomplete; inspect the result before retrying')
                     if task_id in self._cancel_requested:
                         step['status'] = 'completed'
                         step['result'] = result

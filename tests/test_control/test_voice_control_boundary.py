@@ -194,3 +194,107 @@ async def test_unacknowledged_interruption_rejects_old_tool_only_event():
     await voice.handle(tool_event(), session)
     skills.execute.assert_not_awaited()
     assert provider_result(session)['status'] == 'rejected'
+
+
+@pytest.mark.asyncio
+async def test_phone_cannot_execute_for_an_unqualified_pc_command():
+    voice, skills, session = control_fixture(name='phone_control')
+    await voice.handle(tool_event('phone_control', {'action': 'open_app', 'package_name': 'com.whatsapp'},
+                                  transcript='Open WhatsApp'), session)
+    skills.execute.assert_not_awaited()
+    assert not provider_result(session)['ok']
+
+
+@pytest.mark.asyncio
+async def test_polite_desktop_action_executes_automatically():
+    voice, skills, session = control_fixture(name='system_control_extension', result='Volume changed; verified')
+    args = {'category': 'audio', 'action': 'volume_up'}
+    await voice.handle(tool_event('system_control_extension', args,
+                                  transcript='Could you increase the volume?'), session)
+    skills.execute.assert_awaited_once_with('system_control_extension', args)
+    assert provider_result(session)['ok']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('result', [
+    '{"status":"error","error":"Desktop unavailable"}',
+    '{"success":false,"error":"Action failed"}',
+    '{"ok":false,"error":"Target missing"}',
+    '{"status":"unverified","message":"No matching window appeared"}',
+])
+async def test_structured_adapter_failure_is_not_reported_as_completed(result):
+    voice, skills, session = control_fixture(name='launch_app', result=result)
+    await voice.handle(tool_event('launch_app', {'app': 'fixture'}, transcript='Open fixture'), session)
+    response = provider_result(session)
+    assert not response['ok']
+    assert response['status'] != 'completed'
+
+
+@pytest.mark.asyncio
+async def test_uncertain_adapter_result_preserves_unknown_status():
+    voice, skills, session = control_fixture(result='{"status":"unknown","error":"Connection lost after dispatch"}')
+    await voice.handle(tool_event(transcript='Check the time'), session)
+    assert provider_result(session)['status'] == 'unknown'
+
+
+@pytest.mark.asyncio
+async def test_completed_phone_turn_does_not_select_phone_for_next_command():
+    voice, skills, session = control_fixture(name='phone_control', result='Phone inspected')
+    await voice.handle(tool_event('phone_control', {'action': 'status'},
+                                  transcript='Check my phone'), session)
+    assert provider_result(session)['ok']
+    voice._reply_started = True
+    await voice.handle(SimpleNamespace(server_content=SimpleNamespace(turn_complete=True)), session)
+    voice._reply_authorized = True
+    voice.gate.accepted_turns += 1
+    await voice.handle(tool_event('phone_control', {'action': 'status'},
+                                  transcript='Open the browser'), session)
+    assert skills.execute.await_count == 1
+    assert not provider_result(session)['ok']
+
+
+@pytest.mark.asyncio
+async def test_spoken_acknowledgement_cannot_end_an_in_flight_action_batch():
+    import asyncio
+
+    voice, skills, session = control_fixture(name='first_action')
+    skills.declarations.append({'name': 'second_action'})
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def execute(name, args):
+        if name == 'first_action':
+            started.set()
+            await release.wait()
+        return 'Verified fixture result'
+
+    skills.execute.side_effect = execute
+    batch = SimpleNamespace(function_calls=[
+        SimpleNamespace(name='first_action', id='first', args={}),
+        SimpleNamespace(name='second_action', id='second', args={}),
+    ])
+    running = asyncio.create_task(voice.handle_tools(batch, session))
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        # A spoken preamble is not the completion of the requested actions.
+        await voice.handle(SimpleNamespace(server_content=SimpleNamespace(model_turn=SimpleNamespace(parts=[
+            SimpleNamespace(inline_data=SimpleNamespace(data=bytes(960)))]))), session)
+        await voice.handle(SimpleNamespace(server_content=SimpleNamespace(turn_complete=True)), session)
+        assert voice._reply_authorized
+    finally:
+        release.set()
+        await running
+    assert [call.args[0] for call in skills.execute.await_args_list] == ['first_action', 'second_action']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('result', [
+    '{"status":"blocked","reason":"Wrong window"}',
+    '{"status":"unverified_effect","verified":false}',
+    '{"status":"success","verified":false}',
+    '{"status":"dispatched","reobserve_required":true}',
+])
+async def test_unverified_input_is_never_complete(result):
+    voice, skills, session = control_fixture(result=result)
+    await voice.handle(tool_event(transcript='Check the current state'), session)
+    assert not provider_result(session)['ok']
+    assert provider_result(session)['status'] != 'completed'
