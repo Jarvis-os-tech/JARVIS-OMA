@@ -17,7 +17,9 @@ def main():
         if len(pcm) > 160000 or len(pcm) % 2:
             raise ValueError('Invalid bounded PCM input')
         samples = np.frombuffer(pcm, dtype='<i2').astype(np.float32) / 32768
-        result = model.transcribe(samples, language='en', word_timestamps=True)
+        # Pass optional keywords hint list (up to 128 items) to guide transcription accuracy
+        result = model.transcribe(samples, language='en', word_timestamps=True,
+                                  keywords=request.get('keywords', [])[:128])
         print(json.dumps(result), flush=True)
 
 

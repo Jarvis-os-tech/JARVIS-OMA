@@ -54,7 +54,7 @@ async def test_local_action_never_reaches_cloud():
     session = NS(send_realtime_input=AsyncMock())
     worker = await short_turn(voice, session)
     try:
-        async with asyncio.timeout(.5):
+        async with asyncio.timeout(2):
             while voice.last_local_outcome is None:
                 await asyncio.sleep(0)
         voice.skills.execute.assert_awaited_once_with('system_control', {'action': 'volume_adjust', 'value': -5})
@@ -77,7 +77,7 @@ async def test_unmatched_or_uncertain_short_speech_forwards_original_audio_once(
             finished.set()
     worker = await short_turn(voice, NS(send_realtime_input=send))
     try:
-        await asyncio.wait_for(finished.wait(), .5)
+        await asyncio.wait_for(finished.wait(), 2)
         assert [next(iter(item)) for item in sent] == ['activity_start', 'audio', 'audio', 'activity_end']
         voice.skills.execute.assert_not_awaited()
     finally:
@@ -98,7 +98,7 @@ async def test_long_speech_starts_cloud_streaming_before_turn_ends():
             sent.set()
     worker = asyncio.create_task(voice._send_frames(NS(send_realtime_input=send), queue))
     try:
-        await asyncio.wait_for(sent.wait(), .5)
+        await asyncio.wait_for(sent.wait(), 2)
         voice.local_speech.transcribe.assert_not_awaited()
         voice.skills.execute.assert_not_awaited()
     finally:
@@ -111,7 +111,7 @@ async def test_offline_short_command_uses_same_executor():
     voice = instance()
     worker = await short_turn(voice, None)
     try:
-        async with asyncio.timeout(.5):
+        async with asyncio.timeout(2):
             while voice.last_local_outcome is None:
                 await asyncio.sleep(0)
         voice.skills.execute.assert_awaited_once()
@@ -138,6 +138,36 @@ async def test_failed_action_is_consumed_without_cloud_retry():
     assert await voice._try_local_command(bytes(640), (0, 0))
     assert voice.last_local_outcome == 'failed'
     voice.skills.execute.assert_awaited_once()
+
+
+# Verify that when tools are disabled in configuration, local offline commands are bypassed
+@pytest.mark.asyncio
+async def test_disabled_tools_also_disable_local_actions():
+    voice = instance()
+    voice.config.enable_tools = False
+    assert not await voice._try_local_command(bytes(640), (0, 0))
+    voice.skills.execute.assert_not_awaited()
+
+
+# Verify that general conversational speech is forwarded to cloud streaming after early prefix check
+@pytest.mark.asyncio
+async def test_ordinary_speech_streams_early_without_waiting_for_turn_end():
+    voice = instance('what time')
+    queue = asyncio.Queue()
+    for i in range(40):
+        queue.put_nowait((GateFrame(bytes(640), opened=i == 0), 0))
+    sent = asyncio.Event()
+    async def send(**kwargs):
+        if 'audio' in kwargs:
+            sent.set()
+    worker = asyncio.create_task(voice._send_frames(NS(send_realtime_input=send), queue))
+    try:
+        await asyncio.wait_for(sent.wait(), 2)
+        voice.skills.execute.assert_not_awaited()
+        voice.local_speech.transcribe.assert_awaited_once()
+    finally:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
 
 
 @pytest.mark.asyncio

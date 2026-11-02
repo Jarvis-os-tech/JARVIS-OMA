@@ -21,8 +21,8 @@ import time
 class LocalSpeechConfig:
     enabled: bool = False
     max_command_seconds: float = 2.5
-    decode_timeout: float = .35
-    minimum_word_probability: float = .65
+    decode_timeout: float = .5
+    minimum_word_probability: float = .5
 
     def validate(self):
         if type(self.enabled) is not bool:
@@ -99,6 +99,8 @@ class WhistleClient:
         self.ready = False
         self.error = ''
         self.last_decode_ms = None
+        # Seed vocabulary hints with core control targets and assistant name
+        self.keywords = ['volume', 'brightness', 'workspace', 'Jarvis']
         self._lock = asyncio.Lock()
 
     async def start(self):
@@ -143,7 +145,9 @@ class WhistleClient:
         async with self._lock:
             started = time.monotonic()
             try:
-                request = json.dumps({'pcm': base64.b64encode(pcm).decode()}).encode() + b'\n'
+                # Transmit bounded PCM audio and vocabulary hints to the local speech worker
+                request = json.dumps({'pcm': base64.b64encode(pcm).decode(),
+                                      'keywords': self.keywords[:128]}).encode() + b'\n'
                 async with asyncio.timeout(self.config.decode_timeout):
                     self.process.stdin.write(request)
                     await self.process.stdin.drain()

@@ -15,8 +15,8 @@ turn_silence_frames = 20  # Finish the turn after 400 ms of silence
 # [local_speech]
 # enabled = true
 # max_command_seconds = 2.5
-# decode_timeout = 0.35
-# minimum_word_probability = 0.65
+# decode_timeout = 0.5
+# minimum_word_probability = 0.5
 language = "en-US"  # Spoken response language
 language_codes = ["en-US", "en-IN", "en-GB"]  # Speech input transcription language hints
 api_key_env = "GEMINI_API_KEY"

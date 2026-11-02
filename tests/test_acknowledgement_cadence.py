@@ -103,3 +103,12 @@ def test_spoken_answer_or_preamble_is_already_an_acknowledgement():
     instance._reply_started = True
     assert not instance._play_filler_reflex('system_mutation')
     assert instance.player.queue.empty()
+
+
+# Ensure conversational acknowledgements use affirmative words like 'Sure' rather than vocal hesitations like 'Ah'
+@pytest.mark.parametrize('serial', [1, 2])
+def test_generic_acknowledgement_never_uses_ah(serial):
+    instance = voice()
+    instance._reply_serial = serial
+    assert instance._play_filler_reflex('generic_deep_thought')
+    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_sure']

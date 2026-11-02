@@ -202,9 +202,10 @@ def build_instruction(tools: list | None = None) -> str:
             "   - For longer tasks, acknowledge briefly while work is running. The local voice controller automatically handles delayed-reply acknowledgements.\n\n"
             "CONVERSATIONAL FILLER INJECTION SCHEMA:\n"
             "Do not insert a filler tool call before every task. Fast answers should go straight to the answer.\n"
+            "- Never use 'Ah', 'Haa', or similar empty vocalizations as acknowledgements. Use a short phrase suited to the request.\n"
             "- If you already acknowledged the request aloud, do not repeat the acknowledgement. Use 'play_local_filler' only when a deliberate task-specific acknowledgement is needed.\n"
             "- Match the selected filler tone to the task complexity:\n"
-            "  - Thinking -> context_type='generic_deep_thought' ('Hmm' or 'Ah')\n"
+            "  - Thinking -> context_type='generic_deep_thought' ('Sure')\n"
             "  - System or browser action -> context_type='system_mutation' ('On it')\n"
             "  - File inspection -> context_type='filesystem_grep' ('Hmm')\n"
             "  - Agent or worker task -> context_type='sub_agent_spawn' ('Sure')\n\n"
@@ -682,7 +683,7 @@ class LiveVoice:
         return self._play_filler_reflex(context)
 
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
-        """Triggers local conversational filler playback (e.g. 'Hmm', 'Ah', 'On it', 'Sure').
+        """Triggers local conversational filler playback (e.g. 'Sure', 'On it').
 
         Fillers mask cloud latency and tool execution time without blocking provider audio.
         Guarantees:
@@ -721,9 +722,9 @@ class LiveVoice:
             if pcm_path and pcm_path.is_file():
                 pcm_data = pcm_path.read_bytes()
             else:
-                # Built-in Aoede recordings; alternate 'Hmm' and 'Ah' across turns for variety
+                # Use a spoken acknowledgement instead of the old 'Ah' vocal filler.
                 builtins = {
-                    'generic_deep_thought': 'filler_hmm' if self._reply_serial % 2 else 'filler_ah',
+                    'generic_deep_thought': 'filler_sure',
                     'system_mutation': 'filler_on_it',
                     'filesystem_grep': 'filler_hmm',
                     'sub_agent_spawn': 'filler_sure',
@@ -1471,6 +1472,9 @@ class LiveVoice:
     async def _try_local_command(self, pcm, token):
         text = await self.local_speech.transcribe(pcm)
         command = command_for(text, self._local_apps) if text else None
+        # Discard stale transcription if turn or generation changed during processing
+        if token != (self.gate.accepted_turns, self.player.generation):
+            return True
         if command is None:
             return False
         if (token != (self.gate.accepted_turns, self.player.generation)
@@ -1480,6 +1484,9 @@ class LiveVoice:
         if name == 'stop':
             self.interrupt()
             return True
+        # If tool execution is globally disabled in config, bypass local execution and route to conversation
+        if not getattr(self.config, 'enable_tools', True):
+            return False
         if self.skills is None:
             return False
         self._reply_authorized = True
@@ -1538,11 +1545,13 @@ class LiveVoice:
                     buffered.append(item)
                     held_bytes += len(frame.pcm)
                 release_early = False
+                # Early prefix check: once ~800ms (25,600 bytes) of audio has arrived, run a quick
+                # local transcription to stream to cloud early if the utterance is not a local command.
                 if (session is not None and not streaming and not checked_prefix
                         and not frame.closed and held_bytes >= 25600):
                     checked_prefix = True
                     prefix = await self.local_speech.transcribe(b''.join(f.pcm for f, _ in buffered))
-                    release_early = not prefix or not could_be_command(prefix)
+                    release_early = bool(prefix) and not could_be_command(prefix)
                 if held_bytes > limit or release_early or (not self.local_speech.ready and not streaming):
                     streaming = True
                     if session is not None:
@@ -1581,6 +1590,9 @@ class LiveVoice:
         activity_open = False
         while True:
             frame, generation = await queue.get()
+            # Discard frames from older turns that were superseded while buffered in the queue
+            if frame.turn_id and frame.turn_id != self.gate.accepted_turns:
+                continue
             chunk = frame.pcm
             async with self.send_lock:
                 stale = generation != self.player.generation
@@ -1808,6 +1820,8 @@ async def _run_voice(args, key: str, config, skills):
     if voice.local_speech.ready:
         from jarvis_control.discovery import applications
         voice._local_apps = app_names(await asyncio.to_thread(applications))
+        # Feed installed application names to local speech engine as decoding hints
+        voice.local_speech.keywords.extend(sorted(voice._local_apps))
         log.info('Whistle ready: short local commands and offline fallback enabled')
     elif voice.local_speech.config.enabled:
         log.warning('Local speech unavailable: %s; retaining direct cloud streaming', voice.local_speech.error)
@@ -1999,10 +2013,12 @@ async def _run_voice(args, key: str, config, skills):
                     session_opened=session_opened, session_seconds=time.monotonic() - started)
                 if decision.fresh_session:
                     voice.resume_handle = None
-                if decision.fatal:
+                # If local speech is available, do not terminate daemon on fatal cloud provider errors;
+                # back off with extended delay and keep local command handling alive.
+                if decision.fatal and not voice.local_speech.ready:
                     raise RuntimeError(f'Fatal voice error: {error}') from error
-                log.warning('Voice session disconnected (%s), retry in %.2fs', error, decision.delay)
-                retry_delay = decision.delay
+                retry_delay = max(60, decision.delay) if decision.fatal else decision.delay
+                log.warning('Voice session disconnected (%s), retry in %.2fs', error, retry_delay)
             finally:
                 await stop_offline()
                 voice.connected = False

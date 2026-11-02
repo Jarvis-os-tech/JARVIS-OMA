@@ -15,10 +15,13 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Copy package and bin if not symlinked directly to repo
 if [[ "$(readlink -f "$INSTALL_DIR")" != "$(readlink -f "$REPO_DIR")" ]]; then
-    for package in voice_layer jarvis_voice jarvis_memory jarvis_control omarchy_voice skills \
+    for package in voice_layer jarvis_voice jarvis_memory jarvis_control skills \
                    core connectors filesystem orchestration proactive audio ui \
                    plugins skill_manifests quickshell scripts; do
-        cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"
+        # Only copy existing directories to support both lean checkouts and legacy structures
+        if [[ -e "$REPO_DIR/$package" ]]; then
+            cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"
+        fi
     done
     cp "$REPO_DIR/agent.py" "$REPO_DIR/agent_orchestrator.py" "$REPO_DIR/task_runner.py" "$INSTALL_DIR/"
     cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"

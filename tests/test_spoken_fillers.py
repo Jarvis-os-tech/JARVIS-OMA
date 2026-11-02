@@ -2,7 +2,7 @@
 
 Validates:
 - Bundled audio fallback for missing external voice files ('Hmm', 'Ah', 'Sure', 'On it')
-- Turn budget reset and alternating thinking sound selection across sequential turns
+- Turn budget reset across sequential turns
 - Privacy and preference gating (mute, speech active, standby, disable_local_fillers)
 - Automatic 650ms/1.2s local acknowledgement triggering on speech upload or request dispatch
 - Suppression during active speech, wake confirmation, greetings, or incoming provider audio
@@ -31,7 +31,7 @@ def voice():
 
 
 @pytest.mark.parametrize('context,clip', [
-    ('generic_deep_thought', 'filler_hmm'),
+    ('generic_deep_thought', 'filler_sure'),
     ('system_mutation', 'filler_on_it'),
     ('filesystem_grep', 'filler_hmm'),
     ('sub_agent_spawn', 'filler_sure'),
@@ -46,9 +46,9 @@ def test_missing_external_recordings_use_bundled_speech(context, clip):
     assert instance.player.queue.empty()
 
 
-def test_new_turn_resets_filler_budget_and_varies_thinking_sound():
+def test_new_turn_resets_filler_budget():
     instance = voice()
-    for clip in ('filler_hmm', 'filler_ah'):
+    for clip in ('filler_sure', 'filler_sure'):
         instance._start_reply_watch()
         assert instance._play_filler_reflex()
         assert instance.player.queue.get_nowait()[1] == instance._reply_notices[clip]
@@ -110,7 +110,7 @@ async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypa
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
+    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_sure']
     assert not instance._reply_started
 
 
