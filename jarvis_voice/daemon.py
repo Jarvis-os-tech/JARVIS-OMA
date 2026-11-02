@@ -30,12 +30,13 @@ from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, Ga
 log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 CAPTURE_QUEUE_FRAMES = 200
-RESPONSE_WARNING_SECONDS = 10
-RESPONSE_TIMEOUT_SECONDS = 35
-REPLY_NOTICE_SECONDS = 5
-FILLER_ACK_SECONDS = 1.2
-TASK_ACK_SECONDS = .65
-CONNECT_TIMEOUT_SECONDS = 12
+# Latency thresholds and timers for conversational voice feedback and recovery:
+RESPONSE_WARNING_SECONDS = 10  # Seconds of silence before flagging 'response taking longer than expected'
+RESPONSE_TIMEOUT_SECONDS = 35  # Hard timeout before forcing reconnect on unresponsive provider sessions
+REPLY_NOTICE_SECONDS = 5       # Minimum silent wait before playing 'reply_waiting' feedback clip
+FILLER_ACK_SECONDS = 1.2       # Local delay before firing thinking filler ('Hmm'/'Ah') for standard conversational turns
+TASK_ACK_SECONDS = .65         # Shorter local delay before firing action filler ('On it'/'Sure') when tools/tasks run
+CONNECT_TIMEOUT_SECONDS = 12   # Timeout when establishing live websocket session
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
 
@@ -262,17 +263,18 @@ class LiveVoice:
         self._tool_intermediate_received = False
         self._tools_in_flight = 0
         self._pending_tool_batches = 0
+        # Reply watch and conversational filler state tracking:
         self._reply_recovery_attempted = False
         self._reply_recovery_active = False
         self._tool_answer_pending = False
-        self._waiting_notice_played = False
-        self._filler_played = False
-        self._reply_wait_started_at = None
-        self._last_reply_sound_at = None
-        self.local_fillers_played = 0
-        self.last_filler_context = ''
-        self._reply_serial = 0
-        self._reply_notices = {}
+        self._waiting_notice_played = False   # Set once 'reply_waiting' has played for this turn
+        self._filler_played = False           # Limits to at most one conversational filler per speech turn
+        self._reply_wait_started_at = None    # Monotonic timestamp when user input upload/dispatch completed
+        self._last_reply_sound_at = None      # Monotonic timestamp when local audio (filler/notice/chunk) last played
+        self.local_fillers_played = 0         # Cumulative count of local fillers triggered (for verification/telemetry)
+        self.last_filler_context = ''         # Context label ('system_mutation', 'sub_agent_spawn', etc.) of last filler
+        self._reply_serial = 0                # Monotonically increasing turn ID, used to vary alternating thinking sounds
+        self._reply_notices = {}              # Preloaded raw 24kHz 16-bit mono PCM audio assets
         for notice in ('reply_waiting', 'reply_unavailable', 'filler_hmm',
                        'filler_ah', 'filler_sure', 'filler_on_it'):
             try:
@@ -611,11 +613,20 @@ class LiveVoice:
             log.warning('Offline voice feedback failed: %s', type(error).__name__)
 
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
-        """Triggers PipeWire audio playback for local conversational filler reflex."""
+        """Triggers local conversational filler playback (e.g. 'Hmm', 'Ah', 'On it', 'Sure').
+
+        Fillers mask cloud latency and tool execution time without blocking provider audio.
+        Guarantees:
+        - Never plays if muted, standby is engaged, user is speaking, or response was dropped.
+        - Enforces a strict one-filler-per-turn limit via self._filler_played.
+        - Immediately aborted if the provider answer has already arrived (self._reply_started).
+        - Does NOT mark self._reply_started=True so subsequent tool boundaries don't revoke speech.
+        """
         if (self.muted or self._drop_response or not self._reply_authorized
                 or self.gate.active or self.standby.engaged or self._filler_played or self._reply_started):
             return False
         try:
+            # Check user configuration for custom filler directory or disabled preference
             filler_cfg = getattr(self.config, 'fillers', None)
             if filler_cfg and not getattr(filler_cfg, 'enable_local_fillers', True):
                 return False
@@ -635,11 +646,13 @@ class LiveVoice:
                 }
                 filename = mapping.get(context_type, 'humm_thoughtful.pcm')
 
+            # Look for configured external PCM file first; fall back to preloaded bundled assets
             pcm_path = audio_dir / filename if audio_dir else None
             pcm_data = None
             if pcm_path and pcm_path.is_file():
                 pcm_data = pcm_path.read_bytes()
             else:
+                # Built-in Aoede recordings; alternate 'Hmm' and 'Ah' across turns for variety
                 builtins = {
                     'generic_deep_thought': 'filler_hmm' if self._reply_serial % 2 else 'filler_ah',
                     'system_mutation': 'filler_on_it',
@@ -1455,9 +1468,19 @@ class LiveVoice:
             await asyncio.sleep(2)
 
     async def monitor_response(self):
+        """Supervises conversational latency, progressive audio feedback, and timeouts.
+
+        This periodic loop (running every 250ms) manages:
+        1. Early conversational filler reflexes (650ms for tool/task calls, 1.2s for thinking).
+        2. Progress notices ('reply_waiting') after 5s of sustained silence.
+        3. Barge-in interruption handshake watchdog.
+        4. Warning states (10s) and connection hard-timeouts (35s) for frozen provider sessions.
+        """
         while True:
             await asyncio.sleep(0.25)
             playing = self.player.busy
+
+            # 1. Infer conversational context from active tools to pick the most natural filler:
             context = ('sub_agent_spawn' if 'agent' in self._active_tool or self._active_tool in {
                            'start_hermes_goal', 'handoff_hermes_task', 'delegate_team'} else
                        'filesystem_grep' if self._active_tool in {'search_files', 'read_file'} else
@@ -1465,10 +1488,16 @@ class LiveVoice:
                            'system_control', 'web_search', 'browser_task', 'open_page',
                            'read_page_text', 'run_in_terminal'} else
                        'generic_deep_thought')
+
+            # 2. Select acknowledgement delay: faster for active tools (.65s), slightly relaxed for pure reasoning (1.2s)
             ack_delay = TASK_ACK_SECONDS if self._tools_in_flight or self._pending_tool_batches else FILLER_ACK_SECONDS
+
+            # 3. Track time since the last audible sound to prevent playing notices too close to fillers
             feedback_since = (self._last_reply_sound_at if self._last_reply_sound_at is not None else
                               self._reply_wait_started_at if self._reply_wait_started_at is not None else
                               self._last_progress)
+
+            # 4. Trigger early conversational filler if response has not started and delay has elapsed:
             if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
                     and not self.standby.engaged and not playing and not self._barge_pending
                     and not self._greeting_active and not self._background_active
@@ -1477,6 +1506,8 @@ class LiveVoice:
                     and self._reply_wait_started_at is not None
                     and time.monotonic() - self._reply_wait_started_at >= ack_delay):
                 self._play_filler_reflex(context)
+
+            # 5. Play longer 'reply_waiting' progress notice if 5 seconds have elapsed without provider audio:
             if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
                     and not self.standby.engaged and not playing
                     and not self.player.busy and not self._barge_pending
@@ -1486,11 +1517,15 @@ class LiveVoice:
                     and time.monotonic() - feedback_since > REPLY_NOTICE_SECONDS):
                 self._waiting_notice_played = True
                 self._play_reply_notice('reply_waiting')
+
+            # 6. Safety timeout if barge-in acknowledgement was not answered within 5 seconds:
             if (self._barge_pending and not self._tools_in_flight and self._barge_started_at is not None and
                     time.monotonic() - self._barge_started_at > 5):
                 self.resume_handle = None
                 self._barge_pending = self._barge_turn = False
                 raise ConnectionError('Barge-in acknowledgement timeout')
+
+            # 7. Escalating warning (10s) and hard reconnect timeout (35s) if provider becomes completely silent:
             if (self._reply_authorized and not self._tools_in_flight and not self._pending_tool_batches
                     and not self.gate.active and not playing
                     and time.monotonic() - self._last_progress > RESPONSE_WARNING_SECONDS):

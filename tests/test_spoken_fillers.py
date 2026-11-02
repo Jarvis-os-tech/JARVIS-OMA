@@ -1,3 +1,12 @@
+"""Tests for conversational filler reflexes and automatic acknowledgement triggers.
+
+Validates:
+- Bundled audio fallback for missing external voice files ('Hmm', 'Ah', 'Sure', 'On it')
+- Turn budget reset and alternating thinking sound selection across sequential turns
+- Privacy and preference gating (mute, speech active, standby, disable_local_fillers)
+- Automatic 650ms/1.2s local acknowledgement triggering on speech upload or request dispatch
+- Suppression during active speech, wake confirmation, greetings, or incoming provider audio
+"""
 import asyncio
 from types import SimpleNamespace as NS
 
