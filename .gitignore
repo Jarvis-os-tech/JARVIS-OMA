@@ -16,5 +16,10 @@ connectors/.secrets/
 pairing_qr.png
 conversations/
 mobile/*.png
+mobile/**/build/
+mobile/.gradle/
+*.apk
+*.aar
+local.properties
 
 
