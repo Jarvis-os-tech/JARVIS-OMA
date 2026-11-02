@@ -61,7 +61,7 @@ old backups unless the user explicitly asks to restore them.
 """
 
 
-def configured(current, repo, python):
+def configured(current, repo, python, memory_database=None):
     """Return a copy of config with only orchestration and old memory links changed."""
     import copy
     config = copy.deepcopy(current)
@@ -74,6 +74,8 @@ def configured(current, repo, python):
     servers = config.setdefault('mcp_servers', {})
     disabled = []
     for name, server in servers.items():
+        if name == 'jarvis_memory':
+            continue  # scoped project proposals are not old conversation history
         if any(word in name.lower() for word in ('universal', 'cognee', 'memory', 'mem0', 'honcho', 'hindsight', 'supermemory')):
             if isinstance(server, dict):
                 server['enabled'] = False
@@ -83,8 +85,18 @@ def configured(current, repo, python):
             '--state-dir', str(repo / '.jarvis-orchestration'),
             '--workspace-root', str(repo)],
         'enabled': True, 'timeout': 120, 'connect_timeout': 30,
+        'env': {'JARVIS_BRIDGE_PROTOCOL':'2'},
         'supports_parallel_tool_calls': False,
     }
+    if memory_database is not None:
+        servers['jarvis_memory'] = {
+            'command': str(python), 'args': ['-I', str(repo / 'scripts/hermes-jarvis-memory.py'),
+                '--database', str(memory_database), '--client-id', 'hermes-orchestrator',
+                '--read-scope', 'project:jarvis-os', '--write-scope', 'project:jarvis-os',
+                '--permission', 'propose'],
+            'enabled': True, 'timeout': 30, 'connect_timeout': 30,
+            'supports_parallel_tool_calls': False,
+        }
     return config, disabled
 
 
@@ -141,7 +153,11 @@ def apply(home, repo, python, *, reset_history=False):
     current = yaml.safe_load((home / 'config.yaml').read_text()) or {}
     if not isinstance(current, dict):
         raise ValueError('Hermes config must be a mapping')
-    updated, disabled = configured(current, repo, python)
+    from jarvis_voice.config import load as load_voice
+    from jarvis_memory.paths import get_config_dir
+    memory = load_voice().memory
+    database = (Path(memory.path).expanduser() if memory.path else get_config_dir()) / 'knowledge.db'
+    updated, disabled = configured(current, repo, python, database)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     backup = home / 'backups' / ('jarvis-fresh-' + stamp)
     backup.mkdir(parents=True, mode=0o700)

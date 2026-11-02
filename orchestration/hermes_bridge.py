@@ -207,6 +207,29 @@ class HermesBridge:
         self._owned(session_id)
         return await self._request('receipt', session_id=session_id, admission_id=admission_id)
 
+    async def snapshot(self, session_id):
+        self._owned(session_id)
+        return await self._request('snapshot', session_id=session_id)
+
+    async def respond_approval(self, session_id, prompt_id, choice, execution_generation):
+        self._owned(session_id)
+        snapshot = await self.snapshot(session_id)
+        pending = next((p for p in snapshot.get('prompts') or [] if p.get('prompt_id') == prompt_id and p.get('kind') == 'approval'), None)
+        if not pending or choice not in pending.get('choices', []) or pending.get('execution_generation') != execution_generation:
+            raise HermesBridgeError('Approval is stale or its response is not allowed')
+        return await self._request('approval', session_id=session_id, prompt_id=prompt_id,
+                                   choice=choice, execution_generation=execution_generation)
+
+    async def scheduled_results(self):
+        return await self._request('scheduled_results')
+
+    async def events(self, session_id, after_sequence=0, replay_epoch=None):
+        self._owned(session_id)
+        if type(after_sequence) is not int or after_sequence < 0:
+            raise HermesBridgeError('Event cursor must be a nonnegative integer')
+        return await self._request('events', session_id=session_id, after_sequence=after_sequence,
+                                   replay_epoch=replay_epoch, timeout=40)
+
     async def cancel_admission(self, session_id, admission_id):
         self._owned(session_id)
         return await self._request('cancel_admission', session_id=session_id, admission_id=admission_id)
@@ -230,9 +253,10 @@ class HermesBridge:
         finally:
             self._active.discard(session_id)
 
-    async def cancel(self, session_id):
+    async def cancel(self, session_id, *, expected_generation=None):
         self._owned(session_id)
-        result = await self._request('cancel', session_id=session_id, timeout=35)
+        options = {'expected_generation': expected_generation} if expected_generation is not None else {}
+        result = await self._request('cancel', session_id=session_id, timeout=35, **options)
         return {'acknowledged': result.get('acknowledged') is True, **result}
 
     async def close(self):

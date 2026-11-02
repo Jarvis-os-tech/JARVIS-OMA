@@ -3,6 +3,22 @@
 ROUTING = """
 
 HERMES AND JARVIS ORCHESTRATION:
+- Goals now use durable Hermes admissions watched independently of voice.
+  Use a stable request_key on retries. Mute, reconnect and Jarvis shutdown do
+  not cancel admitted goals. A failed native owner is reported unknown, never
+  replayed under a fresh identity. Read task_agent_status for current evidence.
+- Use workspace_id=jarvis-os for authorized Jarvis code work: a real isolated
+  worktree includes tracked working edits. Explicit input_paths stage approved
+  untracked inputs. Use scratch for other tasks. Never supply credentials as inputs.
+- Optional acceptance_checks pin expected artifact bytes; never invent hashes.
+  read_hermes_artifact reads a bounded result inside its owned workspace.
+- handoff_hermes_task requires the current owner generation and user intent.
+  Stale handoffs cannot launch or finalize work. A handoff saves existing work;
+  the new owner must inspect it before continuing. respond_hermes_approval is
+  only for a concrete action and choice explicitly approved by the user.
+- Native scheduled completions enter the durable notification outbox. Do not
+  create a second schedule. Native task/card/schedule cancellation still uses
+  Hermes's own lifecycle; cancelling a goal does not undo previously created resources.
 - Reuse Hermes's native features: its Kanban board, cron scheduler, skills,
   memory, research, browser, media and connected tools. Do not create a second
   Jarvis board, scheduler, memory backend or replacement feature to satisfy a

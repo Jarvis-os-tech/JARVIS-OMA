@@ -30,3 +30,14 @@ def test_reset_refuses_running_gateway_and_atomic_text_is_private(tmp_path):
         assert_offline(tmp_path)
     atomic_text(tmp_path / 'new-memory', '')
     assert (tmp_path / 'new-memory').stat().st_mode & 0o777 == 0o600
+
+
+def test_scoped_memory_install_is_reproducible_and_cannot_commit(tmp_path):
+    current={'mcp_servers':{'universal':{'enabled':True},'jarvis_memory':{'enabled':True}}}
+    updated,disabled=configured(current,tmp_path,tmp_path/'python',tmp_path/'knowledge.db')
+    memory=updated['mcp_servers']['jarvis_memory']
+    assert memory['enabled'] and 'jarvis_memory' not in disabled
+    assert memory['args'][-2:]==['--permission','propose']
+    assert 'project:jarvis-os' in memory['args']
+    assert 'commit' not in memory['args'] and '*' not in memory['args']
+    assert updated['mcp_servers']['jarvis_orchestrator']['env']['JARVIS_BRIDGE_PROTOCOL']=='2'

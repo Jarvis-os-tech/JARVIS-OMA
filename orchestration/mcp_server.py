@@ -42,7 +42,7 @@ STRING = {'type': 'string'}
 TOOLS = [
     schema('jarvis_capabilities', 'Discover connected workers and orchestration ownership; does not start work.'),
     schema('jarvis_delegate', 'Delegate bounded user-authorized work to a named installed agent. '
-           'Reuse request_key on retries. Default is a fresh empty Git workspace; include required inputs. '
+           'Reuse request_key on retries. A parent resolves its isolated workspace; otherwise use fresh scratch. '
            'A specified workspace must be within the configured project roots. '
            'Returns queued, not success. Inspect jarvis_job_status before concluding the goal. '
            'Agent instructions are guidance, not OS confinement. Never use for unrelated tasks.',
@@ -63,6 +63,8 @@ TOOLS = [
      for item in TASK_SCHEMAS]
 for item in TOOLS:
     item.pop('input_schema', None)
+    if item['name'] == 'jarvis_task_submit':
+        item['inputSchema']['properties'].update(parent_task_id=STRING, owner_generation={'type':'integer', 'minimum':1})
 BY_NAME = {item['name']: item for item in TOOLS}
 
 
@@ -74,6 +76,7 @@ class OrchestratorMCP:
         self.orchestrator.executables.pop('hermes', None)  # no coordinator recursion
         self.tasks = tasks
         self.watchers = set()
+        self.native_watchers = set()
         self.lock = os.open(self.root / 'owner.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -89,6 +92,13 @@ class OrchestratorMCP:
         self.db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, request_key TEXT UNIQUE, fingerprint TEXT, data TEXT)')
         for row in self.db.execute('SELECT id,data FROM jobs').fetchall():
             job = json.loads(row[1])
+            if (job.get('native_task_id') or job.get('native_request_key')) and self.tasks is not None:
+                watcher = asyncio.create_task(self._watch_native(job['id']))
+                self.watchers.add(watcher)
+                self.native_watchers.add(watcher)
+                watcher.add_done_callback(self.watchers.discard)
+                watcher.add_done_callback(self.native_watchers.discard)
+                continue
             if job['state'] not in TERMINAL | {'interrupted'}:
                 job.update(state='interrupted', execution='unknown',
                            summary='Bridge restarted; inspect prior effects. Work was not replayed.')
@@ -107,6 +117,51 @@ class OrchestratorMCP:
 
     def _list(self):
         return [json.loads(row[0]) for row in self.db.execute('SELECT data FROM jobs ORDER BY rowid DESC LIMIT 200')]
+
+    def _parent(self, identity, generation):
+        from orchestration.task_agents import JOB_ID
+        if not isinstance(identity, str) or not JOB_ID.fullmatch(identity):
+            raise ValueError('Invalid parent goal')
+        path = self.root.parent / '.jarvis-learning/task-agents' / (identity + '.json')
+        if path.is_symlink():
+            raise ValueError('Invalid parent receipt')
+        parent = json.loads(path.read_text())
+        if (parent.get('coordinator_owner') != 'hermes' or parent.get('owner_generation') != generation
+                or parent.get('cancel_requested') or parent.get('handoff_pending')
+                or parent.get('state') in TERMINAL | {'interrupted'}):
+            raise ValueError('Parent ownership is stale or stopped')
+        return parent
+
+    async def _watch_native(self, identity):
+        while True:
+            job = self._get(identity)
+            if not job.get('native_task_id'):
+                try:
+                    def lookup():
+                        with self.tasks.store.connect() as db:
+                            row = db.execute('SELECT data FROM tasks WHERE request_key=?', (job['native_request_key'],)).fetchone()
+                            return json.loads(row[0]) if row else None
+                    saved = await asyncio.to_thread(lookup)
+                except (OSError, ValueError, sqlite3.Error, AttributeError):
+                    saved = None
+                if not saved:
+                    job.update(state='interrupted', execution='unknown', summary='Native admission requires inspection; it was not resubmitted.')
+                    self._save(job)
+                    return
+                job['native_task_id'] = saved['id']
+                self._save(job)
+            if job.get('cancel_requested'):
+                await asyncio.to_thread(self.tasks.cancel, job['native_task_id'])
+            result = await asyncio.to_thread(self.tasks.status, job['native_task_id'])
+            native_state = result['status']
+            state = 'failed' if native_state == 'blocked' else native_state
+            job.update(state=state, native_state=native_state, execution='native_task',
+                       output=sanitize(str(result.get('result') or result.get('summary') or ''))['data'],
+                       summary=result.get('summary', 'Native Jarvis task state recorded.'))
+            self._save(job)
+            if state in TERMINAL | {'interrupted'}:
+                return
+            await asyncio.sleep(2)
 
     async def _workspace(self, job_id, requested):
         if requested:
@@ -146,6 +201,10 @@ class OrchestratorMCP:
             if (parent.get('coordinator_owner') != 'hermes' or parent.get('owner_generation') != owner_generation
                     or parent.get('cancel_requested') or parent.get('state') in TERMINAL | {'interrupted'}):
                 raise ValueError('Parent ownership is stale or stopped')
+            if not workspace:
+                workspace = parent.get('workspace') or ''
+                if not workspace:
+                    raise ValueError('Parent workspace is not ready')
         elif owner_generation is not None:
             raise ValueError('An ownership generation requires a parent goal')
         identity = [agent, prompt, workspace, timeout_seconds]
@@ -183,10 +242,20 @@ class OrchestratorMCP:
                      'keep session IDs and task IDs internal unless requested.')
             job.update(execution='submitting', workspace=str(root))
             self._save(job)
-            result = self.orchestrator.delegate(agent, brief, str(root), timeout_seconds)
-            worker_id = result['job']['id']
-            job.update(worker_id=worker_id, state='running', execution='running')
-            self._save(job)
+            fd = None
+            try:
+                if parent_task_id:
+                    fd = os.open(self.root.parent / '.jarvis-learning/task-agents/admission.lock',
+                                 os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+                    self._parent(parent_task_id, owner_generation)
+                result = self.orchestrator.delegate(agent, brief, str(root), timeout_seconds)
+                worker_id = result['job']['id']
+                job.update(worker_id=worker_id, state='running', execution='running')
+                self._save(job)
+            finally:
+                if fd is not None:
+                    os.close(fd)
             watcher = asyncio.create_task(self._watch(job['id'], worker_id, baseline))
             self.watchers.add(watcher)
             watcher.add_done_callback(self.watchers.discard)
@@ -218,7 +287,13 @@ class OrchestratorMCP:
         if not spec or not routed_arguments_match(args, spec['inputSchema']):
             raise ValueError('Unknown tool or invalid arguments')
         if name == 'jarvis_capabilities':
+            readiness_path = Path(__file__).resolve().parents[1] / 'docs/research/hermes-orchestrator/worker-readiness-2026-11-01.json'
+            try:
+                readiness = json.loads(readiness_path.read_text()).get('workers', [])
+            except (OSError, ValueError):
+                readiness = []
             return {'main_orchestrator': 'hermes', 'primary_orchestrators': ['hermes', 'jarvis'],
+                    'last_bounded_live_checks': readiness,
                     'availability_scope': 'Installed executable presence; provider login and execution must be checked separately.',
                     'workers': [{'name': agent, 'available': bool(self.orchestrator.executables.get(agent))} for agent in WORKERS],
                     'cli_worker_lifetime': 'owned by this MCP server; disconnect cancels active CLI jobs',
@@ -251,6 +326,49 @@ class OrchestratorMCP:
             method = name.removeprefix('jarvis_task_')
             if method not in {'submit', 'list', 'status', 'read', 'cancel', 'resume'}:
                 raise ValueError('Unknown native task operation')
+            if method == 'submit' and args.get('parent_task_id'):
+                args = dict(args)
+                parent = args.pop('parent_task_id')
+                generation = args.pop('owner_generation', None)
+                self._parent(parent, generation)
+                fingerprint = hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()
+                key = 'native:' + parent + ':' + args['request_key']
+                existing = self.db.execute('SELECT fingerprint,data FROM jobs WHERE request_key=?', (key,)).fetchone()
+                if existing and existing[0] != fingerprint:
+                    raise ValueError('Request key belongs to a different native task')
+                args['request_key'] = key
+                if existing:
+                    saved = json.loads(existing[1])
+                    if saved.get('native_task_id'):
+                        return await asyncio.to_thread(self.tasks.status, saved['native_task_id'])
+                    return saved  # uncertain admission is inspected, never replayed
+                else:
+                    job = {'id': uuid.uuid4().hex, 'name': task_name(args['goal']),
+                           'agent': 'jarvis', 'parent_task_id': parent, 'owner_generation': generation,
+                           'native_request_key': key, 'coordinator_owner': 'hermes',
+                           'state': 'queued', 'execution':'admitting', 'verified':False}
+                    fd = os.open(self.root.parent / '.jarvis-learning/task-agents/admission.lock',
+                                 os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX)
+                        self._parent(parent, generation)
+                        self.db.execute('INSERT INTO jobs VALUES(?,?,?,?)', (job['id'],key,fingerprint,json.dumps(job)))
+                        self.db.commit()
+                    finally:
+                        os.close(fd)
+                    try:
+                        result = await asyncio.to_thread(self.tasks.submit, **args)
+                        job = self._get(job['id'])
+                        job.update(native_task_id=result['id'], state=result['status'], execution='native_task')
+                        self._save(job)
+                    finally:
+                        # Also inspect a TaskManager receipt if its launch reply was lost.
+                        watcher = asyncio.create_task(self._watch_native(job['id']))
+                        self.watchers.add(watcher)
+                        self.native_watchers.add(watcher)
+                        watcher.add_done_callback(self.watchers.discard)
+                        watcher.add_done_callback(self.native_watchers.discard)
+                return result
             return await asyncio.to_thread(getattr(self.tasks, method), **args)
         raise ValueError('Native Jarvis task service is unavailable')
 
@@ -282,6 +400,9 @@ class OrchestratorMCP:
 
     async def close(self):
         await self.orchestrator.close()
+        # Native task units outlive MCP; only their receipt watchers stop here.
+        for watcher in list(self.native_watchers):
+            watcher.cancel()
         if self.watchers:
             await asyncio.gather(*list(self.watchers), return_exceptions=True)
         self.db.close()
@@ -302,10 +423,14 @@ class OrchestratorMCP:
             matching = [j for j in self._list() if j.get('parent_task_id') == parent
                         and j.get('owner_generation') == generation]
             for job in matching:
+                job['cancel_requested'] = True
+                self._save(job)
+                if job.get('native_task_id') and self.tasks is not None:
+                    await asyncio.to_thread(self.tasks.cancel, job['native_task_id'])
                 if job.get('worker_id') in self.orchestrator.jobs:
                     await self.orchestrator.cancel(job['worker_id'])
             # Wait for only these result projections, not unrelated work.
-            for _ in range(100):
+            for _ in range(300):
                 if all(self._get(j['id'])['state'] in TERMINAL | {'interrupted'} for j in matching):
                     break
                 await asyncio.sleep(0.1)

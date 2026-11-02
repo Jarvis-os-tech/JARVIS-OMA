@@ -25,8 +25,8 @@ class Bridge:
         self.submits.append(submission_id)
         return {'admission_id':'admission-one','status':'started'}
     async def receipt(self, *args): return self.value
-    async def cancel_admission(self,*args): return {'status':'terminal','outcome':'cancelled'}
-    async def cancel(self, session):
+    async def cancel_admission(self,*args): return {'status':'started','execution_generation':1}
+    async def cancel(self, session, **kwargs):
         self.cancelled.append(session);return {'acknowledged':True}
     async def close(self): pass
 
@@ -130,3 +130,25 @@ async def test_private_session_registry_survives_client_restart(tmp_path):
     with pytest.raises(ValueError,match='Only sessions'):
         second._owned('foreign')
     assert (tmp_path/'owned.json').stat().st_mode & 0o777==0o600
+
+
+@pytest.mark.asyncio
+async def test_worktree_failure_does_not_submit_a_native_prompt(tmp_path, monkeypatch):
+    bridge=Bridge();client=DurableHermes(tmp_path,bridge=bridge,supervisor=Supervisor())
+    item=client.start('Implement a feature');worker=GoalWorker(tmp_path,item['id'],bridge=bridge)
+    monkeypatch.setattr(worker.client,'_workspace',lambda job: (_ for _ in ()).throw(OSError('No worktree')))
+    assert await worker.step()
+    assert worker.load()['state']=='failed' and worker.load()['execution']=='not_started'
+    assert bridge.submits==[]
+
+
+@pytest.mark.asyncio
+async def test_old_owner_cannot_finalize_after_generation_handoff(tmp_path):
+    from orchestration.durable_hermes import OwnershipChanged
+    bridge=Bridge();client=DurableHermes(tmp_path,bridge=bridge,supervisor=Supervisor())
+    item=client.start('Review the task');worker=GoalWorker(tmp_path,item['id'],bridge=bridge)
+    await worker.step()
+    await client.handoff(item['id'],'jarvis',1)
+    with pytest.raises(OwnershipChanged):
+        worker.update(state='completed',output='stale completion')
+    assert worker.load()['coordinator_owner']=='jarvis'

@@ -6,6 +6,7 @@ from orchestration.agent_orchestrator import OrchestrationError
 from orchestration.evolution import EvolutionManager
 from core.workers import WorkerBusyError
 from skills.errors import SkillError
+from orchestration.integration_paths import locations
 
 log = logging.getLogger(__name__)
 
@@ -13,6 +14,8 @@ log = logging.getLogger(__name__)
 ADAPTERS = {
     'hermes.artifact': '_adapter_hermes_artifact',
     'hermes.handoff': '_adapter_hermes_handoff',
+    'hermes.approval': '_adapter_hermes_approval',
+    'hermes.events': '_adapter_hermes_events',
     'hermes.features': '_adapter_hermes_features',
     'hermes.command': '_adapter_hermes_command',
     'hermes.goal': '_adapter_start_hermes_goal',
@@ -73,16 +76,23 @@ class OrchestrationDomain:
     async def _adapter_hermes_command(self, command, arguments=''):
         try:
             return await self._personal_agents().bridge.command(
-                command, arguments, workspace=str(Path(__file__).resolve().parents[2]))
+                command, arguments, workspace=str(locations()['project_root']))
         except (OSError, ValueError, TimeoutError) as error:
             raise SkillError('Hermes command outcome may be unknown; inspect native state before retrying: ' + type(error).__name__) from None
 
-    async def _adapter_start_hermes_goal(self, goal, context='', timeout_seconds=600, request_key=None, acceptance_checks=None):
+    async def _adapter_start_hermes_goal(self, goal, context='', timeout_seconds=600, request_key=None, acceptance_checks=None,
+                                       workspace_id='scratch', input_paths=None):
         """Default coordinator; Jarvis's native tools remain independently usable."""
         try:
             options = {'request_key': request_key, 'acceptance_checks': acceptance_checks} if request_key is not None or acceptance_checks is not None else {}
-            return self._personal_agents().start(goal, role='main orchestrator', context=context,
-                                                  timeout_seconds=timeout_seconds, **options)
+            if workspace_id != 'scratch' or input_paths:
+                options.update(workspace_id=workspace_id, input_paths=input_paths)
+            agents = self._personal_agents()
+            from orchestration.durable_hermes import DurableHermes
+            if isinstance(agents, DurableHermes):
+                return await self._file_worker.run(agents.start, goal, role='main orchestrator', context=context,
+                                                   timeout_seconds=timeout_seconds, **options)
+            return agents.start(goal, role='main orchestrator', context=context, timeout_seconds=timeout_seconds, **options)
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 
@@ -254,9 +264,7 @@ class OrchestrationDomain:
     def _personal_agents(self):
         if not hasattr(self, '_task_agents'):
             from orchestration.durable_hermes import DurableHermes
-            root = (self.learning_service.capture.store.root if self.learning_service is not None
-                    else Path(__file__).resolve().parents[2] / '.jarvis-learning')
-            self._task_agents = DurableHermes(root / 'task-agents', events=self.task_events)
+            self._task_agents = DurableHermes(locations()['goals_root'], events=self.task_events)
         return self._task_agents
 
     async def _adapter_hermes_status(self):
@@ -267,8 +275,11 @@ class OrchestrationDomain:
 
     async def _adapter_create_task_agent(self, task, role='assistant', context='', timeout_seconds=300):
         try:
-            return self._personal_agents().start(task, role=role, context=context,
-                                                 timeout_seconds=timeout_seconds)
+            agents = self._personal_agents()
+            from orchestration.durable_hermes import DurableHermes
+            if isinstance(agents, DurableHermes):
+                return await self._file_worker.run(agents.start, task, role=role, context=context, timeout_seconds=timeout_seconds)
+            return agents.start(task, role=role, context=context, timeout_seconds=timeout_seconds)
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 
@@ -296,6 +307,26 @@ class OrchestrationDomain:
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 
+    async def _adapter_hermes_approval(self, job_id, prompt_id, choice, execution_generation):
+        try:
+            agents = self._personal_agents()
+            await agents.refresh(job_id)
+            job = agents._get(job_id)
+            return await agents.bridge.respond_approval(job['session_id'], prompt_id, choice, execution_generation)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_hermes_events(self, job_id, after_sequence=0, replay_epoch=None):
+        try:
+            agents = self._personal_agents()
+            await agents.refresh(job_id)
+            job = agents._get(job_id)
+            if not job.get('session_id'):
+                return {'status':'queued', 'events':[], 'summary':'Native admission is not available yet.'}
+            return await agents.bridge.events(job['session_id'], after_sequence, replay_epoch)
+        except (OSError, ValueError) as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_cancel_task_agent(self, job_id):
         try:
             return await self._personal_agents().cancel(job_id)
@@ -304,7 +335,11 @@ class OrchestrationDomain:
 
     async def _adapter_followup_task_agent(self, job_id, message):
         try:
-            return self._personal_agents().followup(job_id, message)
+            agents = self._personal_agents()
+            from orchestration.durable_hermes import DurableHermes
+            if isinstance(agents, DurableHermes):
+                return await self._file_worker.run(agents.followup, job_id, message)
+            return agents.followup(job_id, message)
         except (OSError, ValueError) as error:
             raise SkillError(str(error)) from None
 

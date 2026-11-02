@@ -24,6 +24,34 @@ async def operate(request):
                 'next_actions': ['Start Hermes normally and retry discovery.'], 'artifacts': []}
     async with connect_gateway(endpoint=discovery.endpoint) as client:
         operation = request['operation']
+        if operation == 'scheduled_results':
+            from cron.executions import list_executions
+            from cron.jobs import list_jobs
+            names = {str(job['id']): job.get('name') or 'Scheduled task' for job in list_jobs(include_disabled=True)}
+            rows = list_executions(limit=500)
+            return {'events': [{'id': row['id'], 'name': names.get(str(row['job_id']), 'Scheduled task'),
+                                'state': row['status'], 'finished_at': row.get('finished_at'),
+                                'delivery_outcome': row.get('delivery_outcome')}
+                               for row in rows if row['status'] in {'completed', 'failed', 'unknown'}]}
+        if operation == 'snapshot':
+            value = await client.rpc('session.resume', session_id=request['session_id'], _timeout=15)
+            return {key: value.get(key) for key in ('session_id', 'execution_generation', 'running', 'prompts', 'pending', 'replay_epoch', 'last_sequence')}
+        if operation == 'events':
+            snapshot = await client.rpc('session.resume', session_id=request['session_id'], _timeout=15)
+            epoch = request.get('replay_epoch') or snapshot.get('replay_epoch')
+            replay = await client.rpc('session.events.since', session_id=request['session_id'],
+                                      last_sequence=request.get('after_sequence', 0), replay_epoch=epoch, _timeout=15)
+            rows = replay.pop('events', [])
+            replay['events'] = [{k: (row.get('params') or row).get(k) for k in ('seq', 'sequence', 'type', 'admission_id', 'session_id')}
+                                for row in rows[:200]]
+            if len(rows) > 200:
+                # A bounded consumer reloads the receipt on a gap; no prompt replay.
+                replay.update(snapshot_required=True, truncated=True)
+            return replay
+        if operation == 'approval':
+            return await client.rpc('approval.respond', session_id=request['session_id'],
+                                    execution_generation=request['execution_generation'],
+                                    prompt_id=request['prompt_id'], choice=request['choice'], _timeout=15)
         if operation == 'features':
             catalog = await client.rpc('tools.list', _timeout=15)
             commands = await client.rpc('commands.catalog', _timeout=15)
@@ -84,6 +112,10 @@ async def operate(request):
                 if resumed.get('session_id') != session:
                     raise ValueError('Session identity changed; refusing interrupt')
                 generation = resumed.get('execution_generation')
+                expected = request.get('expected_generation')
+                if expected is not None and generation != expected:
+                    return {'acknowledged': not resumed.get('running', True), 'inactive': not resumed.get('running', True),
+                            'effect': 'unknown', 'summary': 'Execution generation changed; a newer turn was not interrupted.'}
                 if type(generation) is not int:
                     raise ValueError('Gateway lacks generation-fenced cancellation')
                 await client.rpc('session.interrupt', session_id=session,

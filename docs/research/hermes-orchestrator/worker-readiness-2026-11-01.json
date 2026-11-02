@@ -1,0 +1,68 @@
+{
+  "scope": "Bounded tool-free live response checks; no account settings changed",
+  "workers": [
+    {
+      "agent": "codex",
+      "exit_code": 0,
+      "seconds": 10.3,
+      "expected_response_seen": true,
+      "timed_out": false,
+      "auth_issue": false,
+      "configuration_issue": false
+    },
+    {
+      "agent": "claude",
+      "exit_code": 143,
+      "seconds": 45.9,
+      "expected_response_seen": false,
+      "timed_out": true,
+      "auth_issue": false,
+      "configuration_issue": false
+    },
+    {
+      "agent": "opencode",
+      "exit_code": 0,
+      "seconds": 13.9,
+      "expected_response_seen": true,
+      "timed_out": false,
+      "auth_issue": false,
+      "configuration_issue": false
+    },
+    {
+      "agent": "gemini",
+      "exit_code": 0,
+      "seconds": 45.2,
+      "expected_response_seen": false,
+      "timed_out": true,
+      "auth_issue": false,
+      "configuration_issue": false
+    },
+    {
+      "agent": "omp",
+      "exit_code": 0,
+      "seconds": 8.1,
+      "expected_response_seen": true,
+      "timed_out": false,
+      "auth_issue": false,
+      "configuration_issue": false
+    },
+    {
+      "agent": "pi",
+      "exit_code": 1,
+      "seconds": 1.0,
+      "expected_response_seen": false,
+      "timed_out": false,
+      "auth_issue": true,
+      "configuration_issue": false
+    },
+    {
+      "agent": "crush",
+      "exit_code": 0,
+      "seconds": 5.8,
+      "expected_response_seen": true,
+      "timed_out": false,
+      "auth_issue": false,
+      "configuration_issue": false
+    }
+  ]
+}
