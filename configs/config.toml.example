@@ -8,7 +8,7 @@ barge_in_echo_threshold = 0.45  # Correlation threshold to reject speaker echo
 barge_in_vad_threshold = 0.50  # Silero VAD probability threshold for speech
 autostart_listening = true
 greet_on_start = true
-turn_silence_frames = 35  # 35 frames * 20ms = 700ms silence threshold to prevent chopping long commands
+turn_silence_frames = 100  # Wait for 2 seconds of silence; shorter pauses stay in the same sentence
 language = "en-US"  # Spoken response language
 language_codes = ["en-US", "en-IN", "en-GB"]  # Speech input transcription language hints
 api_key_env = "GEMINI_API_KEY"

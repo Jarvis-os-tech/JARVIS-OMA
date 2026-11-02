@@ -1,0 +1,20 @@
+{
+  "planning": "direct",
+  "context_depth": "dependency",
+  "verification_depth": "impact",
+  "delegation": "none",
+  "reason_codes": [
+    "localized-unicode-offset-fix"
+  ],
+  "scope": [
+    "filesystem/filesystem.py",
+    "tests/test_filesystem/test_filesystem.py",
+    "report/"
+  ],
+  "acceptance": [
+    "Unicode offsets match string slices",
+    "pagination preserves content",
+    "large offsets use bounded chunks",
+    "voice lock intact"
+  ]
+}

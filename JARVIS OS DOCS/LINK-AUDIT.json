@@ -1,0 +1,207 @@
+{
+  "date": "2026-11-02T04:03:43.024Z",
+  "linksChecked": 5808,
+  "rewrittenDocuments": 41,
+  "preExistingUnresolved": 33,
+  "issues": [
+    {
+      "document": "references/jarvis-os/historical-plans/project-docs/README.md",
+      "link": "archive/",
+      "originalTarget": "/home/g0pi/JARVIS OS/project-docs/archive",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/CODEBASE_AUDIT_REPORT.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/12_audit_reproductions.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/12_audit_reproductions.py",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/CODEBASE_AUDIT_REPORT.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/12_audit_reproductions.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/12_audit_reproductions.py",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/CODEBASE_AUDIT_REPORT.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/voice_read_check.txt",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/project-docs/archive/report/voice_read_check.txt",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/App.tsx:315",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/App.tsx",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/server.ts:89",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/server.ts",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/App.tsx:254",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/App.tsx",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/App.tsx:266",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/App.tsx",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/server.ts:111",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/server.ts",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/utils/audio.ts:87",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/utils/audio.ts",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/App.tsx:362",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/App.tsx",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/data/personas.ts:3",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/data/personas.ts",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/App.tsx:118",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/App.tsx",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/evidence/report/26_CHROME_VOICE_TO_NATIVE_JARVIS_GUIDE_2026-10-24.md",
+      "link": "/home/g0pi/Downloads/voice-buddy/src/services/demoVoiceService.ts:1",
+      "originalTarget": "/home/g0pi/Downloads/voice-buddy/src/services/demoVoiceService.ts",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "VOICE_RELIABILITY_FIX_2026-10-29.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/VOICE_RELIABILITY_FIX_2026-10-29.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "AUDIO_OUTPUT_AND_LISTENING_FIX_2026-10-29.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/AUDIO_OUTPUT_AND_LISTENING_FIX_2026-10-29.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "VERIFIED_DESKTOP_WORKFLOWS_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/VERIFIED_DESKTOP_WORKFLOWS_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "DESKTOP_ACTION_VERIFICATION_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/DESKTOP_ACTION_VERIFICATION_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "PARALLEL_SPEECH_STREAMING_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/PARALLEL_SPEECH_STREAMING_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "SPEECH_DETECTION_FIX_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/SPEECH_DETECTION_FIX_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "VOICE_TURN_PROTECTION_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/VOICE_TURN_PROTECTION_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "GITHUB_VOICE_RESTORE_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/GITHUB_VOICE_RESTORE_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "SPEECH_ONLY_RECOVERY_2026-10-28.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/SPEECH_ONLY_RECOVERY_2026-10-28.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "JARVIS_PERSONAL_VOICE_OS_MASTER.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/JARVIS_PERSONAL_VOICE_OS_MASTER.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/historical-plans/Oma Jarvis/project_docs/docs/project-docs/README.md",
+      "link": "archive/",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/docs/project-docs/archive",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/project_docs/source_metadata/CODEBASE_REFERENCE.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/project_docs/source_metadata/CODEBASE_REFERENCE.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/project_docs/source_metadata/README.md",
+      "link": "docs/capability-development.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/source_metadata/docs/capability-development.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/project_docs/source_metadata/README.md",
+      "link": "docs/system-control-and-information.md",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/project_docs/source_metadata/docs/system-control-and-information.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/reference/external_artemis/playground/artemis_container/README.md",
+      "link": "file:///usr/local/google/home/yaoyaogoogle/develop/artemis/playground/backend_manager/README.md",
+      "originalTarget": "/usr/local/google/home/yaoyaogoogle/develop/artemis/playground/backend_manager/README.md",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/Oma Jarvis/reference/external_artemis/playground/artemis_container/README.md",
+      "link": "file:///usr/local/google/home/yaoyaogoogle/develop/artemis/playground/artemis_container/docker-entrypoint.sh",
+      "originalTarget": "/usr/local/google/home/yaoyaogoogle/develop/artemis/playground/artemis_container/docker-entrypoint.sh",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/CODEBASE_REFERENCE.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "status": "pre-existing unresolved target"
+    },
+    {
+      "document": "references/jarvis-oma/implementation/CODEBASE_REFERENCE.md",
+      "link": "file:///home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "originalTarget": "/home/g0pi/Projects/JARVIS-OMA/skills.py",
+      "status": "pre-existing unresolved target"
+    }
+  ],
+  "unavailableLinksAnnotated": 33
+}

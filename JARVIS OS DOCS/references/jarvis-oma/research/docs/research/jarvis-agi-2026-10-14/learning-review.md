@@ -1,0 +1,46 @@
+# Learning and self-improvement: evidence and adversarial review
+
+Research date: 14 October 2026. This memo reports primary-source findings and proposed experiments; it does not claim AGI, inspect model internals, or implement changes. Each source summary below stays under 150 words. Reported benchmark numbers are author-reported results, not Jarvis predictions or independent replications.
+
+## Evidence ledger
+
+| Primary source | Supported finding | Boundary and implication for Jarvis |
+|---|---|---|
+| [Reflexion, 2023](https://arxiv.org/abs/2303.11366) | Agents convert feedback into reflective text retained in episodic memory, without changing weights. The paper reports improvements on several tasks, including HumanEval. | Supports feedback-grounded episode memory. It does not establish reliable correction from introspection alone, general lifelong learning, or AGI. Store observed results separately from proposed explanations. |
+| [Voyager, 2023](https://arxiv.org/abs/2305.16291) | A GPT-4 agent combines automatic curriculum, executable skill memory and iterative environment feedback in Minecraft. The paper reports skill reuse in a new world without parameter fine-tuning. | Supports reusable programs with preconditions and execution checks. Minecraft transfer is not evidence of arbitrary desktop competence; GUI changes, credentials and irreversible actions require separate tests. |
+| [Darwin Gödel Machine, 2025](https://arxiv.org/abs/2505.22954) | A foundation model modifies agent code, evaluates coding performance and retains a diverse archive. Authors report SWE-bench growth from 20% to 50% and Polyglot from 14.2% to 30.7%, with sandboxing and oversight. | Supports empirically evaluated software evolution. This is not a proof of beneficial self-modification or unrestricted recursive intelligence growth. Preserve candidate ancestry and independently evaluate changes to tools, prompts and orchestration. |
+| [AlphaEvolve, DeepMind, 2025](https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) | LLM-generated programs are verified, executed and scored, with evolutionary selection. DeepMind reports applications in mathematics and computing infrastructure. | Strongest fit is an algorithmic problem with measurable correctness and quality. General desktop task success often lacks such a clean objective. Optimizing infrastructure used to train models is distinct from the agent autonomously retraining its own foundation model. |
+| [GEPA, 2025](https://arxiv.org/abs/2507.19457) | Uses natural-language reflection on execution trajectories to propose, evaluate and combine prompt candidates across a Pareto frontier. Its current abstract reports task-specific gains over GRPO and MIPROv2 with fewer rollouts in tested settings. | Supports an inexpensive prompt-optimization baseline before weight training. Results depend on benchmark, model, version and budget; do not interpret the title as universal superiority over RL. Preserve exact paper version when reproducing numerical comparisons. |
+| [Large Language Models Cannot Self-Correct Reasoning Yet, 2023](https://arxiv.org/abs/2310.01798) | In studied reasoning settings, intrinsic self-correction without external feedback is unreliable and can degrade answers. | A critic saying “looks correct” is insufficient evidence. This is a scoped empirical finding about tested methods/models, not a theorem that future or specially trained models cannot self-correct. |
+| [SCoRe, 2024](https://arxiv.org/abs/2409.12917) | Multi-turn online RL improves self-correction in tested Gemini models; the paper identifies distribution mismatch and behavioral collapse in some offline fine-tuning approaches. | Demonstrates that weight-training objectives can matter. It does not imply a frozen hosted model learns new weights from daily conversations, nor that merely saving generated correction traces reproduces the result. |
+
+## Debate: strongest case and strongest objections
+
+**Builder's case:** Keep the base model fixed initially. Let Jarvis accumulate verified episodes and versioned executable skills. Run a bounded daily job that proposes isolated changes to prompts, tool wrappers or skills. Test candidates against stable controls, then promote only supported improvements. This is practical system-level adaptation supported by several research directions above.
+
+**Skeptic's objection 1 — latent capability versus learning:** Better prompts, retrieval and retries may simply expose abilities the model already had. That still helps the user, but calling it new general intelligence confuses the mechanism. Compare a frozen baseline at the same token, tool-call and elapsed-time budgets; include equal-budget retries, memory-disabled, skill-disabled and manually authored procedure controls. Test transfer to unseen task families and changed interfaces, not just paraphrases of remembered tasks.
+
+**Skeptic's objection 2 — immutable does not mean independent:** A fixed grader can have exploitable loopholes. An optimizer can overfit even if it never edits the evaluator. Candidate access to answer artifacts, scoring files, grader credentials or repeated holdout feedback can silently turn the evaluation into training. Run verification outside candidate privileges and hold secret tasks in a separate service. Verify end artifacts and backend state, not the agent's narrative.
+
+**Skeptic's objection 3 — daily improvement is not guaranteed:** Daily candidate generation creates many statistical comparisons. A lucky candidate may appear better, and constant promotion can regress rare capabilities. Treat daily as a research cadence; “no promotion” is a valid successful outcome. Use preregistered effect thresholds, paired runs, uncertainty estimates and capped submissions. Record total search cost, failed candidates and regression results.
+
+**Skeptic's objection 4 — a frozen evaluator becomes stale:** Permanently freezing the evaluator invites optimization against yesterday's tasks. Freeze its code and task distribution within an experiment, then update it through a separate governed process. Version old and new scores; never compare them as if the benchmark were unchanged.
+
+**Resolution:** Proceed with the builder's architecture only as a falsifiable experimental proposal. Describe gains as verified system adaptation unless a distinct weight-training experiment demonstrates otherwise. Neither agent debate nor majority voting establishes truth; independent observations settle disagreements.
+
+## Proposed promotion experiment
+
+1. Specify task families and externally checkable completion criteria before optimization. Partition by workflow, application and environment rather than randomly splitting near-duplicate prompts.
+2. Pin model version, prompts, tools, dependencies and candidate hash. If a provider cannot pin a model, record that confound and rerun contemporaneous controls.
+3. Separate development tasks, candidate-selection tasks and sealed release tasks. Optimizers may inspect development failures. Cap sealed submissions, return only aggregate release decisions, retire exposed batches and reserve prospective tasks created after candidate freezing.
+4. Compare baseline and candidate on identical seeded starting states, with repeat runs and matched budgets. Report task success, false-success rate, intervention rate, unauthorized actions, latency and cost. Track abstentions separately so refusing every task cannot win a safety metric.
+5. Require a predeclared practical improvement with uncertainty bounds, plus noninferiority on critical existing task families. Reject permission-boundary failures regardless of average score. Choose thresholds from the user's task risks and baseline variance; no universal sample size or percentage is justified by these papers.
+6. Independently inspect output artifacts: parse exported documents, verify database records through read-only external credentials, and compare expected files. Test interrupted execution, stale memory, changed layouts, injected webpage instructions and rollback.
+7. Promote in a constrained canary with a reversible version switch. Retain provenance, evidence, expiration conditions and failure cases for every skill. Quarantine stale or repeatedly failing memory entries.
+
+## Cross-agent debate record
+
+- Asked the desktop reviewer to challenge evaluator gaming through indirect file access and outcome narration. The reviewer agreed and demanded independent artifact/backend checks, separate credentials, sealed task families and capped submissions. Resolution: external verification plus rotating sealed release batches.
+- Asked the OpenAI reviewer to distinguish latent skill retrieval from general competence. The reviewer independently demanded independent evidence against self-generated-task and grader overfitting. Resolution: model pinning, matched budgets, ablations, unseen families and explicit system-versus-weight-learning language.
+
+These exchanges are design scrutiny, not additional empirical evidence. Next step is a small reproducible evaluation harness and baseline measurement, not unrestricted self-modification or a claim that Jarvis has become AGI.

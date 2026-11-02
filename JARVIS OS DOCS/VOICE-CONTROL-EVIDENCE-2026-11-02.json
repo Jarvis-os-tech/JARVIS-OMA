@@ -1,0 +1,295 @@
+{
+  "scope": "voice and everyday PC control; WhatsApp workflow deferred",
+  "deployment": {
+    "release": "/home/g0pi/.local/share/jarvis-runtime/releases/20261102T054244280Z-core-voice-controls",
+    "rollback": "/home/g0pi/.local/share/jarvis-runtime/releases/20261102T053905543Z-core-voice-controls",
+    "active": "active",
+    "connected": true,
+    "state": "idle",
+    "error": "",
+    "tools": 247,
+    "voice_tools": 79
+  },
+  "running_service_checks": {
+    "release": "/home/g0pi/.local/share/jarvis-runtime/releases/20261102T053905543Z-core-voice-controls",
+    "settings_query_timings": {
+      "volume_get": {
+        "samples": 4,
+        "median_ms": 74.32
+      },
+      "brightness_get": {
+        "samples": 4,
+        "median_ms": 100.235
+      },
+      "workspace_get": {
+        "samples": 4,
+        "median_ms": 33.41
+      }
+    },
+    "input": {
+      "typing_effect_verified_ms": 547.12,
+      "delivery_receipt_alone_is_completion": false,
+      "enter_effect_verified_ms": 191.67,
+      "ctrl_a_and_option_like_text_verified": true,
+      "verified": true,
+      "owned_test_window_closed": true
+    },
+    "calls": [
+      {
+        "name": "system_control",
+        "ms": 92.45,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 68.79,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 75.97,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 72.67,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 89.28,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 98.88,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 106.56,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 101.59,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 32.66,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 30.59,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 34.16,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "system_control",
+        "ms": 34.16,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 33.67,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 44.66,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 39.21,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 31.24,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 44.61,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 30.89,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_query",
+        "ms": 32.89,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "hypr_dispatch",
+        "ms": 39.85,
+        "status": "completed",
+        "completed": true
+      },
+      {
+        "name": "type_text",
+        "ms": 546.63,
+        "status": "unverified",
+        "completed": false
+      },
+      {
+        "name": "send_shortcut",
+        "ms": 191.26,
+        "status": "unverified",
+        "completed": false
+      },
+      {
+        "name": "send_shortcut",
+        "ms": 219.74,
+        "status": "unverified",
+        "completed": false
+      },
+      {
+        "name": "type_text",
+        "ms": 566.74,
+        "status": "unverified",
+        "completed": false
+      }
+    ],
+    "release_note": "Effect checks ran against the preceding core release; final release changes only result completion classification."
+  },
+  "reversible_native_checks": {
+    "checks": [
+      {
+        "action": "volume_set",
+        "verified": true,
+        "ms": 46.86
+      },
+      {
+        "action": "brightness_set",
+        "verified": true,
+        "ms": 98.93
+      }
+    ],
+    "timings": {
+      "volume_get": {
+        "samples": 8,
+        "median_ms": 25.645,
+        "p95_ms": 39.83
+      },
+      "brightness_get": {
+        "samples": 8,
+        "median_ms": 31.335,
+        "p95_ms": 36.09
+      },
+      "workspace_get": {
+        "samples": 8,
+        "median_ms": 5.08,
+        "p95_ms": 7.24
+      }
+    },
+    "settings_restored": true,
+    "catalog": {
+      "registered": 249,
+      "voice": 72,
+      "full_schema_chars": 118187,
+      "voice_schema_chars": 40772,
+      "schema_reduction_percent": 65.5,
+      "full_prompt_chars": 27884,
+      "voice_prompt_chars": 21138
+    }
+  },
+  "isolated_provider_comparison": [
+    {
+      "catalog": "full",
+      "declarations": 248,
+      "tool_calls": [
+        {
+          "name": "system_control",
+          "at_ms": 732,
+          "duration_ms": 43.96,
+          "ok": true
+        }
+      ],
+      "first_audio_ms": 1596,
+      "turn_ms": 3910
+    },
+    {
+      "catalog": "compact",
+      "declarations": 71,
+      "tool_calls": [
+        {
+          "name": "system_control",
+          "at_ms": 597,
+          "duration_ms": 25.28,
+          "ok": true
+        }
+      ],
+      "first_audio_ms": 1354,
+      "turn_ms": 3739
+    }
+  ],
+  "validation": {
+    "full_suite_before_final_three_cases": {
+      "passed": 1228,
+      "subtests_passed": 142,
+      "warnings": 2
+    },
+    "focused_suite_after_final_guard": {
+      "passed": 67
+    },
+    "final_full_suite": {
+      "passed": 1231,
+      "subtests_passed": 142,
+      "warnings": 2,
+      "seconds": 46.19
+    },
+    "installed_module_hashes_match_manifest": true
+  },
+  "limits": [
+    "Provider comparison has one text-input sample per catalog; no microphone or speaker timing.",
+    "Real conversation and arbitrary third-party app workflows are not exhaustively verified."
+  ],
+  "clipboard_fix": {
+    "service": "wl-clip-persist.service",
+    "before": "--clipboard both",
+    "after": "--clipboard regular",
+    "selection_effect_verified": true
+  },
+  "final_health": {
+    "state": "standby",
+    "standby": true,
+    "error": "",
+    "microphone_issue": "",
+    "control_enabled": true,
+    "registered_tools": 247,
+    "voice_tools": 79,
+    "capture_queue_frames": 0,
+    "last_tool": "enter_standby",
+    "note": "Standby was preserved; no wake command was sent."
+  }
+}

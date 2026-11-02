@@ -134,7 +134,7 @@ jarvis-voice listen cancel
 
 The foundation follows the organized source in
 `/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/voice`; see
-[the audio map](docs/voice-foundation.md) for the runtime components and checks.
+[the audio map](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/voice-foundation.md) for the runtime components and checks.
 Replies favor a clear, relaxed voice and short answers. The configured voice and
 PCM playback buffering are preserved.
 
@@ -151,7 +151,7 @@ local endpoint detection, provider response time, network, and playback all add 
 
 ## Voice checks
 
-See [voice test commands](docs/voice-test-commands.md) for spoken checks of reply speed,
+See [voice test commands](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/voice-test-commands.md) for spoken checks of reply speed,
 memory storage/search, persistence after restart, and removal of a test fact.
 Memory tools are attached by the production voice startup. Storage work is serialized
 off the audio event loop. The voice and memory CLIs use the same config at
@@ -161,9 +161,13 @@ off the audio event loop. The voice and memory CLIs use the same config at
 ## Omarchy desktop skill
 
 JARVIS includes Omarchy command discovery, desktop control and on-demand skill
-guides. See [the integration guide](docs/omarchy-integration.md) for supported
+guides. See [the integration guide](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/omarchy-integration.md) for supported
 paths, safeguards and spoken checks. The full guides are bundled with the installed
 control package; they are not injected into every voice turn.
 
-The [omarchy-voice port guide](docs/omarchy-voice-port.md) documents the imported
+The [omarchy-voice port guide](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/omarchy-voice-port.md) documents the imported
 source, shared control settings, optional camera/task features and verification.
+
+## Central build documentation
+
+All consolidated JARVIS OS build documentation is in [JARVIS OS DOCS](JARVIS%20OS%20DOCS/README.md).

@@ -24,7 +24,7 @@ if [[ "$(readlink -f "$INSTALL_DIR")" != "$(readlink -f "$REPO_DIR")" ]]; then
     cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
     cp "$REPO_DIR/LICENSE" "$REPO_DIR/PROVENANCE.json" "$INSTALL_DIR/"
     mkdir -p "$INSTALL_DIR/docs"
-    cp "$REPO_DIR/docs/omarchy-voice-port.md" "$INSTALL_DIR/docs/"
+    cp "$REPO_DIR/JARVIS OS DOCS/references/jarvis-os/implementation/docs/omarchy-voice-port.md" "$INSTALL_DIR/docs/"
 fi
 
 # Link python virtual environment with required dependencies
