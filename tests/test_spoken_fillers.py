@@ -61,7 +61,7 @@ def test_fillers_respect_input_privacy_and_preferences(state):
 
 
 @pytest.mark.asyncio
-async def test_waiting_guard_uses_existing_short_filler_hook_once(monkeypatch):
+async def test_long_wait_gets_one_clear_status_notice(monkeypatch):
     instance = voice()
     instance._start_reply_watch()
     instance._last_progress = 10
@@ -78,7 +78,7 @@ async def test_waiting_guard_uses_existing_short_filler_hook_once(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
+    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['reply_waiting']
     assert instance._last_progress == 10
 
 
@@ -96,7 +96,7 @@ async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypa
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 10.8)
+    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 11.3)
     monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
@@ -122,7 +122,7 @@ async def test_early_ack_does_not_compete_with_answers_or_control_turns(monkeypa
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 10.8)
+    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 11.3)
     monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()

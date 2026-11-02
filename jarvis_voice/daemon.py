@@ -33,7 +33,8 @@ CAPTURE_QUEUE_FRAMES = 200
 RESPONSE_WARNING_SECONDS = 10
 RESPONSE_TIMEOUT_SECONDS = 35
 REPLY_NOTICE_SECONDS = 5
-FILLER_ACK_SECONDS = .65
+FILLER_ACK_SECONDS = 1.2
+TASK_ACK_SECONDS = .65
 CONNECT_TIMEOUT_SECONDS = 12
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 
@@ -161,15 +162,15 @@ def build_instruction(tools: list | None = None) -> str:
             "1. CONTINUOUS STATE AWARENESS: You are directly coupled to the system's subconscious (kernel state, active window positions via vision_ctrl, and system logs). Your voice track must reflect this environment.\n"
             "2. REFLEXIVE VS. DEEP THOUGHT ACTIONS:\n"
             "   - For shallow system commands (e.g., 'close window', 'maximize terminal'), execute the tool immediately and confirm in a single, snappy reflexive phrase. Do NOT delay the user with a filler phrase.\n"
-            "   - For deep engineering tasks, code modifications, or complex file structural greps, you must instantly invoke the local filler reflex to mask cloud context window rendering or agentic staging latency.\n\n"
+            "   - For longer tasks, acknowledge briefly while work is running. The local voice controller automatically handles delayed-reply acknowledgements.\n\n"
             "CONVERSATIONAL FILLER INJECTION SCHEMA:\n"
-            "When the user gives an intensive coding or multi-step analysis command, your very first token output must be an immediate execution call to the local audio track engine.\n"
-            "- Use the 'play_local_filler' capability immediately before initializing file planners, running research pipelines via evolution.py, or checking sub-agent states.\n"
+            "Do not insert a filler tool call before every task. Fast answers should go straight to the answer.\n"
+            "- If you already acknowledged the request aloud, do not repeat the acknowledgement. Use 'play_local_filler' only when a deliberate task-specific acknowledgement is needed.\n"
             "- Match the selected filler tone to the task complexity:\n"
-            "  - Deep analytical task -> context_type='generic_deep_thought' ('humm' or 'let\\'s see...')\n"
-            "  - Interrupted background crash handler -> context_type='system_mutation' ('wait a sec, looking at that core dump...')\n"
-            "  - Complex multi-directory code parsing -> context_type='filesystem_grep' ('give me a moment, checking the repository maps...')\n"
-            "  - Sub-agent or worker spawning -> context_type='sub_agent_spawn' ('give me a moment...')\n\n"
+            "  - Thinking -> context_type='generic_deep_thought' ('Hmm' or 'Ah')\n"
+            "  - System or browser action -> context_type='system_mutation' ('On it')\n"
+            "  - File inspection -> context_type='filesystem_grep' ('Hmm')\n"
+            "  - Agent or worker task -> context_type='sub_agent_spawn' ('Sure')\n\n"
             "3. FULL-DUPLEX CADENCE: You listen while speaking. If the user cuts you off mid-filler, gracefully cease your vocal track reproduction, update your internal ledger with the new intent constraint, and pivot your strategy."
         )
     if 'start_hermes_goal' in active_tools:
@@ -267,6 +268,7 @@ class LiveVoice:
         self._waiting_notice_played = False
         self._filler_played = False
         self._reply_wait_started_at = None
+        self._last_reply_sound_at = None
         self.local_fillers_played = 0
         self.last_filler_context = ''
         self._reply_serial = 0
@@ -544,6 +546,7 @@ class LiveVoice:
         self._waiting_notice_played = False
         self._filler_played = False
         self._reply_wait_started_at = None
+        self._last_reply_sound_at = None
 
     def _play_reply_notice(self, name):
         """Queue cached speech without pretending the provider has answered."""
@@ -553,6 +556,7 @@ class LiveVoice:
         if not pcm:
             return 0.0
         self.player.enqueue(pcm)
+        self._last_reply_sound_at = time.monotonic()
         log.info('Local reply feedback: %s', name)
         return len(pcm) / 48000
 
@@ -609,7 +613,7 @@ class LiveVoice:
     def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
         """Triggers PipeWire audio playback for local conversational filler reflex."""
         if (self.muted or self._drop_response or not self._reply_authorized
-                or self.gate.active or self.standby.engaged or self._filler_played):
+                or self.gate.active or self.standby.engaged or self._filler_played or self._reply_started):
             return False
         try:
             filler_cfg = getattr(self.config, 'fillers', None)
@@ -650,6 +654,7 @@ class LiveVoice:
                 # it as one lets a tool boundary revoke the real reply.
                 self.player.enqueue(pcm_data)
                 self._filler_played = True
+                self._last_reply_sound_at = time.monotonic()
                 self.local_fillers_played += 1
                 self.last_filler_context = context_type
                 log.info('Local filler reflex played: %s (%d bytes)', context_type, len(pcm_data))
@@ -1097,6 +1102,7 @@ class LiveVoice:
                                         (time.monotonic() - self._speech_closed_at) * 1000))
                                 self.player.begin_reply()
                             self._reply_started = True
+                            self._last_reply_sound_at = time.monotonic()
                             self._last_progress = time.monotonic()
                             self.player.enqueue(blob.data)
 
@@ -1452,25 +1458,34 @@ class LiveVoice:
         while True:
             await asyncio.sleep(0.25)
             playing = self.player.busy
-            context = ('sub_agent_spawn' if 'agent' in self._active_tool else
+            context = ('sub_agent_spawn' if 'agent' in self._active_tool or self._active_tool in {
+                           'start_hermes_goal', 'handoff_hermes_task', 'delegate_team'} else
                        'filesystem_grep' if self._active_tool in {'search_files', 'read_file'} else
-                       'system_mutation' if self._active_tool == 'system_control' else
+                       'system_mutation' if self._active_tool in {
+                           'system_control', 'web_search', 'browser_task', 'open_page',
+                           'read_page_text', 'run_in_terminal'} else
                        'generic_deep_thought')
+            ack_delay = TASK_ACK_SECONDS if self._tools_in_flight or self._pending_tool_batches else FILLER_ACK_SECONDS
+            feedback_since = (self._last_reply_sound_at if self._last_reply_sound_at is not None else
+                              self._reply_wait_started_at if self._reply_wait_started_at is not None else
+                              self._last_progress)
             if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
                     and not self.standby.engaged and not playing and not self._barge_pending
                     and not self._greeting_active and not self._background_active
                     and not self._wake_confirmation_in_flight and not self._wake_confirmation_pending
                     and not self._reply_started and not self._filler_played
                     and self._reply_wait_started_at is not None
-                    and time.monotonic() - self._reply_wait_started_at >= FILLER_ACK_SECONDS):
+                    and time.monotonic() - self._reply_wait_started_at >= ack_delay):
                 self._play_filler_reflex(context)
-            elif (self.connected and self._reply_authorized and not self.muted and not self.gate.active
+            if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
                     and not self.standby.engaged and not playing
+                    and not self.player.busy and not self._barge_pending
+                    and not self._greeting_active and not self._background_active
+                    and not self._wake_confirmation_in_flight and not self._wake_confirmation_pending
                     and not self._waiting_notice_played
-                    and time.monotonic() - self._last_progress > REPLY_NOTICE_SECONDS):
+                    and time.monotonic() - feedback_since > REPLY_NOTICE_SECONDS):
                 self._waiting_notice_played = True
-                if not self._play_filler_reflex(context):
-                    self._play_reply_notice('reply_waiting')
+                self._play_reply_notice('reply_waiting')
             if (self._barge_pending and not self._tools_in_flight and self._barge_started_at is not None and
                     time.monotonic() - self._barge_started_at > 5):
                 self.resume_handle = None
