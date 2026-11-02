@@ -343,6 +343,7 @@ class JarvisVoiceService : Service() {
             return
         }
         enabled = true
+        serviceScope.launch(Dispatchers.IO) { deviceTools.refreshPcTools() }
         updateNotification("Preparing Hey Jarvis…")
         startupJob = serviceScope.launch {
           try {
@@ -455,6 +456,8 @@ class JarvisVoiceService : Service() {
         Log.i(TAG, "Hey Jarvis detected; activating conversation")
         updateState(ConversationState.THINKING)
         val identity = sessionIdentity
+        val activatedAt = android.os.SystemClock.elapsedRealtime()
+        serviceScope.launch(Dispatchers.IO) { deviceTools.refreshPcTools() }
         serviceScope.launch {
             val setup = withContext(Dispatchers.IO) {
                 if (com.jarvis.os.sync.QrPairingScanner.isPaired(this@JarvisVoiceService)) {
@@ -467,10 +470,11 @@ class JarvisVoiceService : Service() {
                     Log.w(TAG, "Local memory read fallback", error)
                     ""
                 }
-                deviceTools.declarations() to memoryContext
+                deviceTools.declarations(refreshPc = false) to memoryContext
             }
             val tools = setup.first
             if (activeSession && sessionIdentity == identity) {
+                Log.i(TAG, "Local activation setup completed in ${android.os.SystemClock.elapsedRealtime() - activatedAt}ms")
                 geminiClient.connect(apiKey, extraTools = tools, systemPrompt = DeviceToolClient.SYSTEM_PROMPT + setup.second)
             }
         }
