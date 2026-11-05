@@ -41,8 +41,11 @@ class TestWidgetHudBridge(unittest.TestCase):
             "friendly": "shut down the computer",
         }
 
+        mock_state = MagicMock()
+        mock_state.is_file.return_value = False
         active_alerts = {}
         with patch.object(bridge, "POWER_MANAGER", mock_power), \
+             patch.object(bridge, "STATE_FILE", mock_state), \
              patch.object(bridge, "show_mandatory_widget") as mock_show, \
              patch.object(bridge, "dismiss_widget") as mock_dismiss:
 
