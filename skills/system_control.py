@@ -1536,17 +1536,9 @@ async def switch_workspace(workspace: int | str) -> dict[str, Any]:
 
 
 async def lock_screen(confirm: bool = False) -> dict[str, Any]:
-    """Lock the screen session using loginctl, with confirmation sequence."""
-    if not confirm:
-        from skills.system_power import POWER_MANAGER
-        return POWER_MANAGER.request_action("lock_screen", confirm=False)
-    loginctl = shutil.which("loginctl")
-    if not loginctl:
-        return {"status": "error", "message": "loginctl is not installed"}
-    code, _, stderr = await _run_command(loginctl, "lock-session")
-    if code == 0:
-        return {"status": "success", "action": "locked", "confirmed": True}
-    return {"status": "error", "message": stderr or "failed to lock screen"}
+    """Lock the screen session with confirmation sequence."""
+    from skills.system_power import POWER_MANAGER
+    return POWER_MANAGER.request_action("lock_screen", confirm=confirm)
 
 
 async def shutdown_system(confirm: bool = False) -> dict[str, Any]:

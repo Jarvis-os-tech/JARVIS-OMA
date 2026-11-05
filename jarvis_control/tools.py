@@ -41,7 +41,7 @@ QUERY_KINDS = {
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
                    "read_url", "fetch_web_page", "get_jarvis_mode",
-                   "reach_search", "reach_transcript"}
+                   "reach_search", "reach_transcript", "confirm_system_action", "cancel_system_action"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -1164,6 +1164,102 @@ SYSTEM_POWER_SCHEMA = {
 }
 TOOL_SCHEMAS.append(SYSTEM_POWER_SCHEMA)
 
+SHUTDOWN_SYSTEM_SCHEMA = {
+    'name': 'shutdown_system',
+    'description': (
+        'Request system shutdown. Destructive action requiring user confirmation before execution.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'confirm': {
+                'type': 'boolean',
+                'description': 'Whether explicit confirmation was already received.',
+                'default': False
+            }
+        },
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(SHUTDOWN_SYSTEM_SCHEMA)
+
+RESTART_SYSTEM_SCHEMA = {
+    'name': 'restart_system',
+    'description': (
+        'Request system reboot or restart. Destructive action requiring user confirmation before execution.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'confirm': {
+                'type': 'boolean',
+                'description': 'Whether explicit confirmation was already received.',
+                'default': False
+            }
+        },
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(RESTART_SYSTEM_SCHEMA)
+
+LOCK_SCREEN_SCHEMA = {
+    'name': 'lock_screen',
+    'description': (
+        'Request locking the display session. Requires user confirmation before execution.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'confirm': {
+                'type': 'boolean',
+                'description': 'Whether explicit confirmation was already received.',
+                'default': False
+            }
+        },
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(LOCK_SCREEN_SCHEMA)
+
+CONFIRM_SYSTEM_ACTION_SCHEMA = {
+    'name': 'confirm_system_action',
+    'description': (
+        'Confirm a pending system action (shutdown, restart, or lock screen). '
+        'Invoke when the user affirms, says "yes", "confirm", "proceed", or similar words.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'heard_phrase': {
+                'type': 'string',
+                'description': 'The confirmation phrase heard from the user (e.g. "yes", "proceed").',
+                'default': 'yes'
+            }
+        },
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(CONFIRM_SYSTEM_ACTION_SCHEMA)
+
+CANCEL_SYSTEM_ACTION_SCHEMA = {
+    'name': 'cancel_system_action',
+    'description': (
+        'Cancel a pending system action (shutdown, restart, or lock screen). '
+        'Invoke when the user declines, says "no", "cancel", "abort", "no need", or similar.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {},
+        'required': [],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(CANCEL_SYSTEM_ACTION_SCHEMA)
+
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -1421,7 +1517,8 @@ class Executor:
         self.config = config
         self.policy = Policy(config)
         self.on_action = on_action or (lambda name, desc: None)
-        self.pending: tuple[str, dict] | None = None
+        self._pending: tuple[str, dict] | None = None
+        self._pending_time: float | None = None
         self.transcript: list[str] = []
         # The window the last web_search opened, so the next one can replace it.
         self._last_search_window: str | None = None
@@ -1429,7 +1526,7 @@ class Executor:
         self._research_window: dict | None = None
         # tmux panes being watched for a command to finish, by target.
         self._watches: dict[str, dict] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._task_manager = None
         from .vision import VisionClient
         self.vision = VisionClient(config, session=True)
@@ -1553,7 +1650,10 @@ class Executor:
             return Result(False, f"unknown tool {name!r}")
         description = self.describe(name, args)
         read_only = name in READ_ONLY_TOOLS or (
-            name == 'system_control' and str(args.get('action', '')).endswith('_get')
+            name == 'system_control' and (
+                str(args.get('action', '')).endswith('_get') or
+                str(args.get('action', '')) == 'media_status'
+            )
         ) or (
             name == 'system_update' and args.get('action') in ('check', 'status')
         )
@@ -1590,12 +1690,31 @@ class Executor:
             return Result(True, f"[dry-run] would run: {description}")
         return handler
 
+    @property
+    def pending(self) -> tuple[str, dict] | None:
+        with self._lock:
+            if self._pending is not None and self._pending_time is not None:
+                if time.monotonic() - self._pending_time > 60.0:
+                    held = self.describe(*self._pending)
+                    self._pending = None
+                    self._pending_time = None
+                    self.transcript.append(f"EXPIRED {held}")
+                    return None
+            return self._pending
+
+    @pending.setter
+    def pending(self, val: tuple[str, dict] | None) -> None:
+        with self._lock:
+            self._pending = val
+            self._pending_time = time.monotonic() if val is not None else None
+
     def run_pending(self) -> Result:
         """Execute the action the user just confirmed out loud."""
         with self._lock:
-            if not self.pending:
+            item = self.pending
+            if not item:
                 return Result(False, "nothing was waiting for confirmation")
-            name, args = self.pending
+            name, args = item
             self.pending = None
             handler = getattr(self, f"_tool_{name}")
             description = self.describe(name, args)
@@ -1610,9 +1729,10 @@ class Executor:
 
     def drop_pending(self) -> str | None:
         with self._lock:
-            if not self.pending:
+            item = self.pending
+            if not item:
                 return None
-            held = self.describe(*self.pending)
+            held = self.describe(*item)
             self.pending = None
             self.transcript.append(f"CANCEL  {held}")
             return held
@@ -1640,6 +1760,10 @@ class Executor:
             return "shutdown system"
         if name == "restart_system":
             return "restart system"
+        if name == "confirm_system_action":
+            return "confirm system action"
+        if name == "cancel_system_action":
+            return "cancel system action"
         if name == "phone_control":
             return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
@@ -1720,6 +1844,12 @@ class Executor:
             where = args.get("workspace", "next")
             return (f'compose {len(panes)} windows on workspace {where} '
                     f'({args.get("layout", "columns")}): {labels}')
+        if name == "system_control":
+            act = args.get("action", "")
+            tgt = f' {args.get("target")!r}' if args.get("target") else ""
+            ws = f' to workspace {args.get("workspace")}' if args.get("workspace") else ""
+            val = f' {args.get("value")}' if args.get("value") is not None else ""
+            return f'system control: {act}{val}{ws}{tgt}'
         return f'{name} {args}'
 
     # -- helpers ------------------------------------------------------------
@@ -3578,13 +3708,13 @@ class Executor:
         return got
 
     # -- the machine about itself -------------------------------------------
-    def _validate_system_control(self, action, value=None, enabled=None, workspace=''):
+    def _validate_system_control(self, action, value=None, enabled=None, workspace='', target=''):
         from .system_control import validate
-        return validate(action, value, enabled, workspace)
+        return validate(action, value, enabled, workspace, target=target)
 
-    def _tool_system_control(self, action, value=None, enabled=None, workspace=''):
+    def _tool_system_control(self, action, value=None, enabled=None, workspace='', target=''):
         from .system_control import execute
-        return execute(self, action, value, enabled, workspace)
+        return execute(self, action, value, enabled, workspace, target=target)
 
     def _tool_system_update(self, action: str = "check") -> Result:
         try:
@@ -3627,12 +3757,25 @@ class Executor:
     def _tool_system_power(self, action: str) -> Result:
         norm = action.lower().strip().replace("-", "_")
         if norm in ("shutdown", "poweroff"):
+            omarchy_sys = shutil.which("omarchy-system") or "/usr/share/omarchy/bin/omarchy-system"
+            if os.path.exists(omarchy_sys) and os.access(omarchy_sys, os.X_OK):
+                return self._shell([omarchy_sys, "shutdown"])
             systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
             return self._shell([systemctl, "poweroff"])
         if norm in ("restart", "reboot"):
+            omarchy_sys = shutil.which("omarchy-system") or "/usr/share/omarchy/bin/omarchy-system"
+            if os.path.exists(omarchy_sys) and os.access(omarchy_sys, os.X_OK):
+                return self._shell([omarchy_sys, "reboot"])
             systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
             return self._shell([systemctl, "reboot"])
         if norm in ("lock", "lock_screen"):
+            omarchy_lock = shutil.which("omarchy-system-lock") or "/usr/share/omarchy/bin/omarchy-system-lock"
+            if os.path.exists(omarchy_lock) and os.access(omarchy_lock, os.X_OK):
+                return self._shell([omarchy_lock])
+            for locker in ("hyprlock", "swaylock", "waylock"):
+                path = shutil.which(locker)
+                if path:
+                    return self._shell([path])
             loginctl = shutil.which("loginctl") or "/usr/bin/loginctl"
             return self._shell([loginctl, "lock-session"])
         return Result(False, f"Unknown power action: {action}")
@@ -3645,6 +3788,23 @@ class Executor:
 
     def _tool_restart_system(self, confirm: bool = False) -> Result:
         return self._tool_system_power("restart")
+
+    def _tool_confirm_system_action(self, heard_phrase: str = "yes") -> Result:
+        if self.pending:
+            return self.run_pending()
+        from skills.system_power import POWER_MANAGER
+        res = POWER_MANAGER.confirm_action(heard_phrase=heard_phrase)
+        if res.get("status") == "error":
+            return Result(False, res.get("message", "Confirmation failed."))
+        return Result(True, res.get("message", "Action confirmed."))
+
+    def _tool_cancel_system_action(self) -> Result:
+        if self.pending:
+            held = self.drop_pending()
+            return Result(True, f"Cancelled: {held}")
+        from skills.system_power import POWER_MANAGER
+        res = POWER_MANAGER.cancel_action()
+        return Result(True, res.get("message", "Action cancelled."))
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.

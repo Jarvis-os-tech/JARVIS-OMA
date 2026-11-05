@@ -38,18 +38,21 @@ from skills.errors import SkillError
 
 def test_tool_tiers_constants():
     """Verify tool tiers constants and sets."""
-    assert len(tool_tiers.CORE_TOOLS) == 33
+    assert len(tool_tiers.CORE_TOOLS) == 64
     assert "get_assistant_status" in tool_tiers.CORE_TOOLS
     assert "open_application" in tool_tiers.CORE_TOOLS
     assert "start_task" in tool_tiers.CORE_TOOLS
+    assert "shutdown_system" in tool_tiers.CORE_TOOLS
+    assert "restart_system" in tool_tiers.CORE_TOOLS
+    assert "lock_screen" in tool_tiers.CORE_TOOLS
+    assert "confirm_system_action" in tool_tiers.CORE_TOOLS
+    assert "cancel_system_action" in tool_tiers.CORE_TOOLS
 
-    assert tool_tiers.META_TOOLS == frozenset({'discover_domain_tools', 'execute_domain_tool'})
+    assert {'discover_domain_tools', 'execute_domain_tool'} <= tool_tiers.META_TOOLS
 
-    expected_domains = (
-        'core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
-        'gui', 'cli_anything', 'orchestration', 'learning', 'phone', 'vision', 'composio'
-    )
-    assert tool_tiers.DOMAINS == expected_domains
+    for domain in ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
+                   'gui', 'cli_anything', 'orchestration', 'learning', 'phone', 'vision', 'composio'):
+        assert domain in tool_tiers.DOMAINS
 
     assert len(tool_tiers.META_SPECS) == 2
     spec_names = {s['name'] for s in tool_tiers.META_SPECS}

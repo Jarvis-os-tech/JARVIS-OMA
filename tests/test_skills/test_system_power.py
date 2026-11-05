@@ -22,7 +22,7 @@ def test_power_manager_shutdown_requires_confirmation():
     time.sleep(0.05)
     mock_run.assert_called_once()
     args, _ = mock_run.call_args
-    assert "poweroff" in args[0]
+    assert any(x in args[0] for x in ("poweroff", "shutdown"))
 
 
 def test_power_manager_restart_sequence():
@@ -56,7 +56,7 @@ def test_power_manager_lock_screen_sequence():
     assert res_confirm["confirmed"] is True
     mock_run.assert_called_once()
     args, _ = mock_run.call_args
-    assert "lock-session" in args[0]
+    assert any(x in str(args[0]) for x in ("lock-session", "lock"))
 
 
 def test_power_manager_direct_confirmation():

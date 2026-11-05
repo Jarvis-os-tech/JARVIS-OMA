@@ -56,17 +56,55 @@ class SystemPowerManager:
         """Clear and return any pending action."""
         prev = self.get_pending()
         self._pending = None
+        self._dismiss_confirmation_widget()
         return prev
+
+    def _show_confirmation_widget(self, action: str, friendly: str) -> None:
+        """Mandatory visual confirmation overlay on screen."""
+        try:
+            from ui.jarvis_widgets import backend
+            widget = backend.make_widget(
+                "text",
+                "⚠️ Confirmation Required",
+                {"text": f"Action: {friendly.capitalize()}\nSay 'confirm' or 'yes' to proceed, or 'cancel' to abort."},
+                widget_id="jarvis-power-confirm",
+                presentation="floating",
+                expires_seconds=int(CONFIRMATION_TIMEOUT_SECONDS),
+            )
+            backend.shell_call("present", widget)
+        except Exception as exc:
+            log.debug("Power confirmation widget display suppressed: %s", exc)
+
+    def _dismiss_confirmation_widget(self) -> None:
+        """Dismiss the visual confirmation overlay."""
+        try:
+            from ui.jarvis_widgets import backend
+            backend.shell_call("manage", {"id": "jarvis-power-confirm", "action": "dismiss"})
+        except Exception:
+            pass
 
     def _get_action_command(self, action: str) -> list[str]:
         norm = action.lower().strip().replace("-", "_")
         if norm in ("shutdown", "poweroff", "power_off"):
+            omarchy_sys = shutil.which("omarchy-system") or "/usr/share/omarchy/bin/omarchy-system"
+            if os.path.exists(omarchy_sys) and os.access(omarchy_sys, os.X_OK):
+                return [omarchy_sys, "shutdown"]
             systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
             return [systemctl, "poweroff"]
         if norm in ("restart", "reboot"):
+            omarchy_sys = shutil.which("omarchy-system") or "/usr/share/omarchy/bin/omarchy-system"
+            if os.path.exists(omarchy_sys) and os.access(omarchy_sys, os.X_OK):
+                return [omarchy_sys, "reboot"]
             systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
             return [systemctl, "reboot"]
         if norm in ("lock", "lock_screen", "screen_lock"):
+            omarchy_lock = shutil.which("omarchy-system-lock") or "/usr/share/omarchy/bin/omarchy-system-lock"
+            if os.path.exists(omarchy_lock) and os.access(omarchy_lock, os.X_OK):
+                return [omarchy_lock]
+            for locker in ("hyprlock", "swaylock", "waylock"):
+                path = shutil.which(locker)
+                if path:
+                    return [path]
             loginctl = shutil.which("loginctl") or "/usr/bin/loginctl"
             return [loginctl, "lock-session"]
         raise ValueError(f"Unsupported system power action: {action}")
@@ -109,6 +147,7 @@ class SystemPowerManager:
                 "friendly": friendly,
                 "created_at": time.monotonic(),
             }
+            self._show_confirmation_widget(norm, friendly)
             return {
                 "status": "needs_confirmation",
                 "action": norm,
@@ -119,6 +158,7 @@ class SystemPowerManager:
 
         # Confirmed execution
         self._pending = None
+        self._dismiss_confirmation_widget()
         return self._execute_action(norm, cmd, delay=delay)
 
     def confirm_action(self, heard_phrase: str = "yes", delay: float = 2.0) -> dict[str, Any]:
@@ -142,6 +182,7 @@ class SystemPowerManager:
             }
 
         self._pending = None
+        self._dismiss_confirmation_widget()
         return self._execute_action(pending["action"], pending["command"], delay=delay)
 
     def cancel_action(self) -> dict[str, Any]:

@@ -27,6 +27,12 @@ class IntentCategory(enum.Enum):
     UNKNOWN = "unknown"
 
 
+class ConfirmationDecision(enum.Enum):
+    AFFIRMED = "affirmed"
+    DECLINED = "declined"
+    AMBIGUOUS = "ambiguous"
+
+
 @dataclass
 class NLUResult:
     raw_text: str
@@ -130,16 +136,23 @@ class NLUEngine:
 
     @staticmethod
     def _is_action_request(text: str) -> bool:
-        text = re.sub(r'^\s*(?:hey\s+jarvis|jarvis)\b[\s,:-]*', '', text)
+        text = re.sub(r'^\s*(?:hey\s+jarvis|jarvis|bhai|yaar)\b[\s,:-]*', '', text, flags=re.IGNORECASE)
         for _ in range(4):
-            stripped = re.sub(r'^(?:(?:can|could|would|will) you\s+|(?:please|kindly|first|then|now)\b[\s,:-]*)', '', text)
+            stripped = re.sub(
+                r'^(?:(?:can|could|would|will) you\s+|'
+                r'(?:kya aap|kya tum|zara|ek baar|bhai|yaar)\s+|'
+                r'(?:please|kindly|first|then|now)\b[\s,:-]*)',
+                '', text, flags=re.IGNORECASE
+            )
             if stripped == text:
                 break
             text = stripped
         return bool(re.match(
             r'^(open|launch|close|focus|switch|move|resize|maximize|minimize|set|increase|'
             r'decrease|reduce|raise|lower|turn|mute|unmute|play|pause|resume|stop|start|'
-            r'click|tap|scroll|type|press|copy|paste|send|call|dial|pair|connect|disconnect)\b', text))
+            r'click|tap|scroll|type|press|copy|paste|send|call|dial|pair|connect|disconnect)\b',
+            text, flags=re.IGNORECASE
+        ))
 
     @classmethod
     def normalize_text(cls, text: str) -> str:
@@ -595,3 +608,135 @@ class NLUEngine:
                 return False, "User did not command to enter standby mode."
 
         return True, ""
+
+    CONFIRM_COLLOQUIAL_FILLERS = frozenset({
+        "please", "pls", "plz", "thanks", "thank", "you", "yeah", "yep", "ok", "okay",
+        "now", "bhai", "yaar", "jarvis", "toh", "sir", "just", "for sure", "right now",
+        "man", "boss", "bro", "definitely", "sure", "well", "so", "actually",
+        "to", "me", "with", "it", "that", "for", "all", "good",
+    })
+
+    @classmethod
+    def evaluate_confirmation(
+        cls,
+        heard_phrase: str,
+        confirm_words: list[str] | set[str] | None = None,
+        cancel_words: list[str] | set[str] | None = None,
+        held_action: str = "",
+    ) -> ConfirmationDecision:
+        """Deterministically evaluate if heard_phrase affirms, declines, or ambivalently addresses held_action.
+
+        Enforces strict fail-closed negation precedence.
+        """
+        if not heard_phrase or not heard_phrase.strip():
+            return ConfirmationDecision.AMBIGUOUS
+
+        from .config import DEFAULT_CONFIRM_WORDS, DEFAULT_CANCEL_WORDS
+
+        # 1. Phonetic normalization & whitespace stripping
+        normalized = cls.normalize_text(heard_phrase)
+        cleaned = re.sub(r"[^\w\s']+", " ", normalized.casefold()).strip()
+        tokens = cleaned.split()
+        if not tokens:
+            return ConfirmationDecision.AMBIGUOUS
+
+        confirm_set = {
+            re.sub(r"[^\w\s']+", " ", c.casefold()).strip()
+            for c in (confirm_words if confirm_words is not None else DEFAULT_CONFIRM_WORDS)
+        }
+        cancel_set = {
+            re.sub(r"[^\w\s']+", " ", c.casefold()).strip()
+            for c in (cancel_words if cancel_words is not None else DEFAULT_CANCEL_WORDS)
+        }
+
+        # 2. Strict Negation & Decline Precedence (Tier 1)
+        # Any occurrence of cancel words or explicit negation tokens forces DECLINED.
+        # This overrides any simultaneous affirmative words (e.g., "yeah no", "haan mat karo").
+        for cancel_phrase in cancel_set:
+            if cancel_phrase and (cleaned == cancel_phrase or re.search(r'\b' + re.escape(cancel_phrase) + r'\b', cleaned)):
+                log.info("Confirmation decision DECLINED (cancel word match '%s'): '%s'", cancel_phrase, heard_phrase)
+                return ConfirmationDecision.DECLINED
+
+        # Check token-level negation patterns
+        negation_pattern = re.compile(
+            r"\b(don't|dont|do not|never|not|no|nope|nah|mat|nahi|nahin|ruko|ruk jao|rehne do|band karo|abort|cancel|forget it|leave it)\b",
+            re.IGNORECASE,
+        )
+        if negation_pattern.search(cleaned):
+            log.info("Confirmation decision DECLINED (negation match): '%s'", heard_phrase)
+            return ConfirmationDecision.DECLINED
+
+        # 3. Interrogative / Question Check (Tier 2)
+        # Conversational questions about the action (e.g. "what time is it?", "why would I do that?", "are you sure?")
+        # should remain AMBIGUOUS rather than accidentally affirming.
+        if "?" in heard_phrase:
+            log.info("Confirmation decision AMBIGUOUS (question mark present): '%s'", heard_phrase)
+            return ConfirmationDecision.AMBIGUOUS
+
+        interrogative_pattern = re.compile(
+            r"\b(why|how|what|when|where|who|which|is it|will it|are you|can you|kya|kyun|kaise|kab|kahan)\b",
+            re.IGNORECASE,
+        )
+        if interrogative_pattern.search(cleaned):
+            log.info("Confirmation decision AMBIGUOUS (interrogative query): '%s'", heard_phrase)
+            return ConfirmationDecision.AMBIGUOUS
+
+        # 4. Affirmative Assent Alignment (Tier 3)
+        # Check exact and substring match against confirm_set
+        for conf in confirm_set:
+            if not conf:
+                continue
+            if cleaned == conf:
+                log.info("Confirmation decision AFFIRMED (exact match '%s'): '%s'", conf, heard_phrase)
+                return ConfirmationDecision.AFFIRMED
+            # Match prefix + fillers or fillers + suffix
+            if cleaned.startswith(conf + " "):
+                rest = cleaned[len(conf):].split()
+                if rest and all(t in cls.CONFIRM_COLLOQUIAL_FILLERS for t in rest):
+                    log.info("Confirmation decision AFFIRMED (prefix '%s' + fillers): '%s'", conf, heard_phrase)
+                    return ConfirmationDecision.AFFIRMED
+            if cleaned.endswith(" " + conf):
+                lead = cleaned[:-len(conf)].split()
+                if lead and all(t in cls.CONFIRM_COLLOQUIAL_FILLERS for t in lead):
+                    log.info("Confirmation decision AFFIRMED (fillers + suffix '%s'): '%s'", conf, heard_phrase)
+                    return ConfirmationDecision.AFFIRMED
+
+        # Check if stripping all fillers leaves a known confirm word
+        non_filler_tokens = [t for t in tokens if t not in cls.CONFIRM_COLLOQUIAL_FILLERS]
+        if non_filler_tokens:
+            reduced = " ".join(non_filler_tokens)
+            if reduced in confirm_set:
+                log.info("Confirmation decision AFFIRMED (reduced filler match '%s'): '%s'", reduced, heard_phrase)
+                return ConfirmationDecision.AFFIRMED
+            if all(t in confirm_set for t in non_filler_tokens):
+                log.info("Confirmation decision AFFIRMED (all affirmative tokens): '%s'", heard_phrase)
+                return ConfirmationDecision.AFFIRMED
+
+        # Check contextual match with held action (e.g. "reboot now" or "reboot" when held is "reboot the system")
+        if held_action:
+            clean_held = re.sub(r"[^\w\s']+", " ", held_action.casefold()).strip()
+            held_keywords = [
+                kw for kw in clean_held.split()
+                if kw not in ("the", "system", "pc", "computer", "action", "last") and len(kw) > 2
+            ]
+            if any(kw in non_filler_tokens for kw in held_keywords) and len(non_filler_tokens) <= 3:
+                log.info("Confirmation decision AFFIRMED (held action keyword match in '%s'): '%s'", held_action, heard_phrase)
+                return ConfirmationDecision.AFFIRMED
+
+        log.info("Confirmation decision AMBIGUOUS: '%s'", heard_phrase)
+        return ConfirmationDecision.AMBIGUOUS
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == "eval":
+        phrase = sys.argv[2]
+        action = sys.argv[3] if len(sys.argv) > 3 else ""
+        analysis = NLUEngine.analyze(phrase)
+        decision = NLUEngine.evaluate_confirmation(phrase, held_action=action)
+        print(json.dumps({
+            "raw": phrase,
+            "normalized": analysis.normalized_text,
+            "category": analysis.category.value,
+            "decision": decision.value,
+        }, indent=2))

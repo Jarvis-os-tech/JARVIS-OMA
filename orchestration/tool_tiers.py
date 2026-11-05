@@ -10,23 +10,29 @@ import re
 
 CORE_TOOLS = frozenset({
     'get_assistant_status', 'list_capabilities', 'enter_standby', 'pause_jarvis',
+    'parse_command_values',
     'resume_jarvis', 'stop_all_jarvis_work', 'open_application', 'list_applications',
     'open_website', 'list_windows', 'focus_window', 'list_workspaces',
     'switch_workspace', 'manage_window', 'type_text', 'press_key', 'set_volume',
     'control_microphone', 'set_brightness', 'remember_memory', 'recall_memory',
     'memory_status', 'list_files', 'read_file', 'search_files', 'internet_search',
     'get_system_information', 'start_task', 'task_status', 'list_tasks',
-    'cancel_task', 'open_input_bar', 'close_input_bar',
+    'cancel_task', 'open_input_bar', 'close_input_bar', 'control_vision_mode', 'show_widget', 'manage_canvas', 'manage_widget', 'widget_schema',
+    'start_model_processing', 'model_processing_status', 'connect_platform', 'open_platform_authorization', 'check_platform_connection', 'execute_platform_action', 'list_connected_platforms',
+    'github_authorize', 'github_connection_status', 'google_authorize', 'google_connection_status',
+    'get_harness_status', 'start_harness_check', 'harness_check_status', 'cancel_harness_check',
+    'get_learning_status', 'list_research_lessons', 'record_research_feedback',
+    'shutdown_system', 'restart_system', 'lock_screen', 'confirm_system_action', 'cancel_system_action', 'system_power', 'control_power',
 })
-META_TOOLS = frozenset({'discover_domain_tools', 'execute_domain_tool'})
+META_TOOLS = frozenset({'discover_domain_tools', 'execute_domain_tool', 'parse_command_values'})
 DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
-           'gui', 'cli_anything', 'orchestration', 'learning', 'phone', 'vision', 'composio')
+           'gui', 'cli_anything', 'api_anything', 'integrations', 'orchestration', 'learning', 'phone', 'vision', 'composio')
 
 _ORCHESTRATION = frozenset({
     'get_hermes_events',
     'respond_hermes_approval',
     'read_hermes_artifact', 'handoff_hermes_task',
-    'get_hermes_features', 'run_hermes_command',
+    'call_hermes_api', 'get_hermes_features', 'run_hermes_command',
     'start_hermes_goal',
     'start_agent_goal', 'list_system_agents', 'delegate_agent', 'delegate_team',
     'check_agent_team', 'cancel_agent_team', 'check_agent_job', 'list_agent_jobs',
@@ -46,7 +52,8 @@ def domain_for_tool(name):
     if name.startswith(('gmail_', 'calendar_', 'tasks_', 'drive_', 'docs_', 'sheets_', 'google_')):
         return 'workspace'
     for prefix, domain in (('github_', 'github'), ('gui_', 'gui'), ('cli_hub_', 'cli_anything'),
-                           ('phone_', 'phone'), ('composio_', 'composio')):
+                           ('api_anything_', 'api_anything'), ('integration_', 'integrations'),
+                           ('phone_', 'phone'), ('composio_', 'composio'), ('disconnect_platform', 'composio')):
         if name.startswith(prefix):
             return domain
     if name in _ORCHESTRATION:
@@ -70,13 +77,16 @@ def intent_domains(command):
         'github': r'\b(github|pull request|repository|repositories|issue)\b',
         'gui': r'\b(accessibility|cua|click|scroll|browser tab|double.click)\b',
         'cli_anything': r'\b(cli.anything|cli.hub|matrix|recipe)\b',
+        'api_anything': r'\b(api.anything|api agent|web api|api operation|blueprint)\b',
+        'integrations': r'\b(integration|integrations|service health|connector status)\b',
+        'composio': r'\b(composio|connector|connectors|oauth)\b',
         'orchestration': r'\b(delegate|agent|codex|claude|hermes|kanban|kanboard|cron|cronjob|development|background job)\b',
         'learning': r'\b(harness|research feedback|refinement|learning)\b',
         'phone': r'\b(phone|call|contact|dtmf|hang up)\b',
         'vision': r'\b(camera|vision|video|webcam)\b',
         'filesystem': r'\b(file|directory|folder|path|copy|append|trash)\b',
         'memory': r'\b(memory|remember|recall|forget|obsidian)\b',
-        'desktop': r'\b(volume|brightness|wifi|bluetooth|remind|reminder|todo|theme|desktop|notification)\b',
+        'desktop': r'\b(volume|brightness|wifi|bluetooth|remind|reminder|todo|theme|desktop|notification|shutdown|shut down|restart|reboot|power|lock screen|screen lock)\b',
     }
     return {domain for domain, pattern in hints.items() if re.search(pattern, text)}
 
@@ -135,7 +145,7 @@ def routed_arguments_match(value, schema, depth=0):
 
 META_SPECS = ({
     'name': 'discover_domain_tools',
-    'description': 'Read exact available tool schemas for a capability domain before using execute_domain_tool. Domains include workspace (Gmail/Calendar/Drive/Tasks), github, gui, cli_anything, orchestration and learning. Discovery never executes an action.',
+    'description': 'Read exact available tool schemas before execute_domain_tool. Domains include workspace, github, gui, api_anything (learned web APIs), cli_anything (application harnesses), composio (account connectors), integrations (live service health), orchestration and learning. Discovery never executes an action.',
     'adapter': 'domains.discover',
     'parameters_json_schema': {'type': 'object', 'properties': {
         'domain': {'type': 'string', 'enum': list(DOMAINS)},
