@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 
 ADAPTERS = {
+    'hermes.api': '_adapter_hermes_api',
     'hermes.artifact': '_adapter_hermes_artifact',
     'hermes.handoff': '_adapter_hermes_handoff',
     'hermes.approval': '_adapter_hermes_approval',
@@ -67,6 +68,19 @@ ADAPTER_COMMANDS = {
 
 
 class OrchestrationDomain:
+    def _hermes_api(self):
+        from orchestration.hermes_api import HermesAPI
+        return HermesAPI(self._personal_agents())
+
+    async def _adapter_hermes_api(self, operation='operations.list', arguments=None, request_key=None):
+        try:
+            api = self._hermes_api()
+            if operation == 'operations.list':
+                return await api.catalog()
+            return await api.call(operation, arguments, request_key)
+        except (OSError, ValueError, TimeoutError, WorkerBusyError) as error:
+            raise SkillError(str(error)) from None
+
     async def _adapter_hermes_features(self, query='', include_unavailable=False):
         try:
             return await self._personal_agents().bridge.features(query, include_unavailable)
@@ -75,8 +89,17 @@ class OrchestrationDomain:
 
     async def _adapter_hermes_command(self, command, arguments=''):
         try:
-            return await self._personal_agents().bridge.command(
+            result = await self._personal_agents().bridge.command(
                 command, arguments, workspace=str(locations()['project_root']))
+            if result.get('requires_agent'):
+                # A native send/prefill/skill directive is not an executed action.
+                # Route the original user command through durable Hermes execution.
+                return await self._adapter_start_hermes_goal(
+                    'Execute the user-requested Hermes command /' + command.lstrip('/') +
+                    (' ' + arguments if arguments else '') +
+                    '. Use its native feature, inspect the result, and report actual completion.',
+                    timeout_seconds=900)
+            return result
         except (OSError, ValueError, TimeoutError) as error:
             raise SkillError('Hermes command outcome may be unknown; inspect native state before retrying: ' + type(error).__name__) from None
 

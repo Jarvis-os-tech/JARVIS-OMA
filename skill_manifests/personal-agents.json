@@ -2,6 +2,33 @@
   "version": 1,
   "skills": [
     {
+      "name": "call_hermes_api",
+      "adapter": "hermes.api",
+      "description": "Direct private Hermes API: discover operations.list, then call native cron and Kanban operations or durable tasks.start/workflow.start. Reuse request_key on writes; pending is not completion. Other Hermes features run via tasks.start with the full user request.",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "operations.list, cron.create/list/update/pause/resume/remove, kanban.*, features.list, tasks.start/list/status or workflow.start"
+          },
+          "arguments": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Arguments from operations.list inputSchema. workflow.start takes goal and named tasks with instruction, depends_on, optional agent."
+          },
+          "request_key": {
+            "type": "string",
+            "description": "Required stable key for writes; reuse unchanged on retries."
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "get_hermes_features",
       "adapter": "hermes.features",
       "description": "Read the live Hermes native feature/toolset and slash-command catalog. Use for Kanban boards, cron schedules, skills, browser, research, memory, media and any installed Hermes capability. Discovery does not run features or verify provider login. Reuse Hermes features instead of creating Jarvis replacements.",

@@ -10,6 +10,7 @@ from orchestration.agent_orchestrator import AgentOrchestrator
 from orchestration.mcp_server import OrchestratorMCP, TOOLS
 from jarvis_control.skills import UnifiedSkills
 from orchestration.task_agents import TaskAgents
+from orchestration.task_presentation import TaskPresentation
 from skills.skills import DesktopSkills
 from jarvis_voice.daemon import build_instruction
 
@@ -73,6 +74,7 @@ async def test_goal_is_registered_routes_to_hermes_and_notice_is_acknowledged(tm
                              close=AsyncMock())
     agents = TaskAgents(tmp_path, bridge=bridge)
     skills._task_agents = agents
+    skills._task_presentation = TaskPresentation(skills, tmp_path / 'events.sqlite', lambda *args: None)
     unified = UnifiedSkills(desktop_skills=skills)
     try:
         assert 'start_hermes_goal' in {s['name'] for s in skills.declarations}
@@ -86,7 +88,11 @@ async def test_goal_is_registered_routes_to_hermes_and_notice_is_acknowledged(tm
         agents.start = start
         agents.jobs['task-123456789abc'] = {'id':'task-123456789abc','kind':'task_agent', 'state':'completed','summary':'Response received; effects unverified.'}
         events = await unified.background_events()
-        assert events[0]['id'] == 'hermes:task-123456789abc'
+        assert len(events) == 1
+        assert events[0]['id'].startswith('task-event:')
+        assert events[0]['task_event']['task_id'] == 'hermes:task-123456789abc'
+        assert events[0]['task_event']['state'] == 'response_received'
+        assert not events[0]['task_event']['evidence']['verified']
         await unified.acknowledge_event(events[0]['id'])
         assert not await unified.background_events()
     finally:

@@ -40,4 +40,4 @@ def test_scoped_memory_install_is_reproducible_and_cannot_commit(tmp_path):
     assert memory['args'][-2:]==['--permission','propose']
     assert 'project:jarvis-os' in memory['args']
     assert 'commit' not in memory['args'] and '*' not in memory['args']
-    assert updated['mcp_servers']['jarvis_orchestrator']['env']['JARVIS_BRIDGE_PROTOCOL']=='2'
+    assert updated['mcp_servers']['jarvis_orchestrator']['env']['JARVIS_BRIDGE_PROTOCOL']=='3'

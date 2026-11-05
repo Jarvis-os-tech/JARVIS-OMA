@@ -85,7 +85,7 @@ def configured(current, repo, python, memory_database=None):
             '--state-dir', str(repo / '.jarvis-orchestration'),
             '--workspace-root', str(repo)],
         'enabled': True, 'timeout': 120, 'connect_timeout': 30,
-        'env': {'JARVIS_BRIDGE_PROTOCOL':'2'},
+        'env': {'JARVIS_BRIDGE_PROTOCOL':'3'},
         'supports_parallel_tool_calls': False,
     }
     if memory_database is not None:

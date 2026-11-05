@@ -47,7 +47,7 @@ _FILESYSTEM = frozenset({'write_file', 'append_file', 'edit_file', 'make_directo
 
 
 def domain_for_tool(name):
-    if name in CORE_TOOLS or name in META_TOOLS:
+    if name in META_TOOLS:
         return 'core'
     if name.startswith(('gmail_', 'calendar_', 'tasks_', 'drive_', 'docs_', 'sheets_', 'google_')):
         return 'workspace'
@@ -66,6 +66,8 @@ def domain_for_tool(name):
         return 'memory'
     if name in ('control_vision_mode', 'capture_camera_frame', 'check_vision_hardware'):
         return 'vision'
+    if name in CORE_TOOLS:
+        return 'core'
     return 'desktop'
 
 

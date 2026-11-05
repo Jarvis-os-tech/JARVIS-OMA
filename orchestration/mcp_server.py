@@ -42,7 +42,8 @@ STRING = {'type': 'string'}
 TOOLS = [
     schema('jarvis_capabilities', 'Discover connected workers and orchestration ownership; does not start work.'),
     schema('jarvis_delegate', 'Delegate bounded user-authorized work to a named installed agent. '
-           'Reuse request_key on retries. A parent resolves its isolated workspace; otherwise use fresh scratch. '
+           'Reuse request_key on retries. Parent assignments get distinct snapshot workspaces for parallel workers; '
+           'review and consolidate their artifacts explicitly. Otherwise use fresh scratch. '
            'A specified workspace must be within the configured project roots. '
            'Returns queued, not success. Inspect jarvis_job_status before concluding the goal. '
            'Agent instructions are guidance, not OS confinement. Never use for unrelated tasks.',
@@ -190,6 +191,7 @@ class OrchestratorMCP:
         if not 1 <= len(request_key) <= 128 or not 1 <= len(prompt.strip()) <= 16000:
             raise ValueError('Use a request key of 1-128 characters and prompt of 1-16000 characters')
         prompt = sanitize(prompt)['data']
+        parent_workspace = None
         if parent_task_id:
             from orchestration.task_agents import JOB_ID
             if not JOB_ID.fullmatch(parent_task_id):
@@ -205,6 +207,8 @@ class OrchestratorMCP:
                 workspace = parent.get('workspace') or ''
                 if not workspace:
                     raise ValueError('Parent workspace is not ready')
+            if Path(workspace).expanduser().resolve() == Path(parent.get('workspace') or '/').resolve():
+                parent_workspace = workspace
         elif owner_generation is not None:
             raise ValueError('An ownership generation requires a parent goal')
         identity = [agent, prompt, workspace, timeout_seconds]
@@ -224,13 +228,27 @@ class OrchestratorMCP:
         if len(history) >= 200:
             raise ValueError('Bridge history is full; archive reviewed records before more work')
         job = {'id': uuid.uuid4().hex, 'name': task_name(prompt), 'agent': agent, 'coordinator_owner': 'hermes',
+               'assignment_hash': hashlib.sha256(json.dumps([agent, prompt]).encode()).hexdigest(),
                'parent_task_id': parent_task_id, 'owner_generation': owner_generation,
                'state': 'queued', 'execution': 'not_started', 'verified': False,
                'summary': 'Worker queued; no result yet.'}
         self.db.execute('INSERT INTO jobs VALUES(?,?,?,?)', (job['id'], request_key, fingerprint, json.dumps(job)))
         self.db.commit()  # record identity before any external launch
         try:
-            root = await self._workspace(job['id'], workspace)
+            if parent_workspace:
+                from orchestration.goal_workspaces import project_workspace
+                target = self.root / 'workspaces' / job['id'] / 'worktree'
+                def snapshot():
+                    fd = os.open(self.root / 'workspace-snapshots.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX)
+                        return project_workspace(target, parent_workspace, parent.get('input_paths', []))[0]
+                    finally:
+                        os.close(fd)
+                root = Path(await asyncio.to_thread(snapshot))
+                job['workspace_source'] = str(parent_workspace)
+            else:
+                root = await self._workspace(job['id'], workspace)
             baseline = await capture_workspace(root)
             if baseline['status'] != 'passed':
                 raise ValueError('Workspace baseline unavailable; no worker submitted')

@@ -3,6 +3,20 @@
 ROUTING = """
 
 HERMES AND JARVIS ORCHESTRATION:
+- Hermes is also a directly callable Jarvis tool. call_hermes_api operations.list
+  discovers live operation schemas. Use cron.create/list/update/pause/resume/remove
+  for schedules and kanban.* for board management. They operate on Hermes's own
+  stores without an LLM planning turn. Always list before changing existing items.
+  Writes require a stable request_key; reuse it unchanged on retries. Unknown
+  writes must be inspected, never blindly resubmitted. Default cron delivery is
+  local with Jarvis's notification outbox; explicitly preserve user delivery intent.
+- Use workflow.start with goal and named tasks (instruction, depends_on, optional
+  agent) for multiple related assignments. Steps appear in dependency order;
+  independent steps may delegate concurrently, within native worker limits.
+  Use tasks.start for every other Hermes capability and the complete user goal.
+  Multiple goals queue durably: two execute at once, up to 32 pending goals.
+  API Anything's hermes site routes to this same private API, never its public
+  registry or browser capture. No private gateway credentials are exported.
 - Goals now use durable Hermes admissions watched independently of voice.
   Use a stable request_key on retries. Mute, reconnect and Jarvis shutdown do
   not cancel admitted goals. A failed native owner is reported unknown, never

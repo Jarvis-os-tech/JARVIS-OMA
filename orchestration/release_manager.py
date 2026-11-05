@@ -6,11 +6,17 @@ atomic symlink switching, health verification, and rollback.
 from __future__ import annotations
 
 import json
+from contextlib import closing, contextmanager
+import fcntl
+import hashlib
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
+import tempfile
 import time
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +52,22 @@ class ReleaseManager:
         """Ensure all required runtime directories exist."""
         for path in (self.releases_dir, self.data_dir, self.logs_dir):
             path.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def release_lock(self):
+        """Serialize pointer changes, recovery and pruning across processes."""
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(self.root_dir / '.release-switch.lock',
+                             os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, 'w') as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError('Another release operation is in progress; retry after it finishes') from None
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def get_current_release_metadata(self) -> dict[str, Any]:
         """Read release.json from the currently active release."""
@@ -174,6 +196,10 @@ class ReleaseManager:
             venv_python = self.venv_dir / "bin" / "python"
             python_bin = str(venv_python) if venv_python.is_file() else "python3"
 
+            # Certify the exported candidate before stripping its tests. A missing
+            # runner or missing test dependencies must block an untested update.
+            self.verify_behavior(staging_dir, python_bin)
+
             compile_cmd = [
                 python_bin,
                 "-m",
@@ -233,6 +259,10 @@ class ReleaseManager:
 
     def prune_releases(self, keep: int = 3) -> list[str]:
         """Prune older releases, keeping the most recent 'keep' count."""
+        with self.release_lock():
+            return self._prune_releases_locked(keep)
+
+    def _prune_releases_locked(self, keep: int) -> list[str]:
         if not self.releases_dir.is_dir():
             return []
 
@@ -348,12 +378,38 @@ class ReleaseManager:
         for db in self.data_dir.glob("*.db"):
             if ".bak" in db.name:
                 continue
-            bak_path = db.with_name(f"{db.name}.bak.{int(time.time())}")
+            temporary: Path | None = None
+            bak_path: Path | None = None
             try:
-                shutil.copy2(db, bak_path)
+                with tempfile.NamedTemporaryFile(prefix=f".{db.name}.backup.", suffix=".tmp",
+                                                 dir=self.data_dir, delete=False) as temp:
+                    temporary = Path(temp.name)
+                source_uri = db.resolve().as_uri() + "?mode=ro"
+                with closing(sqlite3.connect(source_uri, uri=True)) as source, closing(sqlite3.connect(temporary)) as backup:
+                    source.backup(backup)
+                timestamp = time.time_ns()
+                counter = 0
+                while True:
+                    suffix = f"{timestamp}" if counter == 0 else f"{timestamp}.{counter}"
+                    candidate = db.with_name(f"{db.name}.bak.{suffix}")
+                    try:
+                        descriptor = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                        os.close(descriptor)
+                        bak_path = candidate
+                        break
+                    except FileExistsError:
+                        counter += 1
+                os.replace(temporary, bak_path)
+                temporary = None
                 backed_up.append(bak_path)
             except Exception as e:
                 log.warning("Failed to backup %s: %s", db, e)
+                if bak_path is not None:
+                    bak_path.unlink(missing_ok=True)
+                raise RuntimeError(f"Failed to back up {db}; release activation stopped") from e
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         return backed_up
 
     def _set_link(self, link: Path, target: Path | None) -> None:
@@ -366,13 +422,19 @@ class ReleaseManager:
         temporary.symlink_to(target)
         temporary.replace(link)
 
-    def _switch_release(self, target: Path, timeout: float) -> dict[str, Any]:
+    def _switch_release(self, target: Path, timeout: float, *, expected_current: Path | None = None) -> dict[str, Any]:
+        with self.release_lock():
+            return self._switch_release_locked(target, timeout, expected_current=expected_current)
+
+    def _switch_release_locked(self, target: Path, timeout: float, *, expected_current: Path | None = None) -> dict[str, Any]:
         if not target.is_dir() or not (target / "release.json").is_file():
             raise ValueError(f"Invalid release directory: {target}")
         # Validate metadata before touching the active pointers.
         metadata = json.loads((target / "release.json").read_text(encoding="utf-8"))
         old_current = self.current_link.resolve() if self.current_link.exists() else None
         old_previous = self.previous_link.resolve() if self.previous_link.exists() else None
+        if expected_current is not None and old_current != Path(expected_current).resolve():
+            raise RuntimeError('Active release changed; prepare again')
         try:
             if old_current and old_current != target:
                 self._set_link(self.previous_link, old_current)
@@ -402,16 +464,66 @@ class ReleaseManager:
             ) from activation_error
         return metadata
 
+    def verify_behavior(self, candidate: Path, python_bin: str) -> None:
+        """Run deterministic contracts against an exported source candidate."""
+        runner = candidate / 'scripts/behavior_gate.py'
+        if not runner.is_file():
+            raise RuntimeError('Candidate lacks the required behavior gate')
+        (candidate / 'behavior-gate.json').unlink(missing_ok=True)
+        result = subprocess.run(
+            [python_bin, str(runner), '--report', str(candidate / 'behavior-gate.json')],
+            cwd=candidate, capture_output=True, text=True, timeout=140,
+        )
+        if result.returncode != 0:
+            raise RuntimeError('Behavior gate failed; release was not activated.\n' +
+                               (result.stdout + result.stderr)[-6000:])
+        try:
+            report = json.loads((candidate / 'behavior-gate.json').read_text())
+        except (OSError, ValueError) as error:
+            raise RuntimeError('Behavior gate produced no valid evidence') from error
+        if report.get('passed') is not True:
+            raise RuntimeError('Behavior gate did not certify the candidate')
+
+    def install_prepared_release(self, staged: Path, name: str, *, expected_current: Path,
+                                 timeout: float = 20, expected_hashes: dict[str, str] | None = None) -> Path:
+        """Copy privately, then check the parent and promote under the switch lock."""
+        if not name or Path(name).name != name or name in {'.', '..'}:
+            raise ValueError('Invalid release name')
+        self.init_directories()
+        # This directory is outside releases/, so concurrent pruning cannot
+        # remove an incomplete copy or a candidate awaiting the lock.
+        with tempfile.TemporaryDirectory(prefix='.prepared-', dir=self.root_dir) as staging:
+            candidate = Path(staging) / 'release'
+            shutil.copytree(staged, candidate, symlinks=True)
+            for relative, digest in (expected_hashes or {}).items():
+                path = candidate / relative
+                if not path.resolve().is_relative_to(candidate) or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                    raise ValueError('Copied source changed: ' + relative)
+            with self.release_lock():
+                if self.current_link.resolve() != Path(expected_current).resolve():
+                    raise RuntimeError('Active release changed; prepare again')
+                target = self.releases_dir / name
+                if target.exists():
+                    raise ValueError('Release already exists: ' + name)
+                candidate.rename(target)
+                self._switch_release_locked(target, timeout, expected_current=expected_current)
+                return target
+
     def activate_release(self, release_dir: Path | str, timeout: float = 8.0) -> dict[str, Any]:
         """Activate a release, restoring the old state on restart or health failure."""
         self.init_directories()
-        self.snapshot_state()
-        metadata = self._switch_release(Path(release_dir).resolve(), timeout)
-        self.prune_releases(keep=3)
-        return metadata
+        with self.release_lock():
+            self.snapshot_state()
+            metadata = self._switch_release_locked(Path(release_dir).resolve(), timeout)
+            self._prune_releases_locked(keep=3)
+            return metadata
 
     def rollback(self, timeout: float = 8.0) -> dict[str, Any]:
         """Switch to the previous release with the same recovery guarantees."""
+        with self.release_lock():
+            return self._rollback_locked(timeout)
+
+    def _rollback_locked(self, timeout: float) -> dict[str, Any]:
         current = self.current_link.resolve() if self.current_link.exists() else None
         previous = self.previous_link.resolve() if self.previous_link.exists() else None
         if previous is None or previous == current:
@@ -421,7 +533,7 @@ class ReleaseManager:
             )
         if previous is None:
             raise RuntimeError("No previous release found for rollback")
-        return self._switch_release(previous, timeout)
+        return self._switch_release_locked(previous, timeout)
 
     def apply_update(self, timeout: float = 8.0) -> dict[str, Any]:
         """Fetch upstream, compile release, activate it, and prune old releases."""

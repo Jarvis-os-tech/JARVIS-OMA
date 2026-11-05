@@ -133,8 +133,8 @@ class DurableHermes(TaskAgents):
                     raise ValueError('Stale parent ownership')
                 if parent.get('parent_task_id') or task == parent.get('task'):
                     raise ValueError('Recursive or repeated ancestor assignment refused')
-            if sum(j['state'] not in TERMINAL for j in self.jobs.values()) >= 2:
-                raise ValueError('Two coordinated goals are active; inspect them before starting more')
+            if sum(j['state'] not in TERMINAL for j in self.jobs.values()) >= 32:
+                raise ValueError('The bounded Hermes queue is full; inspect the 32 pending goals')
             if len(self.jobs) >= 1000:
                 raise ValueError('Archive reviewed goal history before more work')
             identity = 'task-' + uuid.uuid4().hex[:12]
@@ -149,9 +149,12 @@ class DurableHermes(TaskAgents):
                    'review_round': 0, 'notice_acknowledged': False}
             if previous and previous.get('native_authority'):
                 workspace = Path(previous['workspace']).resolve(strict=True)
-                if not workspace.is_relative_to(self.root.resolve()):
+                if not self._owns_workspace(previous, workspace):
                     raise ValueError('Previous workspace is outside owned task storage')
                 job.update(session_id=previous['session_id'], workspace=str(workspace))
+                if previous.get('_legacy_storage_root'):
+                    job.update(_legacy_storage_root=previous['_legacy_storage_root'],
+                               _legacy_receipt_id=previous.get('_legacy_receipt_id', previous['id']))
             self._save(job)
         try:
             self.supervisor.start(self.root, job)
@@ -168,6 +171,35 @@ class DurableHermes(TaskAgents):
     async def refresh(self, job_id=None):
         # Workers write atomic projections. Reading them never restarts execution.
         self._recover()
+        candidates = [dict(row) for row in self.jobs.values() if row.get('native_authority')
+                      and row.get('execution') == 'unknown' and row.get('session_id') and row.get('admission_id')
+                      and (job_id is None or row['id'] == job_id)]
+        for row in candidates[:32]:
+            try:
+                receipt = await self.bridge.receipt(row['session_id'], row['admission_id'])
+            except (OSError, ValueError, TimeoutError):
+                continue
+            if receipt.get('status') != 'terminal':
+                continue
+            children = GoalWorker(self.root, row['id'], bridge=self.bridge).children(row)
+            if any(child['state'] not in TERMINAL or child.get('execution') == 'unknown' for child in children):
+                continue
+            with self.transaction():
+                current = self._get(row['id'])
+                if (current.get('execution') != 'unknown' or current.get('admission_id') != row['admission_id']
+                        or current.get('owner_generation') != row.get('owner_generation')):
+                    continue
+                result = receipt.get('result') or {}
+                completed = receipt.get('outcome') == 'completed' and not result.get('failed') and not result.get('interrupted')
+                current.update(state='completed' if completed else 'failed', execution='response_received',
+                               output=sanitize(result.get('final_response') or '')['data'], verified=False,
+                               native_outcome=receipt.get('outcome'), updated_at=time.time(), notice_acknowledged=False,
+                               event_sequence=current.get('event_sequence', 0) + 1,
+                               summary='Native result recovered read-only; review the saved output and artifacts.' if completed else
+                               'Native receipt confirms an incomplete outcome; inspect saved work before continuing.')
+                if completed and current.get('acceptance_checks'):
+                    current.update(state='interrupted', summary='Native result recovered; required artifact checks still need review.')
+                self._save(current)
 
     def status(self, job_id=None):
         with self._memory_lock:
@@ -185,7 +217,8 @@ class DurableHermes(TaskAgents):
 
     async def capabilities(self):
         result = await super().capabilities()
-        result.update(maximum_active_tasks=2, durable_execution=True,
+        result.update(maximum_active_tasks=2, maximum_pending_tasks=32, durable_execution=True,
+                      quarantined_tasks=sum(row.get('execution') == 'unknown' for row in self.jobs.values()),
                       execution_authority='Hermes native admissions',
                       supervision='independent systemd receipt watchers',
                       voice_disconnect_cancels_work=False)
@@ -221,9 +254,30 @@ class DurableHermes(TaskAgents):
         if not job.get('workspace'):
             raise ValueError('Goal workspace is not available yet')
         workspace = Path(job['workspace']).resolve(strict=True)
-        if not workspace.is_relative_to(self.root.resolve() / 'workspaces'):
+        if not self._owns_workspace(job, workspace):
             raise ValueError('Artifact workspace is outside owned goal storage')
         return read_text(workspace, path, offset=offset)
+
+    def _owns_workspace(self, job, workspace):
+        if workspace.is_relative_to(self.root.resolve() / 'workspaces'):
+            return True
+        # Imported receipts keep their original live workspace. Validate against
+        # the original release receipt rather than moving an agent's cwd.
+        legacy = job.get('_legacy_storage_root')
+        if not legacy:
+            return False
+        root = Path(legacy).resolve()
+        releases = (Path.home() / '.local/share/jarvis-runtime/releases').resolve()
+        if not root.is_relative_to(releases) or root.name != 'task-agents' or not workspace.is_relative_to(root / 'workspaces'):
+            return False
+        identity = job.get('_legacy_receipt_id', job['id'])
+        if not isinstance(identity, str) or not JOB_ID.fullmatch(identity):
+            return False
+        receipt = root / (identity + '.json')
+        if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size > 256000:
+            return False
+        original = json.loads(receipt.read_text())
+        return original.get('workspace') == str(workspace) and original.get('session_id') == job.get('session_id')
 
     async def handoff(self, job_id, owner, expected_generation):
         if owner not in {'hermes', 'jarvis'}:
@@ -383,6 +437,27 @@ class GoalWorker:
             return True
         if job['state'] in TERMINAL:
             return True
+        # Reserve before workspace/session creation, under the same cross-process
+        # admission lock. Extra submitted goals wait rather than failing at two.
+        if not job.get('slot_reserved'):
+            with self.client.transaction():
+                job = self.client._get(self.job_id)
+                if job.get('owner_generation') != self.expected_generation or job.get('coordinator_owner') != 'hermes':
+                    return True
+                active = [row for row in self.client.jobs.values() if
+                          row['id'] != self.job_id and
+                          row['state'] not in TERMINAL and
+                          row.get('native_authority') and
+                          (row.get('slot_reserved') or row.get('session_id'))]
+                waiting = [row for row in self.client.jobs.values() if row['state'] not in TERMINAL
+                           and not row.get('slot_reserved') and not row.get('session_id')
+                           and not row.get('cancel_requested') and row.get('coordinator_owner') == 'hermes'
+                           and time.time() < row['deadline']]
+                waiting.sort(key=lambda row: (row['created_at'], row['id']))
+                if len(active) >= 2 or (waiting and waiting[0]['id'] != self.job_id):
+                    return False
+                job.update(slot_reserved=True, summary='Hermes execution slot reserved.')
+                self.client._save(job)
         if not job.get('workspace'):
             self.update(execution='preparing')
             try:
@@ -467,10 +542,17 @@ class GoalWorker:
         success = evidence['status'] in {'passed', 'not_applicable'} and (acceptance is None or acceptance['status'] == 'passed')
         if not checks and evidence['status'] == 'unverified':
             success = True  # report response received without claiming verified effects
+        resolved = {child['assignment_hash'] for child in children if child.get('assignment_hash')
+                    and child['state'] == 'completed' and child.get('execution') != 'unknown'}
+        failed_children = [child for child in children if
+                           (child['state'] != 'completed' or child.get('execution') == 'unknown')
+                           and (not child.get('assignment_hash') or child['assignment_hash'] not in resolved)]
+        success = success and not failed_children
         self.update(**completion_evidence(evidence), state='completed' if success else 'failed',
                     execution='response_received', output=output, acceptance=acceptance,
                     native_outcome=receipt.get('outcome'), usage=receipt.get('usage', {}),
                     summary='Hermes returned a result; inspect artifacts and recorded verification scope.' if success else
+                    'Hermes returned, but an assigned worker did not complete; inspect its saved result.' if failed_children else
                     'Hermes returned, but required artifact checks failed.')
         return True
 

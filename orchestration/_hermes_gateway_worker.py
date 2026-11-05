@@ -12,6 +12,59 @@ import sys
 import uuid
 
 
+def native_operations():
+    """Only state-management handlers; arbitrary tools retain normal agent approvals."""
+    from tools.cronjob_tools import CRONJOB_SCHEMA, _cronjob_handler
+    from tools.kanban_tools import _TOOLS, _check_kanban_mode, _check_kanban_orchestrator_mode
+    result = {}
+    for action in ('list', 'create', 'update', 'pause', 'resume', 'remove'):
+        schema = json.loads(json.dumps(CRONJOB_SCHEMA['parameters']))
+        schema['properties']['action'] = {'const': action}
+        schema['properties']['include_disabled'] = {'type': 'boolean'}
+        schema['additionalProperties'] = False
+        schema['required'] = ['action'] + (['schedule', 'prompt'] if action == 'create' else
+                                          ['job_id'] if action != 'list' else [])
+        result['cron.' + action] = (schema, _cronjob_handler, True)
+    # Each handler retains Hermes's validation, ownership checks and goal gates.
+    for name, definition, handler, _emoji in _TOOLS:
+        if name in {'kanban_attach', 'kanban_attach_url', 'kanban_heartbeat'}:
+            continue
+        schema = json.loads(json.dumps(definition['parameters']))
+        schema['additionalProperties'] = False
+        gate = _check_kanban_orchestrator_mode if name in {'kanban_list', 'kanban_unblock'} else _check_kanban_mode
+        result[name.replace('kanban_', 'kanban.', 1)] = (schema, handler, gate())
+    return result
+
+
+def native_api(request):
+    operations = native_operations()
+    if request['operation'] == 'native_catalog':
+        return {'operations': [{'name': name, 'inputSchema': schema, 'enabled': enabled,
+                                'readOnly': name in {'cron.list', 'kanban.list', 'kanban.show', 'kanban.attachments'}}
+                               for name, (schema, _handler, enabled) in operations.items()]}
+    name, args = request['name'], dict(request.get('arguments') or {})
+    if name not in operations:
+        raise ValueError('Unsupported native operation')
+    schema, handler, enabled = operations[name]
+    if not enabled:
+        return {'ok': False, 'class': 'unavailable', 'error': 'Feature disabled in the active Hermes profile'}
+    if name.startswith('cron.'):
+        args['action'] = name.split('.')[1]
+        # A local caller has no chat origin. Native result delivery is consumed
+        # by Jarvis's existing outbox; never broadcast to unrelated channels.
+        if name == 'cron.create':
+            args.setdefault('deliver', 'local')
+    from jsonschema import Draft202012Validator
+    errors = list(Draft202012Validator(schema).iter_errors(args))
+    if errors:
+        return {'ok': False, 'class': 'input', 'error': errors[0].message[:500]}
+    value = handler(args)
+    data = json.loads(value) if isinstance(value, str) else value
+    ok = isinstance(data, dict) and data.get('success', True) is not False and not data.get('error') and not data.get('isError')
+    return {'ok': bool(ok), 'class': 'success' if ok else 'native_error', 'data': data,
+            'transport': 'installed_hermes_native_handler'}
+
+
 async def operate(request):
     from hermes_cli.gateway_runtime import discover_gateway_endpoint, attachable
     from hermes_cli.gateway_client import connect_gateway
@@ -24,6 +77,18 @@ async def operate(request):
                 'next_actions': ['Start Hermes normally and retry discovery.'], 'artifacts': []}
     async with connect_gateway(endpoint=discovery.endpoint) as client:
         operation = request['operation']
+        if operation in {'native_catalog', 'native_call'}:
+            catalog = await client.rpc('tools.list', _timeout=15)
+            enabled = {row['name'] for row in catalog.get('toolsets', []) if row.get('enabled')}
+            family = 'cronjob' if request.get('name', '').startswith('cron.') else 'kanban'
+            if operation == 'native_call' and family not in enabled:
+                return {'ok': False, 'class': 'unavailable', 'data': {'error': 'Feature disabled in the active Hermes profile'}}
+            if operation == 'native_catalog':
+                result = await asyncio.to_thread(native_api, request)
+                for row in result['operations']:
+                    row['enabled'] &= ('cronjob' if row['name'].startswith('cron.') else 'kanban') in enabled
+                return result
+            return await asyncio.to_thread(native_api, request)
         if operation == 'scheduled_results':
             from cron.executions import list_executions
             from cron.jobs import list_jobs
