@@ -12,18 +12,24 @@ from scripts import pairing_window_state as state
 def test_pairing_tool_uses_own_widget_without_returning_private_output(tmp_path, monkeypatch):
     monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path))
     def generate(command, **kwargs):
-        Path(command[command.index('--output') + 1]).write_bytes(b'private-qr')
+        if '--output' in command:
+            Path(command[command.index('--output') + 1]).write_bytes(b'private-qr')
+        elif '-o' in command:
+            Path(command[command.index('-o') + 1]).write_bytes(b'private-qr')
         return subprocess.CompletedProcess([], 0, stdout='private-key-never-returned', stderr='')
-    with patch('jarvis_control.mobile_pairing.subprocess.run', side_effect=generate) as run, patch(
-        'jarvis_control.mobile_pairing.subprocess.Popen'
-    ) as window:
+    with patch('jarvis_control.mobile_pairing.subprocess.run', side_effect=generate) as run, \
+         patch('ui.jarvis_widgets.backend.shell_call') as mock_shell:
+        mock_shell.return_value = {"ok": True, "id": "jarvis-pairing-qr"}
         response = open_pairing_qr()
     assert 'private-key-never-returned' not in response
-    assert '--no-ascii' in run.call_args.args[0]
-    assert '--show-payload' not in run.call_args.args[0]
-    assert '--view' not in run.call_args.args[0]
-    assert '--pairing-session' in run.call_args.args[0]
-    assert 'mobile_pairing_widget.py' in window.call_args.args[0][1]
+    assert '--no-ascii' in run.call_args_list[0].args[0]
+    assert '--show-payload' not in run.call_args_list[0].args[0]
+    assert '--view' not in run.call_args_list[0].args[0]
+    assert '--pairing-session' in run.call_args_list[0].args[0]
+    mock_shell.assert_called_once()
+    assert mock_shell.call_args.args[0] == "present"
+    assert mock_shell.call_args.args[1]["id"] == "jarvis-pairing-qr"
+    assert mock_shell.call_args.args[1]["kind"] == "qr"
     from jarvis_control import to_gemini_tools
     schemas = to_gemini_tools(tools_for(Config()))[0]['function_declarations']
     assert any(tool['name'] == 'phone_pair' for tool in schemas)
