@@ -91,11 +91,92 @@ def test_resource_probe_memory_parsing(tmp_path):
     meminfo_file.write_text("MemTotal: 8000000 kB\nMemAvailable: 800000 kB\n")
 
     probe = ResourceProbe(proc_path=tmp_path)
-    res = probe.check_memory(threshold_percent=85.0)
+    res = probe.check_memory(threshold_percent=80.0, critical_threshold_percent=90.0)
 
     assert res.status == "CRITICAL"
     assert res.alert_type == "memory_critical"
     assert res.metrics["used_percent"] == 90.0
+
+
+def test_resource_probe_memory_high_warn(tmp_path):
+    meminfo_file = tmp_path / "meminfo"
+    # 8GB total, 1360MB available -> 83% used
+    meminfo_file.write_text("MemTotal: 8000000 kB\nMemAvailable: 1360000 kB\n")
+
+    probe = ResourceProbe(proc_path=tmp_path)
+    res = probe.check_memory(threshold_percent=80.0, critical_threshold_percent=90.0)
+
+    assert res.status == "WARN"
+    assert res.alert_type == "memory_high"
+    assert res.metrics["used_percent"] == 83.0
+
+
+def test_resource_probe_battery_normal_and_charging(tmp_path):
+    sys_dir = tmp_path / "class" / "power_supply" / "BAT0"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "type").write_text("Battery\n")
+    (sys_dir / "present").write_text("1\n")
+    (sys_dir / "capacity").write_text("85\n")
+    (sys_dir / "status").write_text("Charging\n")
+
+    probe = ResourceProbe(sys_path=tmp_path)
+    res = probe.check_battery()
+
+    assert res.status == "OK"
+    assert res.metrics["percent"] == 85.0
+    assert res.metrics["charging"] is True
+    assert "plugged in" in res.message
+
+
+def test_resource_probe_battery_low_discharging(tmp_path):
+    sys_dir = tmp_path / "class" / "power_supply" / "BAT0"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "type").write_text("Battery\n")
+    (sys_dir / "present").write_text("1\n")
+    (sys_dir / "capacity").write_text("18\n")
+    (sys_dir / "status").write_text("Discharging\n")
+
+    probe = ResourceProbe(sys_path=tmp_path)
+    res = probe.check_battery(low_threshold_percent=20.0, critical_threshold_percent=10.0)
+
+    assert res.status == "WARN"
+    assert res.alert_type == "battery_low"
+    assert res.metrics["percent"] == 18.0
+    assert res.metrics["charging"] is False
+    assert "low" in res.message.lower()
+
+
+def test_resource_probe_battery_critical_discharging(tmp_path):
+    sys_dir = tmp_path / "class" / "power_supply" / "BAT0"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "type").write_text("Battery\n")
+    (sys_dir / "present").write_text("1\n")
+    (sys_dir / "capacity").write_text("8\n")
+    (sys_dir / "status").write_text("Discharging\n")
+
+    probe = ResourceProbe(sys_path=tmp_path)
+    res = probe.check_battery(low_threshold_percent=20.0, critical_threshold_percent=10.0)
+
+    assert res.status == "CRITICAL"
+    assert res.alert_type == "battery_critical"
+    assert res.metrics["percent"] == 8.0
+    assert res.metrics["charging"] is False
+    assert "critically low" in res.message.lower()
+
+
+def test_resource_probe_battery_peripheral_filtered(tmp_path):
+    # Mouse battery with scope=Device should be ignored; fall back to AC
+    mouse_dir = tmp_path / "class" / "power_supply" / "hid-mouse-battery"
+    mouse_dir.mkdir(parents=True)
+    (mouse_dir / "type").write_text("Battery\n")
+    (mouse_dir / "scope").write_text("Device\n")
+    (mouse_dir / "capacity").write_text("5\n")
+
+    probe = ResourceProbe(sys_path=tmp_path)
+    res = probe.check_battery()
+
+    assert res.status == "OK"
+    assert "no system battery detected" in res.message.lower()
 
 
 def test_resource_probe_cpu_parsing(tmp_path):

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import pytest
 from pathlib import Path
@@ -81,13 +82,41 @@ def test_state_snapshot(tmp_path):
     data = tmp_path / "data"
     data.mkdir(parents=True)
     db1 = data / "sessions.db"
-    db1.write_text("dummy database content")
+    source = sqlite3.connect(db1)
+    source.execute("PRAGMA journal_mode=WAL")
+    source.execute("PRAGMA wal_autocheckpoint=0")
+    source.execute("CREATE TABLE sessions (value TEXT)")
+    source.execute("INSERT INTO sessions VALUES ('committed in WAL')")
+    source.commit()
+    assert Path(str(db1) + '-wal').exists()
 
-    snapshots = rm.snapshot_state()
-    assert len(snapshots) == 1
-    assert snapshots[0].exists()
-    assert "sessions.db.bak." in snapshots[0].name
-    assert snapshots[0].read_text() == "dummy database content"
+    with patch('orchestration.release_manager.time.time_ns', return_value=123):
+        first = rm.snapshot_state()
+        second = rm.snapshot_state()
+    source.close()
+
+    assert len(first) == len(second) == 1
+    assert first[0] != second[0]
+    assert "sessions.db.bak." in first[0].name
+    with sqlite3.connect(first[0]) as backup:
+        assert backup.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+        assert backup.execute('SELECT value FROM sessions').fetchone() == ('committed in WAL',)
+
+
+def test_invalid_database_stops_activation_without_false_backup(tmp_path):
+    rm = ReleaseManager(root_dir=tmp_path)
+    rm.init_directories()
+    (rm.data_dir / 'broken.db').write_text('not a sqlite database')
+    candidate = rm.releases_dir / 'candidate'
+    candidate.mkdir()
+    (candidate / 'release.json').write_text(json.dumps({'commit': 'candidate'}))
+
+    with patch.object(rm, '_switch_release_locked') as switch:
+        with pytest.raises(RuntimeError, match='release activation stopped'):
+            rm.activate_release(candidate)
+    switch.assert_not_called()
+    assert not list(rm.data_dir.glob('*.bak.*'))
+    assert not list(rm.data_dir.glob('.*.backup.*.tmp'))
 
 @pytest.fixture
 def release_history(tmp_path):

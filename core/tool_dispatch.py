@@ -5,6 +5,7 @@ import asyncio
 import logging
 
 from skills import SkillError
+from jarvis_control.execution_policy import tool_timeout
 
 log = logging.getLogger('gemini_voice')
 
@@ -15,8 +16,10 @@ def _consume_completion(task):
         task.exception()
 
 
-async def run_skill_call(skills, name, arguments, *, timeout=45):
+async def run_skill_call(skills, name, arguments, *, timeout=None):
     """Execute through the same policy regardless of the model transport."""
+    if timeout is None:
+        timeout = tool_timeout(name, arguments)
     ambiguous_system_mute = (
         name in ('set_volume', 'control_microphone') and
         arguments.get('action') == 'mute' and

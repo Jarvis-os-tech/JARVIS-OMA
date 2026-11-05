@@ -1,0 +1,26 @@
+{
+  "review_date": "2026-11-03",
+  "reuse_status": "References only; no implementation copied or installed; reuse license unresolved in inspected metadata/root listings",
+  "repositories": [
+    {
+      "name": "fury-sdk",
+      "sha": "bbdf07c66b6bdc7d6f7789a27c8993053e8da940",
+      "url": "https://github.com/huwprosser/fury-sdk/commit/bbdf07c66b6bdc7d6f7789a27c8993053e8da940"
+    },
+    {
+      "name": "fury-sdk-js",
+      "sha": "d28f2a152a9da2eca832d089a4061ae594fb7387",
+      "url": "https://github.com/huwprosser/fury-sdk-js/commit/d28f2a152a9da2eca832d089a4061ae594fb7387"
+    },
+    {
+      "name": "spotify-cli",
+      "sha": "0cac8bd661d828928825a9d6b6bc0000a18913c2",
+      "url": "https://github.com/huwprosser/spotify-cli/commit/0cac8bd661d828928825a9d6b6bc0000a18913c2"
+    },
+    {
+      "name": "jarvis-mlx",
+      "sha": "e2a0887fc7ca75c18e43e59f46f0bd19c15ed8fc",
+      "url": "https://github.com/huwprosser/jarvis-mlx/commit/e2a0887fc7ca75c18e43e59f46f0bd19c15ed8fc"
+    }
+  ]
+}

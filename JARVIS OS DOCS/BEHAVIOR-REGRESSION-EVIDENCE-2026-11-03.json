@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "pytest_exit_code": 0,
+  "duration_seconds": 3.818,
+  "collected_tests": 49,
+  "cases": [
+    {
+      "id": "INPUT-1",
+      "expectation": "The default input bar retains attachments and closes its server and window.",
+      "passed": true,
+      "tests": [
+        "tests/test_widget_canvas.py::WidgetAdapterTests::test_input_bar_preserves_attachments_when_canvas_is_available",
+        "tests/test_widget_canvas.py::WidgetAdapterTests::test_closing_input_also_closes_attachment_server_and_legacy_window"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "ATTACH-1",
+      "expectation": "Text and image/audio content reach the session, PDFs yield extracted text or an unreadable result, and unauthorized submissions are rejected.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[photo.png-image/png-\\x89PNG\\r\\n\\x1a\\nsynthetic-image/png]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[clip.wav-audio/wav-RIFF\\x00\\xffWAVEsynthetic-audio/wav]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[clip.mp3--ID3\\x00\\xffsynthetic-audio/mpeg]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[notes.txt-text/plain-Example notes-Example notes]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[notes.pdf-application/pdf-%PDF-synthetic-Extracted example notes]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[scan.pdf-application/pdf-%PDF-synthetic-scan-unreadable or scanned]",
+        "tests/behavior/test_multimodal_contracts.py::test_input_submission_requires_token_and_preserves_bytes",
+        "tests/test_daemon.py::test_send_inputs_formats_code_and_image_attachments"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "VISION-1",
+      "expectation": "Screen frames reach the session; unavailable vision stays off and reports an error.",
+      "passed": true,
+      "tests": [
+        "tests/test_vision_runtime.py::test_cold_screen_capture_returns_frame_without_a_preview_cache",
+        "tests/test_vision_runtime.py::test_vision_stream_delivers_frames_to_the_attached_session",
+        "tests/test_vision_runtime.py::test_missing_camera_is_reported_without_claiming_active_vision",
+        "tests/test_vision_runtime.py::test_missing_camera_via_local_control_does_not_change_voice_state",
+        "tests/test_vision_runtime.py::test_local_vision_failure_returns_an_error_instead_of_an_empty_reply"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "CANCEL-1",
+      "expectation": "Cancellation reaches local callbacks, cleans workers and kills and reaps the owned desktop command.",
+      "passed": true,
+      "tests": [
+        "tests/test_ipc.py::test_local_confirm_and_cancel_await_control_callbacks",
+        "tests/test_daemon.py::test_supervise_cancellation_awaits_workers",
+        "tests/test_ground_truth_contracts.py::test_cancelled_desktop_command_is_killed_and_reaped"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "PERMISSION-1",
+      "expectation": "Denied operations do not run; held operations need a new human confirmation turn and can be cancelled.",
+      "passed": true,
+      "tests": [
+        "tests/test_control/test_policy.py::test_destructive_commands_are_denied",
+        "tests/test_control/test_policy.py::test_confirm_patterns_trigger_needs_confirmation",
+        "tests/test_control/test_policy.py::test_executor_catches_needs_confirmation_into_held_result",
+        "tests/test_daemon.py::test_spoken_confirmation_needs_real_new_turn"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "RESULT-1",
+      "expectation": "Missing, failed, queued and unverified receipts cannot become spoken success; verified results may, and duplicate calls execute once.",
+      "passed": true,
+      "tests": [
+        "tests/test_action_speech_evidence.py::test_spoken_success_without_any_tool_is_suppressed_and_not_saved_as_fact",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[ERROR: app unavailable]",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[result1]",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[result2]",
+        "tests/test_action_speech_evidence.py::test_verified_result_allows_normal_model_speech_and_new_turn_resets_proof",
+        "tests/test_action_speech_evidence.py::test_capability_discovery_is_not_evidence_that_an_action_happened",
+        "tests/test_ground_truth_contracts.py::test_authorization_link_does_not_complete_service_connection",
+        "tests/test_daemon.py::test_tool_call_id_deduplicates_control_effect"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "RELEASE-1",
+      "expectation": "Failed candidate health or restart restores both release pointers.",
+      "passed": true,
+      "tests": [
+        "tests/test_release_switching.py::test_restart_failure_restores_both_pointers[failure0]",
+        "tests/test_release_switching.py::test_restart_failure_restores_both_pointers[failure1]",
+        "tests/test_release_switching.py::test_health_failure_preserves_older_rollback_target"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "GATE-1",
+      "expectation": "The gate rejects failures, skips, xfails, missing cases, setup/cleanup errors and stale release evidence.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): assert True-True]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): assert False-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): pytest.skip(\"unavailable\")-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.xfail(reason=\"known bug\")\\ndef test_example(): assert False-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.xfail(reason=\"unexpected pass\")\\ndef test_example(): assert True-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.fixture(autouse=True)\\ndef setup(): raise RuntimeError(\"setup failed\")\\ndef test_example(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.fixture(autouse=True)\\ndef setup():\\n yield\\n raise RuntimeError(\"teardown failed\")\\ndef test_example(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_different(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.parametrize(\"value\", [1, 2])\\ndef test_example(value): assert value > 0-True]",
+        "tests/behavior/test_gate_enforcement.py::test_empty_or_duplicate_contracts_are_rejected",
+        "tests/behavior/test_gate_enforcement.py::test_release_missing_gate_blocks_before_running_candidate",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[1-report0-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-report1-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-None-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-report3-True]",
+        "tests/behavior/test_gate_enforcement.py::test_timeout_replaces_stale_success_with_failure"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    }
+  ],
+  "scope": "Deterministic local contracts; not live desktop or cloud acceptance",
+  "source_sha256": "3e4ebe59f72e00fd3926093f9af6fb3f79e160258ba2c9972e5fe461a935a853",
+  "source_unchanged": true,
+  "contract_sha256": "25c57a6b1ed847ccd9596b9b17a4c42ed601fb83c4404466b37e7f4395df4f33"
+}

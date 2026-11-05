@@ -77,11 +77,14 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             ],
         },
         "resources": {
-            "cpu_threshold_percent": 90.0,
-            "memory_threshold_percent": 90.0,
-            "disk_threshold_percent": 90.0,
+            "cpu_threshold_percent": 85.0,
+            "memory_threshold_percent": 80.0,
+            "memory_critical_percent": 90.0,
+            "disk_threshold_percent": 85.0,
             "disks": ["/"],
             "thermal_threshold_celsius": 85.0,
+            "battery_low_percent": 20.0,
+            "battery_critical_percent": 10.0,
         },
         "services": {
             "user": ["pipewire.service", "wireplumber.service"],
@@ -89,8 +92,11 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         },
         "alerts": {
             "cooldown_seconds": 300,
-            "enable_audio": True,
+            "enable_voice": True,
+            "voice_battery_only": True,
+            "enable_sound_effects": False,
             "enable_desktop_notifications": True,
+            "enable_audio": False,
         },
     }
 
@@ -129,8 +135,19 @@ def run_checks(config: Dict[str, Any]) -> List[ProbeResult]:
     # 3. Host resource checks
     res_cfg = config.get("resources", {})
     res_probe = ResourceProbe()
-    results.append(res_probe.check_cpu(threshold_percent=float(res_cfg.get("cpu_threshold_percent", 90.0))))
-    results.append(res_probe.check_memory(threshold_percent=float(res_cfg.get("memory_threshold_percent", 90.0))))
+    results.append(
+        res_probe.check_battery(
+            low_threshold_percent=float(res_cfg.get("battery_low_percent", 20.0)),
+            critical_threshold_percent=float(res_cfg.get("battery_critical_percent", 10.0)),
+        )
+    )
+    results.append(res_probe.check_cpu(threshold_percent=float(res_cfg.get("cpu_threshold_percent", 85.0))))
+    results.append(
+        res_probe.check_memory(
+            threshold_percent=float(res_cfg.get("memory_threshold_percent", 80.0)),
+            critical_threshold_percent=float(res_cfg.get("memory_critical_percent", 90.0)),
+        )
+    )
 
     for mount in res_cfg.get("disks", ["/"]):
         results.append(res_probe.check_disk(mount_point=mount, threshold_percent=float(res_cfg.get("disk_threshold_percent", 90.0))))
@@ -153,6 +170,7 @@ def print_formatted_report(
     results: List[ProbeResult],
     actions: List[AlertAction],
     voice_connected: bool = False,
+    voice_battery_only: bool = True,
 ) -> None:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     voice_badge = f"{C_GREEN}CONNECTED{C_RESET}" if voice_connected else f"{C_YELLOW}OFFLINE{C_RESET}"
@@ -186,12 +204,17 @@ def print_formatted_report(
     print(f"  {C_BOLD}Status Summary:{C_RESET} {summary_color}{ok_count} OK, {warn_count} Warning, {critical_count} Critical{C_RESET}")
 
     if actions:
-        print(f"\n  {C_BOLD}Dispatched Alerts & Vocalizations:{C_RESET}")
+        print(f"\n  {C_BOLD}Dispatched Alerts & Notifications:{C_RESET}")
         for act in actions:
             act_color = C_RED if act.action_type == "ALERT" else C_GREEN
+            is_battery = act.alert_type in ("battery_low", "battery_critical") or "battery" in act.name.lower()
+            spoken = act.action_type == "ALERT" and (is_battery or not voice_battery_only)
             speech = format_alert_speech(act)
             print(f"    • {act_color}{act.action_type}{C_RESET}: {act.name}")
-            print(f"      {C_CYAN}JARVIS Spoken Announcement:{C_RESET} \"{speech}\"")
+            if spoken:
+                print(f"      {C_CYAN}JARVIS Spoken Announcement:{C_RESET} \"{speech}\"")
+            else:
+                print(f"      {C_YELLOW}Desktop Notification (Silent):{C_RESET} \"{act.message}\"")
 
     print(f"{C_BOLD}{C_CYAN}═════════════════════════════════════════════════════════════════════════════════════{C_RESET}\n")
 
@@ -274,6 +297,11 @@ def main() -> int:
         help="Disable spoken voice announcements from JARVIS.",
     )
     parser.add_argument(
+        "--voice-all",
+        action="store_true",
+        help="Allow spoken voice announcements for all alert categories instead of battery-only.",
+    )
+    parser.add_argument(
         "--sound",
         action="store_true",
         help="Enable secondary sound effects in addition to JARVIS voice.",
@@ -312,6 +340,7 @@ def main() -> int:
     cooldown = float(config.get("alerts", {}).get("cooldown_seconds", 300))
     state_manager = AlertStateManager(cooldown_seconds=cooldown)
 
+    voice_battery_only = not args.voice_all and config.get("alerts", {}).get("voice_battery_only", True)
     enable_voice = (not args.no_voice) and (not args.quiet_audio) and config.get("alerts", {}).get("enable_voice", True)
     enable_sound = args.sound or (not args.quiet_audio and config.get("alerts", {}).get("enable_sound_effects", False))
     enable_notify = not args.quiet_notify and config.get("alerts", {}).get("enable_desktop_notifications", True)
@@ -343,6 +372,7 @@ def main() -> int:
             voice_alert=enable_voice,
             sound_alert=enable_sound,
             desktop_notify=enable_notify,
+            voice_battery_only=voice_battery_only,
         )
 
         if args.json:
@@ -388,6 +418,7 @@ def main() -> int:
                 results,
                 actions,
                 voice_connected=jarvis_speaker.is_available(),
+                voice_battery_only=voice_battery_only,
             )
 
         if not is_daemon:

@@ -32,8 +32,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Verify locked voice baseline
+        run: python scripts/verify_voice_lock.py
+
+      - name: Required behavior gate
+        run: python scripts/behavior_gate.py --report behavior-gate.json
+
+      - name: Preserve behavior gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavior-gate-python-${{ matrix.python-version }}
+          path: behavior-gate.json
+
       - name: Run unit and regression tests
         env:
           PYTHONPATH: .
         run: |
           timeout 300 python -m pytest -q
+
+      - name: Memory quality baseline comparison
+        run: python scripts/evaluate_memory.py --baseline tests/fixtures/memory_quality/baseline.json --report memory-quality.json
+
+      - name: Preserve memory quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-quality-python-${{ matrix.python-version }}
+          path: memory-quality.json

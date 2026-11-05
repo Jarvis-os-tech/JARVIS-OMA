@@ -2,21 +2,22 @@ import os
 import subprocess
 from pathlib import Path
 import pytest
+from scripts import jarvis_mode
 
 _RUNTIME_CURRENT = Path.home() / ".local" / "share" / "jarvis-runtime" / "current"
 _SYSTEMD_SERVICE = Path.home() / ".config" / "systemd" / "user" / "jarvis-voice.service"
 
-def test_jarvis_voice_symlink_not_pointing_to_repo():
+def test_jarvis_voice_symlink_matches_configured_mode():
     home = Path.home()
     voice_share = home / ".local" / "share" / "jarvis-voice"
-    repo_dir = Path(__file__).resolve().parents[1].resolve()
-
     if voice_share.is_symlink():
         target = voice_share.resolve()
-        assert target != repo_dir, f"CRITICAL: {voice_share} is still directly pointing to dev repo {repo_dir}!"
+        expected = (jarvis_mode.TEST_ROOT if jarvis_mode.DROPIN.exists()
+                    else jarvis_mode.PRODUCTION_ROOT).resolve()
+        assert target == expected, f"{voice_share} points to {target}, but configured mode requires {expected}"
     elif voice_share.is_dir():
         # Directory must not be the repo directory
-        assert voice_share.resolve() != repo_dir
+        assert voice_share.resolve() != Path(__file__).resolve().parents[1]
 
 @pytest.mark.skipif(not _RUNTIME_CURRENT.exists(), reason="Requires locally installed jarvis-runtime")
 def test_jarvis_runtime_current_exists_and_compiled():

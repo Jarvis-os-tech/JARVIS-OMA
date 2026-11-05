@@ -1,12 +1,12 @@
 [Unit]
 Description=JARVIS OS System Health & Audio Alert Monitor
-After=pipewire.service wireplumber.service
+After=pipewire.service wireplumber.service jarvis-voice.service
 Wants=pipewire.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/g0pi/JARVIS OS
-ExecStart=/usr/bin/python3 "/home/g0pi/JARVIS OS/scripts/system_monitor.py" --daemon --interval 15
+WorkingDirectory=%h/JARVIS OS
+ExecStart="/home/g0pi/JARVIS OS/bin/jarvis-monitor" --daemon --interval 15
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

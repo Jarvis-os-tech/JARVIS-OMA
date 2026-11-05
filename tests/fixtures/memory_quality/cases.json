@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "description": "Synthetic ranking probes, with fixed test vectors; no embedding-model quality claim.",
+  "dimensions": 8,
+  "memories": [
+    {"id":"commute","text":"I commute by bicycle every day.","vector":[1,0,0,0,0,0,0,0]},
+    {"id":"bike_notes","text":"Bicycle maintenance notes are stored in the blue notebook.","vector":[0.9,0,0,0,0,0,0,0.2]},
+    {"id":"database","text":"Project Cedar uses SQLite for local persistence.","vector":[0,1,0,0,0,0,0,0]},
+    {"id":"database_other","text":"Project Juniper uses PostgreSQL for remote storage.","vector":[0,0.8,0,0,0,0,0,0.5]},
+    {"id":"release","text":"The Cedar release deadline is Friday.","vector":[0,0,1,0,0,0,0,0]},
+    {"id":"release_notes","text":"The release checklist is in the notebook.","vector":[0,0,0.8,0,0,0,0,0.5]},
+    {"id":"language_old","text":"My preferred conversation language is English.","key":"conversation-language","vector":[0,0,0,1,0,0,0,0]},
+    {"id":"language_current","text":"My preferred conversation language is Telugu.","key":"conversation-language","vector":[0,0,0,1,0,0,0,0]},
+    {"id":"identifier","text":"The Cedar issue identifier is CED-417.","vector":[0,0,0,0,1,0,0,0]},
+    {"id":"identifier_neighbor","text":"The Cedar archive issue identifier is CED-418.","vector":[0,0,0,0,0.9,0,0,0.2]},
+    {"id":"editor","text":"My preferred code editor is Neovim.","vector":[0,0,0,0,0,1,0,0]},
+    {"id":"editor_notes","text":"Editor keyboard shortcuts are saved in a notebook.","vector":[0,0,0,0,0,0.8,0,0.5]},
+    {"id":"old_coupon","text":"The temporary coupon code is DEMO-OLD.","expired":true,"vector":[0,0,0,0,0,0,1,0]},
+    {"id":"deleted","text":"The obsolete notebook label is PAPER-RETIRED.","deleted":true,"vector":[0,0,0,0,0,0,1,0]},
+    {"id":"proposal","text":"The proposed workspace color is amber.","proposed":true,"vector":[0,0,0,0,0,0,0,1]},
+    {"id":"foreign_scope","text":"The restricted project codename is ORBIT-PRIVATE.","scope":"project:other","vector":[0,0,0,0,0,0,0,1]},
+    {"id":"meeting","text":"My usual meeting slot is Tuesday morning.","vector":[0,0,0.3,0,0,0,0,0.7]},
+    {"id":"tea","text":"My evening beverage is herbal tea.","vector":[0,0,0,0,0,0,0.7,0.3]}
+  ],
+  "queries": [
+    {"id":"exact_editor","split":"development","category":"exact","query":"Neovim","vector":[0,0,0,0,0,1,0,0],"relevance":{"editor":3}},
+    {"id":"exact_identifier","split":"held_out","category":"identifier","query":"CED-417","vector":[0,0,0,0,1,0,0,0],"relevance":{"identifier":3}},
+    {"id":"database_choice","split":"development","category":"exact","query":"Cedar SQLite persistence","vector":[0,1,0,0,0,0,0,0],"relevance":{"database":3}},
+    {"id":"database_paraphrase","split":"held_out","category":"paraphrase","query":"Which embedded datastore was selected?","vector":[0,1,0,0,0,0,0,0],"relevance":{"database":3,"database_other":1}},
+    {"id":"commute_paraphrase","split":"development","category":"paraphrase","query":"How do I travel to work?","vector":[1,0,0,0,0,0,0,0],"relevance":{"commute":3}},
+    {"id":"commute_ride","split":"held_out","category":"paraphrase","query":"What do I pedal each day?","vector":[1,0,0,0,0,0,0,0],"relevance":{"commute":3}},
+    {"id":"release_paraphrase","split":"held_out","category":"paraphrase","query":"When is the product due to ship?","vector":[0,0,1,0,0,0,0,0],"relevance":{"release":3,"release_notes":1}},
+    {"id":"language_correction","split":"development","category":"correction","query":"preferred conversation language","vector":[0,0,0,1,0,0,0,0],"relevance":{"language_current":3},"forbidden":["language_old"]},
+    {"id":"language_old_word","split":"held_out","category":"correction","query":"Do I still prefer English?","vector":[0,0,0,1,0,0,0,0],"relevance":{"language_current":3},"forbidden":["language_old"]},
+    {"id":"multi_topic","split":"held_out","category":"multi_fact","query":"Cedar database and release deadline","vector":[0,1,1,0,0,0,0,0],"relevance":{"database":3,"release":3,"release_notes":1}},
+    {"id":"unknown_favorite","split":"development","category":"no_answer","query":"What is my favorite color?","vector":[0,0,0,0,0,0,0,1],"relevance":{}},
+    {"id":"unknown_number","split":"held_out","category":"no_answer","query":"What is my bicycle frame serial number?","vector":[1,0,0,0,0,0,0,0],"relevance":{}},
+    {"id":"expired_coupon","split":"held_out","category":"expiry","query":"DEMO-OLD coupon code","vector":[0,0,0,0,0,0,1,0],"relevance":{},"forbidden":["old_coupon"]},
+    {"id":"deleted_label","split":"held_out","category":"deletion","query":"PAPER-RETIRED label","vector":[0,0,0,0,0,0,1,0],"relevance":{},"forbidden":["deleted"]},
+    {"id":"proposed_color","split":"held_out","category":"proposal","query":"proposed amber workspace color","vector":[0,0,0,0,0,0,0,1],"relevance":{},"forbidden":["proposal"]},
+    {"id":"project_boundary","split":"held_out","category":"scope","query":"ORBIT-PRIVATE restricted project codename","vector":[0,0,0,0,0,0,0,1],"relevance":{},"forbidden":["foreign_scope"]}
+  ]
+}

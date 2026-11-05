@@ -1,7 +1,9 @@
 """Tests for Agent-Reach Daemon REST Service."""
 import pytest
+pytest.importorskip('fastapi', reason='Agent-Reach service tests use its separate FastAPI environment')
 from fastapi.testclient import TestClient
 import sys
+import importlib.util
 from pathlib import Path
 
 # Add the agent-reach source path
@@ -9,7 +11,14 @@ agent_reach_src = Path.home() / ".local/share/agent-reach/src"
 if str(agent_reach_src) not in sys.path:
     sys.path.insert(0, str(agent_reach_src))
 
-from agent_reach_daemon import app
+daemon_path = agent_reach_src.parent / 'service' / 'daemon.py'
+if not daemon_path.is_file():
+    pytest.skip('Agent-Reach daemon is not installed on this machine', allow_module_level=True)
+spec = importlib.util.spec_from_file_location('agent_reach_daemon_under_test', daemon_path)
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+app = module.app
 
 @pytest.fixture
 def client():

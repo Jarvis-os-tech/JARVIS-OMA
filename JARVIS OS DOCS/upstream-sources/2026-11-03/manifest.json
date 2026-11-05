@@ -1,0 +1,268 @@
+{
+  "review_date": "2026-11-03",
+  "scope": "static collection verification",
+  "runtime_tested": false,
+  "repositories": [
+    {
+      "name": "ovos-number-parser",
+      "origin": "https://github.com/OpenVoiceOS/ovos-number-parser.git",
+      "commit": "8e527673eb0e0aae9776d33e38e05bc32fdd7dbb",
+      "license": "Apache-2.0",
+      "license_sha256": "74d4eb2d2e86dcd53d1a5a4f29d6bdacd608f7cdf867fa854dc400e3095e28f1",
+      "clean": true,
+      "tracked_files": 185,
+      "python_files_parsed": 168,
+      "tracked_content_sha256": "40a6debb98abc0937aea6744299760de60ce855dcb9df381d7d1207ae6efafc8",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [],
+      "dynamic_fields": [
+        "version",
+        "dependencies"
+      ]
+    },
+    {
+      "name": "ovos-date-parser",
+      "origin": "https://github.com/OpenVoiceOS/ovos-date-parser.git",
+      "commit": "2c24a781d1869b05d96c6aca43847a08025f8b59",
+      "license": "Apache-2.0",
+      "license_sha256": "74d4eb2d2e86dcd53d1a5a4f29d6bdacd608f7cdf867fa854dc400e3095e28f1",
+      "clean": true,
+      "tracked_files": 558,
+      "python_files_parsed": 233,
+      "tracked_content_sha256": "7923d590c0b543ca30078299ea04284ffd71fe9844a956443454fec0c6f4ee17",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "python-dateutil~=2.6",
+        "quebra_frases>=0.3.7",
+        "ovos-number-parser>=0.19.6a2,<1.0.0",
+        "dateparser",
+        "ovos-config",
+        "ovos-spec-tools>=1.5.0a1",
+        "chronologia>=0.31.7a1"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-color-parser",
+      "origin": "https://github.com/OpenVoiceOS/ovos-color-parser.git",
+      "commit": "34ae1cc3fdf3294f89547ddcbd1dbe89796ae292",
+      "license": "Apache-2.0",
+      "license_sha256": "74d4eb2d2e86dcd53d1a5a4f29d6bdacd608f7cdf867fa854dc400e3095e28f1",
+      "clean": true,
+      "tracked_files": 236,
+      "python_files_parsed": 51,
+      "tracked_content_sha256": "844c17e1cac2e54248624da5381e4fcbc75923c89106ae458276427bfec15513",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [],
+      "dynamic_fields": [
+        "version",
+        "dependencies"
+      ]
+    },
+    {
+      "name": "ovos-typed-slots-transformer",
+      "origin": "https://github.com/OpenVoiceOS/ovos-typed-slots-transformer.git",
+      "commit": "f1154b9644ecc09aa6d26a01572c8ff471215377",
+      "license": "Apache-2.0",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "clean": true,
+      "tracked_files": 21,
+      "python_files_parsed": 3,
+      "tracked_content_sha256": "adb5bdf7dcef395ea81257923172b28fd5d886ae88fb1ee676bdda9bb24288cd",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "ovos-plugin-manager>=2.12.0a1",
+        "ovos-spec-tools>=1.11.0a1",
+        "ovos-number-parser>=0.20.0a1",
+        "ovos-date-parser>=0.31.0a1",
+        "ovos-color-parser>=0.12.1a1",
+        "ovos-lang-parser>=0.8.0a1"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-plugin-manager",
+      "origin": "https://github.com/OpenVoiceOS/ovos-plugin-manager.git",
+      "commit": "1cc719779d5f6bcbfb1f8d01243e4b47156ad45e",
+      "license": "Apache-2.0",
+      "license_sha256": "7d81e4a305bd25c68472a08f4d76016b2349f49d6519d6156fb31ff68cbaa046",
+      "clean": true,
+      "tracked_files": 189,
+      "python_files_parsed": 144,
+      "tracked_content_sha256": "3d1979e10b52ca316b163e6eb6049037f50b925edf7584a38c675c006a070e97",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "ovos-utils>=0.2.1,<1.0.0",
+        "ovos_bus_client>=0.0.8,<3.0.0",
+        "ovos-config>=0.0.12,<4.0.0",
+        "combo_lock~=0.3",
+        "requests~=2.32",
+        "quebra_frases",
+        "ovos-spec-tools[langcodes]>=1.6.1a1",
+        "setuptools; python_version>='3.12'",
+        "standard-aifc; python_version>='3.13'",
+        "audioop-lts; python_version>='3.13'",
+        "pydantic~=2.0"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-pydantic-models",
+      "origin": "https://github.com/OpenVoiceOS/ovos-pydantic-models.git",
+      "commit": "ba2613757b7ef7bdb95290f62a5dbdad9ac1b8fa",
+      "license": "Apache-2.0",
+      "license_sha256": "8dd9e68e2af3d2b8d537839eceaa891b9c4e6d528cfb28540d957051ea9e4f8b",
+      "clean": true,
+      "tracked_files": 106,
+      "python_files_parsed": 76,
+      "tracked_content_sha256": "719d9cf383dd9bfdfced5398d13bdde764aa849a463fa5b52021c161c414b95b",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "pydantic>=2.0.0,<3.0.0",
+        "fastapi",
+        "uvicorn"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-dinkum-listener",
+      "origin": "https://github.com/OpenVoiceOS/ovos-dinkum-listener.git",
+      "commit": "fa93e250961666098fca915c45f3cd5d07660f18",
+      "license": "Apache-2.0",
+      "license_sha256": "4eeeee2c824d5c8a83d22677c29a305ac0274902319f3a9b2d9dd3c53591c87c",
+      "clean": true,
+      "tracked_files": 59,
+      "python_files_parsed": 28,
+      "tracked_content_sha256": "0c5036c43fa0b62136f09b21f5408a65f218ca3552e27e7a53c0212b2d39038d",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "ovos-plugin-manager>=2.10.0a1",
+        "ovos-utils>=0.8.5,<1.0.0",
+        "ovos-config>=1.2.2,<4.0.0",
+        "ovos_bus_client>=2.5.1a1,<3.0.0",
+        "ovos-spec-tools>=0.16.1a2",
+        "requests>=2.26, <3.0",
+        "audioop-lts; python_version >= '3.13'"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovoscope",
+      "origin": "https://github.com/OpenVoiceOS/ovoscope.git",
+      "commit": "80dd49b9639bcc776e8238d05a8ab45e228655e7",
+      "license": "Apache-2.0",
+      "license_sha256": "e019257a684853f94f2835f24e085e6be91adde5cec6c775762ca5305a3ca19a",
+      "clean": true,
+      "tracked_files": 121,
+      "python_files_parsed": 75,
+      "tracked_content_sha256": "3ca919ac1fd266b0b550f17ef15e636a24ba1608c78ea071a55246000d624c8c",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "ovos-core[plugins]>=3.0.1a1",
+        "ovos-utils>=0.12.0a1",
+        "ovos-bus-client>=2.11.3a1",
+        "ovos-spec-tools>=1.12.0a1",
+        "pytest>=8",
+        "tomli>=2; python_version<'3.11'"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-test-harness",
+      "origin": "https://github.com/OpenVoiceOS/ovos-test-harness.git",
+      "commit": "b752659c25b2637f57095fa5a585a2a0c588550c",
+      "license": "Apache-2.0",
+      "license_sha256": "8dd9e68e2af3d2b8d537839eceaa891b9c4e6d528cfb28540d957051ea9e4f8b",
+      "clean": true,
+      "tracked_files": 101,
+      "python_files_parsed": 67,
+      "tracked_content_sha256": "e416f949cb1b28425679cc9a248793f584c4425611e84ad3b9e40d0fe34a815c",
+      "requires_python": null,
+      "declared_dependencies": [],
+      "dynamic_fields": []
+    },
+    {
+      "name": "ovos-eot-plugin-cuelight",
+      "origin": "https://github.com/OpenVoiceOS/ovos-eot-plugin-cuelight.git",
+      "commit": "200fb4c38224ff87a6d87a4bc0b5fda844d82ada",
+      "license": "Apache-2.0",
+      "license_sha256": "4eeeee2c824d5c8a83d22677c29a305ac0274902319f3a9b2d9dd3c53591c87c",
+      "clean": true,
+      "tracked_files": 21,
+      "python_files_parsed": 3,
+      "tracked_content_sha256": "24e35f832bc6ba908e15b5f3e1d965ebedac6afa9c8d8c5db18e6b2b9acda400",
+      "requires_python": ">=3.9",
+      "declared_dependencies": [
+        "ovos-plugin-manager>=3.0.0a1",
+        "numpy<3.0.0"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-utterance-corrections-plugin",
+      "origin": "https://github.com/OpenVoiceOS/ovos-utterance-corrections-plugin.git",
+      "commit": "b014118888886162527ec9b97bd2c947a9fc6a4b",
+      "license": "Apache-2.0",
+      "license_sha256": "4eeeee2c824d5c8a83d22677c29a305ac0274902319f3a9b2d9dd3c53591c87c",
+      "clean": true,
+      "tracked_files": 19,
+      "python_files_parsed": 3,
+      "tracked_content_sha256": "d42173b8cd4562b493a8f18e7476ff4853bfef83f746ccf6a3e10b3fb4759997",
+      "requires_python": null,
+      "declared_dependencies": [
+        "ovos-plugin-manager>=2.1.0"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    },
+    {
+      "name": "ovos-a2a-agent-plugin",
+      "origin": "https://github.com/OpenVoiceOS/ovos-a2a-agent-plugin.git",
+      "commit": "43ad75ad40e67fdd742f2e5a0d557e0e6ac2ca82",
+      "license": "Apache-2.0",
+      "license_sha256": "762320d6737c535935c70b76d62338a32d5ff9b971a6cd83518875cd339da5d2",
+      "clean": true,
+      "tracked_files": 32,
+      "python_files_parsed": 12,
+      "tracked_content_sha256": "eaec59cb1ddadb8809ccefc606336bd994ee43f57118f567a6c77a7443a4f0c1",
+      "requires_python": ">=3.10",
+      "declared_dependencies": [
+        "ovos-plugin-manager>=2.3.0a1",
+        "httpx>=0.25.0,<1.0",
+        "a2a-sdk>=1.2.3",
+        "sentence-stream>=1.0.0,<2.0.0"
+      ],
+      "dynamic_fields": [
+        "version"
+      ]
+    }
+  ],
+  "errors": [],
+  "inventory_counts": {
+    "huwprosser": 40,
+    "OpenVoiceOS": 391
+  },
+  "inventory_sha256": {
+    "huwprosser.json": "f8d45a11e00098adaf29499f4f386bdef9e39f0c65b45f5ed3683d9cf04fec24",
+    "openvoiceos-page-1.json": "559bfeb26cfbe1d37fc39d154296619054a9339804f8d3f306aa96f1afb3b97f",
+    "openvoiceos-page-2.json": "2640362623c39ea2806991563877f2dd61d6312158dd5c06ca0b6379ca7b59f4",
+    "openvoiceos-page-3.json": "d176d53488f29ff757ef84bf20dc879cf19e8a2c3b3b5c0ee7c23fc1f86bb5f4",
+    "openvoiceos-page-4.json": "a65b6bd89454713d9949dafd9fca4c1c4b292470f80142ddeb80d12005e871c2"
+  },
+  "passed": true
+}

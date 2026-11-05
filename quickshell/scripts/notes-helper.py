@@ -34,28 +34,24 @@ def save_pins(pins):
     temporary.replace(INDEX_FILE)
 
 
-def title_for(path):
-    try:
-        with path.open(encoding="utf-8") as note:
-            for line in note:
-                title = line.strip()
-                if title:
-                    return re.sub(r"^#\s+", "", title)
-    except OSError:
-        pass
-    return path.stem.replace("-", " ").strip().title() or "Untitled note"
-
-
 def note_record(path, pins):
     stat = path.stat()
     try:
         search_text = path.read_text(encoding="utf-8")
     except OSError:
         search_text = ""
+    title = ""
+    for line in search_text.splitlines():
+        trimmed = line.strip()
+        if trimmed:
+            title = re.sub(r"^#\s+", "", trimmed)
+            break
+    if not title:
+        title = path.stem.replace("-", " ").strip().title() or "Untitled note"
     return {
         "name": path.name,
         "path": str(path),
-        "title": title_for(path),
+        "title": title,
         "modified": int(stat.st_mtime),
         "pinned": path.name in pins,
         "searchText": search_text,

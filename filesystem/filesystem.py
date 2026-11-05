@@ -72,6 +72,52 @@ def path_for(value: str) -> Path:
     return Path(value).expanduser().absolute()
 
 
+def _target_path(path: Path) -> Path:
+    # Resolve parent aliases while keeping a final symlink as the operated-on entry.
+    if path.name in {'.', '..'}:
+        return path.resolve()
+    return path.parent.resolve() / path.name
+
+
+def _is_critical(path: Path) -> bool:
+    target = _target_path(path)
+    return target == Path('/') or any(target == _target_path(critical) for critical in CRITICAL_PATHS)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _replace_path(source: Path, destination: Path) -> dict | None:
+    """Install source at destination and keep an overwritten entry recoverable on failure."""
+    backup = destination.with_name('.' + destination.name + '.' + uuid.uuid4().hex + '.bak')
+    had_destination = destination.exists() or destination.is_symlink()
+    if had_destination:
+        destination.rename(backup)
+    try:
+        source.rename(destination)
+    except OSError as error:
+        if destination.exists() or destination.is_symlink():
+            if had_destination:
+                raise OSError(f'{error}; replacement entry was preserved and the previous destination remains at {backup}') from error
+            raise
+        if had_destination:
+            try:
+                backup.rename(destination)
+            except OSError as restore_error:
+                raise OSError(f'{error}; could not restore the previous destination, which remains at {backup}: {restore_error}') from error
+        raise
+    if had_destination:
+        try:
+            _remove_path(backup)
+        except OSError as error:
+            return {'backup_path': str(backup), 'cleanup_error': str(error)}
+    return None
+
+
 def details(path: Path) -> dict:
     try:
         info = path.lstat()
@@ -284,59 +330,75 @@ def make_directory(value: str) -> dict:
 
 
 def move_path(source: str, destination: str, overwrite: bool = False) -> dict:
-    src, dst = path_for(source), path_for(destination)
-    if src in CRITICAL_PATHS or src == Path('/'):
+    src, dst = _target_path(path_for(source)), _target_path(path_for(destination))
+    if _is_critical(src):
         raise FileOperationError('cannot move system root or home directory')
     if not src.exists() and not src.is_symlink():
         raise FileOperationError('source does not exist')
-    if dst in CRITICAL_PATHS or dst == Path('/'):
+    if _is_critical(dst):
         raise FileOperationError('cannot overwrite system root or home directory')
-    if src == dst or src in dst.parents:
+    if src == dst or src in dst.parents or dst in src.parents:
         raise FileOperationError('cannot move a directory inside itself')
     expected = _content_snapshot(src)
+    replacement_backup = None
     if dst.exists() or dst.is_symlink():
         if not overwrite:
             raise FileOperationError('destination already exists; set overwrite to true to replace it')
-        if dst.is_dir() and not dst.is_symlink():
-            shutil.rmtree(dst)
-        else:
-            dst.unlink()
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
+        if dst.exists() or dst.is_symlink():
+            stage = dst.with_name('.' + dst.name + '.' + uuid.uuid4().hex + '.stage')
+            shutil.move(str(src), str(stage))
+            try:
+                replacement_backup = _replace_path(stage, dst)
+            except OSError:
+                if stage.exists() or stage.is_symlink():
+                    shutil.move(str(stage), str(src))
+                raise
+        else:
+            shutil.move(str(src), str(dst))
     except OSError as error:
-        raise FileOperationError(f'cannot move path: {error.strerror}') from None
-    return _content_result({'status': 'moved', 'source': str(src), 'destination': str(dst)},
+        raise FileOperationError(f'cannot move path: {error}') from None
+    return _content_result({'status': 'moved', 'source': str(src), 'destination': str(dst),
+                            **({'replacement_backup': replacement_backup} if replacement_backup else {})},
                            dst, expected, absent=src)
 
 
 def copy_path(source: str, destination: str, overwrite: bool = False) -> dict:
-    src, dst = path_for(source), path_for(destination)
+    src, dst = _target_path(path_for(source)), _target_path(path_for(destination))
     if not src.exists() and not src.is_symlink():
         raise FileOperationError('source does not exist')
-    if dst in CRITICAL_PATHS or dst == Path('/'):
+    if _is_critical(dst):
         raise FileOperationError('cannot overwrite system root or home directory')
-    if src == dst or src in dst.parents:
+    if src == dst or src in dst.parents or dst in src.parents:
         raise FileOperationError('cannot copy a directory inside itself')
     expected = _content_snapshot(src)
+    replacement_backup = None
     if dst.exists() or dst.is_symlink():
         if not overwrite:
             raise FileOperationError('destination already exists; set overwrite to true to replace it')
-        if dst.is_dir() and not dst.is_symlink():
-            shutil.rmtree(dst)
-        else:
-            dst.unlink()
+    target = dst
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists() or dst.is_symlink():
+            target = dst.with_name('.' + dst.name + '.' + uuid.uuid4().hex + '.stage')
         if src.is_dir() and not src.is_symlink():
-            shutil.copytree(src, dst, symlinks=True)
+            shutil.copytree(src, target, symlinks=True)
         elif src.is_symlink():
-            dst.symlink_to(os.readlink(src))
+            target.symlink_to(os.readlink(src))
         else:
-            shutil.copy2(src, dst)
+            shutil.copy2(src, target)
+        if target != dst:
+            replacement_backup = _replace_path(target, dst)
     except OSError as error:
-        raise FileOperationError(f'cannot copy path: {error.strerror}') from None
-    return _content_result({'status': 'copied', 'source': str(src), 'destination': str(dst)}, dst, expected)
+        if target != dst:
+            try:
+                _remove_path(target)
+            except OSError:
+                pass
+        raise FileOperationError(f'cannot copy path: {error}') from None
+    return _content_result({'status': 'copied', 'source': str(src), 'destination': str(dst),
+                            **({'replacement_backup': replacement_backup} if replacement_backup else {})}, dst, expected)
 
 
 def replace_text(value: str, old: str, new: str) -> dict:
@@ -357,8 +419,8 @@ def replace_text(value: str, old: str, new: str) -> dict:
 
 
 def trash_path(value: str) -> dict:
-    path = path_for(value)
-    if path in CRITICAL_PATHS or path == Path('/') or not (path.exists() or path.is_symlink()):
+    path = _target_path(path_for(value))
+    if _is_critical(path) or not (path.exists() or path.is_symlink()):
         raise FileOperationError('cannot trash this path')
     data_home = Path(os.getenv('XDG_DATA_HOME') or Path.home() / '.local/share')
     trash = data_home / 'Trash'
@@ -377,8 +439,8 @@ def trash_path(value: str) -> dict:
 
 
 def delete_path(value: str, recursive: bool = False) -> dict:
-    path = path_for(value)
-    if path in CRITICAL_PATHS or path == Path('/'):
+    path = _target_path(path_for(value))
+    if _is_critical(path):
         raise FileOperationError('cannot delete system root or home directory')
     if not path.exists() and not path.is_symlink():
         raise FileOperationError('path does not exist')

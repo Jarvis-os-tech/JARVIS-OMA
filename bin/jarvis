@@ -182,6 +182,7 @@ case "$cmd" in
         fi
         ;;
     pair)
+        shift || true
         if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
             exec "${SCRIPT_DIR}/.venv/bin/python" "${SCRIPT_DIR}/scripts/jarvis_pair.py" "$@"
         else
@@ -206,6 +207,7 @@ case "$cmd" in
         ;;
     history)
         shift || true
+        export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
         if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
             exec "${SCRIPT_DIR}/.venv/bin/python" -m jarvis_memory history "$@"
         else
@@ -214,6 +216,7 @@ case "$cmd" in
         ;;
     memory)
         shift || true
+        export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
         if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
             exec "${SCRIPT_DIR}/.venv/bin/python" -m jarvis_memory "$@"
         else

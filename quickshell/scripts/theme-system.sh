@@ -5,7 +5,7 @@ set -euo pipefail
 # Adapted from vyeos/dotarch
 
 # Use Jarvis-OS project directory for themes, fall back to user config
-JARVIS_OS_ROOT="${JARVIS_OS_ROOT:-/home/g0pi/Projects/Jarvis-OS}"
+JARVIS_OS_ROOT="${JARVIS_OS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 theme_dir=${JARVIS_OS_THEME_DIR:-"$JARVIS_OS_ROOT/quickshell/themes"}
 cache_dir=${XDG_CACHE_HOME:-"$HOME/.cache"}/jarvis-os/theme

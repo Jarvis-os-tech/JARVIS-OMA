@@ -66,11 +66,11 @@ async def test_incomplete_work_is_not_mistaken_for_a_finished_answer(pending):
 
 
 @pytest.mark.asyncio
-async def test_actual_wait_before_answer_still_gets_feedback(monkeypatch):
+async def test_actual_wait_does_not_start_a_progress_conversation(monkeypatch):
     instance = voice()
     await cycle(instance, monkeypatch, 16)
-    assert instance._waiting_notice_played
-    assert instance.player.queued_bytes == 960
+    assert not instance._waiting_notice_played
+    assert instance.player.queued_bytes == 0
 
 
 @pytest.mark.asyncio

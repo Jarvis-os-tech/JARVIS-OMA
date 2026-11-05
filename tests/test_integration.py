@@ -12,12 +12,13 @@ def test_all_modules_import():
 
 def test_voice_lock_files_untouched():
     """Verify zero modifications to locked voice core files in JARVIS-OMA."""
-    lock_file = Path('/home/g0pi/Projects/JARVIS-OMA/audio/.voice_lock.json')
+    root = Path(__file__).resolve().parents[1]
+    lock_file = root / 'audio/.voice_lock.json'
     if lock_file.exists():
         import json
         manifest = json.loads(lock_file.read_text())
         for entry in manifest.get('files', []):
-            path = Path('/home/g0pi/Projects/JARVIS-OMA') / entry['path']
+            path = root / entry['path']
             if path.exists():
                 import hashlib
                 actual = hashlib.sha256(path.read_bytes()).hexdigest()

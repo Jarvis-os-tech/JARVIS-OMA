@@ -1,0 +1,13 @@
+# Independent upstream Git checkouts: retained locally, never staged as gitlinks.
+/ovos-number-parser/
+/ovos-date-parser/
+/ovos-color-parser/
+/ovos-typed-slots-transformer/
+/ovos-plugin-manager/
+/ovos-pydantic-models/
+/ovos-dinkum-listener/
+/ovoscope/
+/ovos-test-harness/
+/ovos-eot-plugin-cuelight/
+/ovos-utterance-corrections-plugin/
+/ovos-a2a-agent-plugin/

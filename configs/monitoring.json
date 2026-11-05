@@ -22,13 +22,16 @@
     ]
   },
   "resources": {
-    "cpu_threshold_percent": 90.0,
-    "memory_threshold_percent": 90.0,
+    "cpu_threshold_percent": 85.0,
+    "memory_threshold_percent": 80.0,
+    "memory_critical_percent": 90.0,
     "disk_threshold_percent": 90.0,
     "disks": [
       "/"
     ],
-    "thermal_threshold_celsius": 85.0
+    "thermal_threshold_celsius": 85.0,
+    "battery_low_percent": 20.0,
+    "battery_critical_percent": 10.0
   },
   "services": {
     "user": [
@@ -40,7 +43,9 @@
   "alerts": {
     "cooldown_seconds": 300,
     "enable_voice": true,
+    "voice_battery_only": true,
     "enable_sound_effects": false,
-    "enable_desktop_notifications": true
+    "enable_desktop_notifications": true,
+    "enable_audio": false
   }
 }

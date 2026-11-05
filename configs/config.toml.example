@@ -8,7 +8,7 @@ barge_in_echo_threshold = 0.45  # Correlation threshold to reject speaker echo
 barge_in_vad_threshold = 0.50  # Silero VAD probability threshold for speech
 autostart_listening = true
 greet_on_start = true
-turn_silence_frames = 20  # Finish the turn after 400 ms of silence
+turn_silence_frames = 60  # Finish the turn after 1.2 seconds of silence
 
 # Optional: install with scripts/install_whistle.py before enabling.
 # Short exact desktop commands run locally; other requests use Gemini.
@@ -17,6 +17,10 @@ turn_silence_frames = 20  # Finish the turn after 400 ms of silence
 # max_command_seconds = 2.5
 # decode_timeout = 0.5
 # minimum_word_probability = 0.5
+# needle_enabled = true  # Offline-only natural command fallback; scripts/install_needle.py
+# offline_decode_timeout = 5.0  # Offline speech gets a longer CPU budget
+# needle_timeout = 10.0  # Bounded native inference; exact commands bypass this
+# needle_minimum_confidence = 0.8
 language = "en-US"  # Spoken response language
 language_codes = ["en-US", "en-IN", "en-GB"]  # Speech input transcription language hints
 api_key_env = "GEMINI_API_KEY"
@@ -31,6 +35,7 @@ vision_enabled = false
 # Optional upstream settings; root switches above take precedence.
 [control]
 confirm_words = ["confirm", "yes do it", "go ahead"]
+
 
 [control.tasks]
 max_active = 1

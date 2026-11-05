@@ -97,17 +97,6 @@ def get_gemini_api_key() -> str:
     return ""
 
 
-def get_local_ip() -> str:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('8.8.8.8', 1))
-        return s.getsockname()[0]
-    except Exception:
-        return '127.0.0.1'
-    finally:
-        s.close()
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate pairing QR code and payload for JARVIS Mobile companion")
     parser.add_argument("-o", "--output", default="pairing_qr.png", help="Path to save PNG QR code (default: pairing_qr.png)")
@@ -123,8 +112,7 @@ def main():
     if not api_key:
         print("Configure the PC Gemini key before sharing it with your phone.")
         return 1
-    local_ip = get_local_ip()
-    default_exec = f"http://{local_ip}:8766" if local_ip != "127.0.0.1" else "http://127.0.0.1:8766"
+    default_exec = "http://127.0.0.1:8766"
 
     payload = {
         "v": creds["version"],
@@ -207,6 +195,21 @@ def main():
         print(payload_json)
     print("Scan only with your own phone. This QR grants access to your PC and Gemini account.")
 
+    try:
+        from ui.jarvis_widgets import backend
+        widget = backend.make_widget(
+            "qr",
+            "📱 Scan to Pair JARVIS Mobile",
+            {"content": payload_json},
+            widget_id="jarvis-pairing-qr",
+            presentation="floating",
+            expires_seconds=300,
+        )
+        backend.shell_call("present", widget)
+        print("Surfaced floating pairing card on desktop HUD.")
+    except Exception:
+        pass
+
     if args.view and png_path.exists():
         # Try viewers: imv, xdg-open
         for viewer in ["imv", "xdg-open"]:
@@ -216,7 +219,6 @@ def main():
                 break
             except Exception:
                 continue
-
 
 if __name__ == "__main__":
     sys.exit(main() or 0)

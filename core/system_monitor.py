@@ -26,7 +26,10 @@ SUPPORTED_ALERTS: Dict[str, str] = {
     "network_down": "Alternating dual-frequency siren (880Hz / 587Hz)",
     "server_down": "Descending minor triad alert (900Hz -> 675Hz -> 450Hz)",
     "cpu_overload": "Rapid high-pitch pulsing trill (1200Hz)",
+    "memory_high": "Elevated RAM warning pulse (650Hz + 690Hz)",
     "memory_critical": "Dissonant dual-tone warning buzz (700Hz + 740Hz)",
+    "battery_low": "Descending dual-tone warning (480Hz -> 360Hz)",
+    "battery_critical": "Urgent rapid alternating pulse (600Hz -> 400Hz)",
     "disk_exhaustion": "Deep resonant low thumps (300Hz)",
     "service_failure": "Staccato double burst (750Hz)",
     "thermal_critical": "Rising frequency sweep (800Hz -> 1500Hz)",
@@ -48,6 +51,7 @@ class DesktopNotifier:
         urgency: str = "normal",
         timeout_ms: int = 5000,
         icon: Optional[str] = None,
+        suppress_sound: bool = True,
     ) -> bool:
         if not self.notify_bin:
             return False
@@ -62,6 +66,8 @@ class DesktopNotifier:
             f"--urgency={urgency_level}",
             f"--expire-time={timeout_ms}",
         ]
+        if suppress_sound:
+            cmd.append("--hint=boolean:suppress-sound:true")
         if icon:
             cmd.append(f"--icon={icon}")
         cmd.extend([title, message])
@@ -193,11 +199,31 @@ class AlertAudioEngine:
                 add_tone(1200.0, 0.08, attack=0.01, decay=0.02, volume=0.8)
                 add_silence(0.04)
 
+        elif alert_type == "memory_high":
+            # Elevated RAM warning buzz (650Hz + 690Hz dual tone)
+            for _ in range(2):
+                add_dual_tone(650.0, 690.0, 0.18, attack=0.02, decay=0.04, volume=0.8)
+                add_silence(0.06)
+
         elif alert_type == "memory_critical":
             # Dissonant warning buzz (700Hz + 740Hz dual tone)
             for _ in range(2):
                 add_dual_tone(700.0, 740.0, 0.22, attack=0.02, decay=0.04, volume=0.9)
                 add_silence(0.06)
+
+        elif alert_type == "battery_low":
+            # Descending double tone: 480 Hz -> 360 Hz
+            add_tone(480.0, 0.16, attack=0.01, decay=0.03, volume=0.85)
+            add_silence(0.04)
+            add_tone(360.0, 0.22, attack=0.01, decay=0.05, volume=0.85)
+
+        elif alert_type == "battery_critical":
+            # Urgent rapid alternating pulses: 600 Hz -> 400 Hz (3 bursts)
+            for _ in range(3):
+                add_tone(600.0, 0.08, attack=0.01, decay=0.02, volume=0.95)
+                add_silence(0.02)
+                add_tone(400.0, 0.08, attack=0.01, decay=0.02, volume=0.95)
+                add_silence(0.04)
 
         elif alert_type == "disk_exhaustion":
             # Low resonant double thump (300Hz)
@@ -625,7 +651,133 @@ class ResourceProbe:
                 metrics=metrics,
             )
 
-    def check_memory(self, threshold_percent: float = 90.0) -> ProbeResult:
+    def check_battery(
+        self,
+        low_threshold_percent: float = 20.0,
+        critical_threshold_percent: float = 10.0,
+    ) -> ProbeResult:
+        power_supply_dir = self.sys_path / "class" / "power_supply"
+        if not power_supply_dir.exists():
+            return ProbeResult(
+                name="Battery",
+                category="resource",
+                status="OK",
+                message="Power supply inspection bypassed (no power_supply subsystem)",
+            )
+
+        try:
+            supplies = sorted(power_supply_dir.iterdir())
+        except OSError:
+            supplies = []
+
+        for supply in supplies:
+            def _read_prop(prop_name: str) -> str:
+                prop_file = supply / prop_name
+                if prop_file.exists():
+                    try:
+                        return prop_file.read_text(encoding="utf-8").strip()
+                    except (OSError, UnicodeError):
+                        return ""
+                return ""
+
+            supply_type = _read_prop("type").lower()
+            if supply_type != "battery":
+                continue
+
+            # Exclude peripheral device batteries (e.g. wireless mouse/keyboard)
+            scope = _read_prop("scope").lower()
+            if scope == "device":
+                continue
+
+            present = _read_prop("present")
+            if present == "0":
+                continue
+
+            raw_capacity = _read_prop("capacity")
+            status = _read_prop("status") or "Unknown"
+
+            pct: Optional[float] = None
+            if raw_capacity:
+                try:
+                    pct = float(raw_capacity)
+                except ValueError:
+                    pct = None
+
+            if pct is None:
+                try:
+                    now_val = float(_read_prop("energy_now") or _read_prop("charge_now"))
+                    full_val = float(_read_prop("energy_full") or _read_prop("charge_full"))
+                    if full_val > 0:
+                        pct = round(100.0 * now_val / full_val, 1)
+                except (ValueError, TypeError):
+                    pass
+
+            if pct is None:
+                return ProbeResult(
+                    name="Battery",
+                    category="resource",
+                    status="WARN",
+                    message="Battery detected but capacity could not be read",
+                    metrics={"battery": supply.name, "status": status},
+                )
+
+            is_charging = status in ("Charging", "Full")
+            metrics = {
+                "battery": supply.name,
+                "percent": pct,
+                "status": status,
+                "charging": is_charging,
+            }
+
+            if is_charging:
+                return ProbeResult(
+                    name="Battery",
+                    category="resource",
+                    status="OK",
+                    message=f"Battery {status.lower()}: {pct}% (plugged in)",
+                    metrics=metrics,
+                )
+
+            # Discharging / Not charging
+            if pct <= critical_threshold_percent:
+                return ProbeResult(
+                    name="Battery",
+                    category="resource",
+                    status="CRITICAL",
+                    message=f"Battery critically low: {pct}% remaining and not charging!",
+                    metrics=metrics,
+                    alert_type="battery_critical",
+                )
+            elif pct <= low_threshold_percent:
+                return ProbeResult(
+                    name="Battery",
+                    category="resource",
+                    status="WARN",
+                    message=f"Battery low: {pct}% remaining and discharging",
+                    metrics=metrics,
+                    alert_type="battery_low",
+                )
+            else:
+                return ProbeResult(
+                    name="Battery",
+                    category="resource",
+                    status="OK",
+                    message=f"Battery normal: {pct}% ({status})",
+                    metrics=metrics,
+                )
+
+        return ProbeResult(
+            name="Battery",
+            category="resource",
+            status="OK",
+            message="AC powered (no system battery detected)",
+        )
+
+    def check_memory(
+        self,
+        threshold_percent: float = 80.0,
+        critical_threshold_percent: float = 90.0,
+    ) -> ProbeResult:
         meminfo_path = self.proc_path / "meminfo"
         if not meminfo_path.exists():
             return ProbeResult(
@@ -673,7 +825,7 @@ class ResourceProbe:
             "total_mb": total_mb,
         }
 
-        if used_pct >= threshold_percent:
+        if used_pct >= critical_threshold_percent:
             return ProbeResult(
                 name="Memory Usage",
                 category="resource",
@@ -682,14 +834,14 @@ class ResourceProbe:
                 metrics=metrics,
                 alert_type="memory_critical",
             )
-        elif used_pct >= threshold_percent * 0.9:
+        elif used_pct >= threshold_percent:
             return ProbeResult(
                 name="Memory Usage",
                 category="resource",
                 status="WARN",
-                message=f"Memory high: {used_pct}% used ({avail_mb} MB available)",
+                message=f"Memory high: {used_pct}% used ({avail_mb} MB available / {total_mb} MB total)",
                 metrics=metrics,
-                alert_type="memory_critical",
+                alert_type="memory_high",
             )
         else:
             return ProbeResult(
@@ -881,16 +1033,18 @@ class AlertStateManager:
 
         for res in results:
             prev = self._states.get(res.name)
-            is_failure = (res.status == "CRITICAL")
+            is_alert = (res.status == "CRITICAL") or (res.status == "WARN" and res.alert_type is not None)
 
-            if is_failure:
+            if is_alert:
                 alert_type = res.alert_type or "server_down"
-                if prev is None or prev.get("status") != "CRITICAL":
-                    # Transition from non-failure to failure
+                urgency = "critical" if res.status == "CRITICAL" else "normal"
+
+                if prev is None:
+                    # Transition from healthy to alert
                     self._states[res.name] = {
-                        "status": "CRITICAL",
-                        "last_alert_time": now,
+                        "status": res.status,
                         "alert_type": alert_type,
+                        "last_alert_time": now,
                     }
                     actions.append(
                         AlertAction(
@@ -899,11 +1053,27 @@ class AlertStateManager:
                             category=res.category,
                             name=res.name,
                             message=res.message,
-                            urgency="critical",
+                            urgency=urgency,
+                        )
+                    )
+                elif prev.get("alert_type") != alert_type:
+                    # Escalation (e.g. battery_low -> battery_critical or memory_high -> memory_critical)
+                    # or severity change: trigger immediately without waiting for cooldown
+                    prev["status"] = res.status
+                    prev["alert_type"] = alert_type
+                    prev["last_alert_time"] = now
+                    actions.append(
+                        AlertAction(
+                            action_type="ALERT",
+                            alert_type=alert_type,
+                            category=res.category,
+                            name=res.name,
+                            message=f"[Escalation] {res.message}" if urgency == "critical" else res.message,
+                            urgency=urgency,
                         )
                     )
                 else:
-                    # Still failing; check cooldown
+                    # Same alert condition active; enforce cooldown so we don't nag frequently
                     last_time = prev.get("last_alert_time", 0.0)
                     if now - last_time >= self.cooldown_seconds:
                         prev["last_alert_time"] = now
@@ -914,13 +1084,13 @@ class AlertStateManager:
                                 category=res.category,
                                 name=res.name,
                                 message=f"[Persistent] {res.message}",
-                                urgency="critical",
+                                urgency=urgency,
                             )
                         )
             else:
                 # Component is healthy
-                if prev is not None and prev.get("status") == "CRITICAL":
-                    # Transition from CRITICAL to OK (Recovery)
+                if prev is not None:
+                    # Transition from alert to healthy (Recovery)
                     del self._states[res.name]
                     actions.append(
                         AlertAction(
@@ -944,13 +1114,28 @@ class AlertStateManager:
         voice_alert: bool = True,
         sound_alert: bool = False,
         desktop_notify: bool = True,
+        quiet_audio: bool = False,
+        voice_battery_only: bool = True,
     ) -> None:
+        if quiet_audio:
+            voice_alert = False
+            sound_alert = False
+
         for act in actions:
             if desktop_notify and notifier:
                 title = f"[{'ALERT' if act.action_type == 'ALERT' else 'RESOLVED'}] {act.name}"
-                notifier.notify(title, act.message, urgency=act.urgency)
+                notifier.notify(title, act.message, urgency=act.urgency, suppress_sound=True)
 
-            if voice_alert and jarvis_speaker:
+            is_battery = act.alert_type in ("battery_low", "battery_critical") or (
+                "battery" in act.name.lower() or "battery" in act.alert_type.lower()
+            )
+            should_speak = (
+                voice_alert
+                and jarvis_speaker
+                and (not voice_battery_only or (act.action_type == "ALERT" and is_battery))
+            )
+
+            if should_speak:
                 speech_text = format_alert_speech(act)
                 jarvis_speaker.speak_alert(speech_text)
 
@@ -964,16 +1149,22 @@ def format_alert_speech(action: AlertAction) -> str:
         return f"System update: {action.name} has recovered and is now back to a healthy state."
 
     t = action.alert_type
-    if t == "network_down":
+    if t == "battery_critical":
+        return f"Critical power alert: {action.message} Please connect your charger immediately."
+    elif t == "battery_low":
+        return f"Battery alert: {action.message} Please consider connecting your charger soon."
+    elif t == "memory_critical":
+        return f"System alert: Memory resources are critically low. {action.message}."
+    elif t == "memory_high":
+        return f"System alert: High RAM utilization detected. {action.message}."
+    elif t == "cpu_overload":
+        return f"System alert: High CPU workload detected. {action.message}."
+    elif t == "network_down":
         return f"Network alert: Connectivity failure detected. {action.message}."
     elif t == "server_down":
         return f"Server alert: Monitored service {action.name} is offline. {action.message}."
-    elif t == "cpu_overload":
-        return f"System alert: High CPU workload detected. {action.message}."
-    elif t == "memory_critical":
-        return f"System alert: Memory resources are critically low. {action.message}."
     elif t == "disk_exhaustion":
-        return f"Storage alert: Disk volume {action.name} is running out of space. {action.message}."
+        return f"Storage alert: {action.name} is running low on space. {action.message}."
     elif t == "service_failure":
         return f"Service alert: {action.name} is down or failed. {action.message}."
     elif t == "thermal_critical":
@@ -1025,10 +1216,9 @@ class JarvisVoiceSpeaker:
                 s.settimeout(timeout)
                 s.connect(str(self.socket_path))
                 s.sendall(prompt.encode("utf-8"))
-                resp = s.recv(1024)
+                resp = s.recv(512)
                 return bool(resp)
         except (OSError, socket.timeout):
             return False
-
 
 

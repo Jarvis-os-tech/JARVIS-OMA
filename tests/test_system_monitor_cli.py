@@ -17,6 +17,7 @@ def test_cli_help():
     assert "--once" in res.stdout
     assert "--daemon" in res.stdout
     assert "--test-audio" in res.stdout
+    assert "--test-voice" in res.stdout
     assert "--config" in res.stdout
 
 

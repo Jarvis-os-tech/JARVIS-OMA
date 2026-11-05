@@ -1,0 +1,3885 @@
+{
+  "review_date": "2026-11-03",
+  "scope": "Repository metadata screening, not a full source/security audit of every repository",
+  "repositories": [
+    {
+      "name": "huwprosser/arduino-library-files",
+      "archived": false,
+      "fork": true,
+      "license": null,
+      "description": "arduino files for use both by the compiler and the main symfony project",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/aruco-wasm",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "AruCO Detection in the browser with WASM and Rust.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/blooface",
+      "archived": false,
+      "fork": true,
+      "license": null,
+      "description": null,
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/carter-docs",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/carter-tester",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/carter-unity-voice-demo",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/carter-voice-assistant",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "An example project showing how to use www.carterapi.com as a voice assistant.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/clap-detection",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/cluster-fk",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "Image clustering for objects and faces.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/codespace-test",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/deskgpt",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/facenet",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/fury-sdk",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "An easy-to-use harness for agentic projects.",
+      "decision": "design-reference",
+      "reason": "UI/tool/transcript separation, interruption and session semantics; reuse license unresolved."
+    },
+    {
+      "name": "huwprosser/fury-sdk-js",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Fury but for JS and TS bros.",
+      "decision": "conditional-reference",
+      "reason": "Only needed for a JS/TS agent renderer; current primary runtime is Python/Quickshell; license unresolved."
+    },
+    {
+      "name": "huwprosser/hifi-gan",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/huwissp",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/huwprosser",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/huwprosser.github.io",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Redirect to the good place.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/immersive-web-sdk",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "WebXR made simple. Full-featured framework with interactions, locomotion, and spatial UI. Powered by Three.js.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/jarvis-mlx",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "An all-in-one solution to stark-level productivity running offline on your MacBook using SOTA technology.",
+      "decision": "exclude",
+      "reason": "README marks it outdated; Apple Silicon/MLX does not match the Linux target."
+    },
+    {
+      "name": "huwprosser/llama.cpp-prism",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "LLM inference in C/C++",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/mnist-torch",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Solving MNIST with Pytorch (Machine Vision Hello World)",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/pytorch-chatbot",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "Simple chatbot implementation with PyTorch.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/samples",
+      "archived": false,
+      "fork": true,
+      "license": "BSD-3-Clause",
+      "description": "WebRTC Web demos and samples",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/spotify-cli",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "A simple CLI for spotify for you and your agent.",
+      "decision": "deferred",
+      "reason": "Existing Spotify connector overlap; OAuth and reuse license need resolution."
+    },
+    {
+      "name": "huwprosser/step-by-step-react-component",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/strapi-template",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Standard Strapi Template",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/svelte-supabase-stripe",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "A boilerplate project allowing for OTP signup, login and upgrade.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/Tacotron",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/tacotron2",
+      "archived": false,
+      "fork": true,
+      "license": "BSD-3-Clause",
+      "description": "Tacotron 2 - PyTorch implementation with faster-than-realtime inference",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/test",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/tortoise-tts",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A multi-voice TTS system trained with an emphasis on quality",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/TransformerTTS",
+      "archived": false,
+      "fork": true,
+      "license": "NOASSERTION",
+      "description": "🤖💬 Transformer TTS: Implementation of a non-autoregressive Transformer based neural network for text to speech.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/unity-sdk",
+      "archived": false,
+      "fork": true,
+      "license": "ISC",
+      "description": "Statsig SDK for Unity projects",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/vad",
+      "archived": false,
+      "fork": true,
+      "license": "NOASSERTION",
+      "description": "Voice activity detector (VAD) for the browser with a simple API",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/voice-activity-detection-unity",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "A voice activity detection (VAD) library for Unity.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/web-whisper",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "huwprosser/whisper",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "Robust Speech Recognition via Large-Scale Weak Supervision",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/yolov5",
+      "archived": false,
+      "fork": true,
+      "license": "GPL-3.0",
+      "description": "YOLOv5 🚀 in PyTorch > ONNX > CoreML > TFLite",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "huwprosser/Yolov5_StrongSORT_OSNet",
+      "archived": false,
+      "fork": true,
+      "license": "GPL-3.0",
+      "description": "Real-time multi-camera multi-object tracker using YOLOv5 and StrongSORT with OSNet",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-youtube",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-youtube' (pip install ovos-media-provider-youtube), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-parrot",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "taks back to user like a parrot",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-dictation",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "save transcripts to home directory",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-easter-eggs",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "fun easter eggs for mycroft",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-personal-backend",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "personal backend - self-hosted backend to manage multiple OVOS devices",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-wikihow",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "wikihow for OpenVoiceOS ",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-beepspeak",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "experiment adding new r2d2 tts engine for mycroft",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-laugh",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "make mycroft do an evil laugh",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-camera",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "webcam for OVOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-number-facts",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "number facts",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-bandcamp",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-bandcamp' (pip install ovos-media-provider-bandcamp), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-mark1-ctrl",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "control the mycroft enclosure vocally",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-buildroot",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Open Voice Operating System - Buildroot edition is a minimalistic linux OS bringing the OVOS voice assistant to embbeded, low-spec headless and/or small (touch)screen devices.",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-good-manners-pipeline-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS pipeline plugin that listens to how you ask: compliments good manners and reprimands foul language, without getting in the way of the answer",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-settings",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Mycroft skill to take control of OpenVoiceOS it's functions and tools.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-common-play",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Mycroft AI official Playback Control Skill - providing Intents for other Skills to use common playback functionality (via Common Play)",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-systemd",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Systemd service files for the Mycroft A.I. software stack",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-mycroftgui",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Mycroft skill to take control of the Mycroft GUI QT application.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-confucius-quotes",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Quotes from Confucius",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/wallpaper_changer",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-iss-location",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "track the ISS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-wallpapers",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Pictures from wallhaven.cc",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/zzz-old-ovos-utils",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "collection of simple utilities for use across the mycroft ecosystem",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos_assets",
+      "archived": false,
+      "fork": false,
+      "license": "CC0-1.0",
+      "description": "Images, Icon, Artwork type assets used across OpenVoiceOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-nyumaya-legacy",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "hotword plugin for mycroft-core",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-cotovia",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "galician tts plugin for OVOS",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-pocketsphinx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "pocketsphinx STT plugin for mycroft",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-vosk",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "vosk STT plugin for mycroft",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-vosk",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "vosk wake word plugin for OpenVoiceOS",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-chromium",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "A stt plugin for OpenVoiceOS using the google chrome browser api",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-wikipedia",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "wikipedia skill for OpenVoiceOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-icanhazdadjokes",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "i can haz dad joke skill",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-snowboy",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "snowboy plugin for mycroft",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-wolfie",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "wolfram alpha spoken answers skill",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-ddg",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "duck duck go skill",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos_skill_manager",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "skill installer for OVOS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos_skill_installer",
+      "archived": true,
+      "fork": true,
+      "license": "MIT",
+      "description": "A package extraction tool for Python",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/OVOS-skills-store",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/disable-msm-dummy-repo",
+      "archived": true,
+      "fork": true,
+      "license": null,
+      "description": "A repository for sharing and collaboration for third-party Mycroft skills development.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-monkey-patcher",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "apply patches to mycroft-core at runtime",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-monkey-patch-tester",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "test monkey patches",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-balena-wifi-setup",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-setup",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Setup Skill - configure your device and optionally connect it to a backend server",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-homescreen",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Provides the resting screen for OVOS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-shell",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-plugin-manager",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "plugin manager for OpenVoiceOS , STT/TTS/Wakewords that can be used anywhere",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/skill-abort-test",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "test skill for OpenVoiceOS/ovos_utils/pull/34",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-stop",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "stop whatever the assistant is doing",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-core",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Core, the FOSS Artificial Intelligence platform. ",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-news",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-news' (pip install ovos-media-provider-news), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-workshop",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "frameworks, templates and patches for the OpenVoiceOS universe",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ZZZ-ovos_enclosure",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "Enclosure module",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/quebra_frases",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "chunks strings into byte sized pieces",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/padacioso",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "dead simple regex based intent parser",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/palavreado",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "dead simple keyword based intent parser",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/nebulento",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "fuzzy matching intent parser",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/tskill-osm_parsing",
+      "archived": true,
+      "fork": false,
+      "license": "BSD-3-Clause",
+      "description": "Repository to test OSM parser testing",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-mimic",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-precise",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "mycroft plugin for detecting wake word with precise",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-pocketsphinx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS plugin for detecting wakewords with pocketsphinx",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-mimic2",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-weather",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS official Weather Skill, providing weather conditions and forecasts. ",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-personal",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS official Personality Skill - answers basic personality questions around OVOS",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skills-info",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Skill information parser support skill",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/VocalFusionDriver",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Raspberry Pi VocalFusion linux driver for kernel 5.10",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-espeakNG",
+      "archived": false,
+      "fork": false,
+      "license": "GPL-3.0",
+      "description": "espeakNG plugin",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-pico",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "pico-tts-plugin",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-google-tx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "google translate tts plugin for OVOS / mycroft",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-audio-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-hotkeys",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "map key presses to OVOS bus events",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/lang-support-tracker",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-volume",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/precise-lite",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A lightweight, simple-to-use, RNN wake word listener",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-precise-lite",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/precise-lite-models",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Free models for precise-lite",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-common-query",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Skill Negotiating for the best source for an answer via Common QA",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-naptime",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS official Naptime Skill - put the assistant to sleep for a while",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/precise_lite_runner",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-SAM",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "S.A.M - Software Automatic Mouth",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-soundcloud",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-soundcloud' (pip install ovos-media-provider-soundcloud), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-somafm",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-somafm' (pip install ovos-media-provider-somafm), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-tunein",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-tunein' (pip install ovos-media-provider-tunein), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-youtube-music",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-youtube-music' (pip install ovos-media-provider-youtube-music), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/tskill-ocp-cps",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-utils",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-hello-world",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Hello World Skill - use this basic Skill to see how OpenVoiceOS Skills work. ",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-mk1",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/awesome-ovos-plugins",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "List of ovos-plugin-manager plugins and projects",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-timer",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Timer Skill",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-audio",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS audio output daemon",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gui",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos-core metapackage for gui daemon",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-messagebus",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos-core bus daemon",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skills",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos-core metapackage for skills daemon",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-listener",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos-core metapackage for speech daemon",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-display-manager-ipc",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-connectivity-events",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-fallback-unknown",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS official Unknown Fallback Skill - used if no Intent is matched to an Utterance",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-application-launcher",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "launch applications by voice",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-backend-client",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "client library for interaction with all compatible ovos-core backend services",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/awesome-ocp-skills",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "Media skills for OCP, music, movies, radio, audiobooks and more!",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-lingua-franca",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Mycroft's multilingual text parsing and formatting library",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-server",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "simple flask server to host OpenVoiceOS tts plugins as a service",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-server-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/template-package-repo",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-template-repo",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-vad-plugin-silero",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos plugin for voice activity detection using silero vad",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-vad-plugin-webrtcvad",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos plugin for voice activity detection using webrtcvad",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-date-time",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Date and Time Skill, providing the current time, date and day of week for cities around the world. ",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-system",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-balena-wifi",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-alsa",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-mk2",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-gpsd",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-ipgeo",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-cli-client",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-server",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-server-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-translate-server",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-docker",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Open Voice OS container images and docker-compose.yml files for x86_64 and aarch64 CPU architectures.",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/big-tts-cache",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "cached utterances from the defunct mimic2 TTS from Mycroft AI",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-polly",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-marytts",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-network-manager",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "NetworkManager plugin for PHAL",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-wifi-setup",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Central Wifi Setup Plugin for PHAL",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-ovos-alarm",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Mycroft AI Alarm Skill - Set single and recurring alarms, with a choice of alarm sounds",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/.github",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-config",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS configuration manager library",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-mimic3",
+      "archived": true,
+      "fork": true,
+      "license": "AGPL-3.0",
+      "description": "Text to speech plugin for OVOS using Mimic 3",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/skill-homescreen-lite",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Minimal homescreen for remote client devices",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-mplayer",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS audio backend plugin",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-selene",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "STT plugin to use selene backend services",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/mycroft-gui-qt6",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "The Graphical User Interface used by the Mycroft Mark II and more",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-backend-manager",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "A simple web UI for personal backend, powered by PyWebIO",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-community-dataset",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-mimic3-server",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-whispercpp",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-bus-client",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "messagebus client for the OVOS ecosystem",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-homeassistant",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "HomeAssistant PHAL Plugin for OpenVoice OS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-oauth",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-messagebus-cpp",
+      "archived": true,
+      "fork": false,
+      "license": "MIT",
+      "description": "alternative ovos bus service (websocket server) in C++",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-youtube-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-rss-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-m3u-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-bandcamp-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-files-plugin",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "A library for reading and, in the future, writing audio metadata. https://audio-metadata.readthedocs.io/",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-news-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/quiet.py",
+      "archived": true,
+      "fork": true,
+      "license": null,
+      "description": "Python Ctypes Bindings for libquiet",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-fallback-chatgpt",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-plugin-aiml",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-plugin-rivescript",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-failure-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-openai-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-alerts",
+      "archived": false,
+      "fork": true,
+      "license": "NOASSERTION",
+      "description": "Alerts Skill Repository",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/scripts",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "random scripts for ovos stuff",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-pulseaudio",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/my-assistant",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "template repo for derivative voice assistants",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ZZZ-raspOVOS",
+      "archived": true,
+      "fork": false,
+      "license": "MIT",
+      "description": "Run ovos ontop of RaspberryPiOS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-openWakeWord",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-qt5",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "default GUI implementation for OCP framework",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-auto-synth-dataset",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-technical-manual",
+      "archived": false,
+      "fork": false,
+      "license": "CC0-1.0",
+      "description": "developer oriented documentation",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/pi-gen",
+      "archived": false,
+      "fork": true,
+      "license": "BSD-3-Clause",
+      "description": "Tool used to create the official Raspberry Pi OS images",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-plugin-llamacpp",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-persona",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Persona service",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-datasets",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Datasets collected by OpenVoiceOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-classifiers",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-binary-shop",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "Wheels and pre-compiled binaries for usage with ovos plugins / images",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/mycroft-classic-listener",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "simpler alternative to ovos-listener, historical reference to classic mycroft-core implementation for the mark1 device",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-dinkum-listener",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "ovos-listener based on the voice loop from mycroft-dinkum",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/precise-lite-trainer",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "train wake word models",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-vad-plugin-precise",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "tflite GRU VAD detector",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-spotify",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-translate-plugin-deepl",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-piper",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-fasterwhisper",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "FasterWhisper for OpenVoiceOS",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-audio-transformer-plugin-speechbrain-langdetect",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "speech language detection plugin",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/DrQA",
+      "archived": false,
+      "fork": true,
+      "license": null,
+      "description": "A pytorch implementation of Reading Wikipedia to Answer Open-Domain Questions.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gui-plugin-shell-companion",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-dashboard",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Dashboard PHAL plugin to handle Dashboard operations",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-configuration-provider",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "PHAL plugin to provide configuration in displayable GUI format",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-notification-widgets",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Notifications and Widgets PHAL plugin",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-color-scheme-manager",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OVOS Shell ColorScheme Manager Plugin for OVOS PHAL",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-brightness-control-rpi",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-local-media",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-local' (pip install ovos-media-provider-local), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-wallpaper-manager",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Central wallpaper management interface for homescreens and other desktops",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-microphone-plugin-alsa",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-microphone-plugin-pyaudio",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-gui-network-client",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A GUI Network Client For PHAL",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-microphone-plugin-sounddevice",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-personal-llm",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/status",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "Open Voice OS Server Status Page",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-docker-stt",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Open Voice OS Speech-to-Text (STT) container images and docker-compose.yml file for x86_64 CPU architecture.",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-azure",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Text-to-speech plugin for the Azure Cognitive Services",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-translate-plugin-nllb",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "No Language Left Behind",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-microphone-plugin-files",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/buildroot",
+      "archived": false,
+      "fork": true,
+      "license": "NOASSERTION",
+      "description": "Buildroot, making embedded Linux easy. Note that this is not the official repository, but only a mirror. The official Git repository is at http://git.buildroot.net/buildroot/. Do not open issues or file pull requests here.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-utterance-corrections-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-docker-tts",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Open Voice OS TTS Docker images",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/mycroft-gui-qt5",
+      "archived": true,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "maintained version of the old QT5 mycroft-gui for OpenVoiceOS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-spotify",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-spotify' (pip install ovos-media-provider-spotify), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-azure",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-docker-tx",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-translate-server-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/hardware-mycroft-mark-1",
+      "archived": true,
+      "fork": true,
+      "license": null,
+      "description": "in-case-of-apocalypse archive of Mycroft Mark 1 repository",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-audio-transformer-plugin-ggwave",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "data over sound plugin",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-persona-server",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/message_spec",
+      "archived": false,
+      "fork": false,
+      "license": "CC0-1.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-transformer-sox-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-bidirectional-translation-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-sensors",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "expose your OVOS device under HomeAssistant",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-installer",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "Open Voice OS and/or HiveMind installer using Ansible with an intuitive and easy Text-based User Interface",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-docs-viewer",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "terminal docs viewer",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-ip",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS official IP Skill - find the IP address of your Device",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-spelling",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS spelling Skill",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-moviemaster",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS skill to query IMDB about movies",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-i2csound",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Script for i2c HAT detection",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-mark1-utils",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/OpenVoiceOS",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "OpenVoiceOS - Release Tracker",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-utterance-plugin-cancel",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-boot-finished",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Skill to speak a notification when everything is started and ready",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-audio-recording",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "control recording mode in ovos-dinkum-listener",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-vad-plugin-noise",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "simple noise ratio based VAD plugin",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-chromecast",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-randomness",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "An OVOS skill for all kinds of chance - make a choice, roll a die, flip a coin, pick between two choices, etc.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-edge-tts",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OpenVoiceOS Text-to-speech plugin with Edge TTS",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-org-website",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Test repo for ovos webpage",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-wordnet",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "wordnet skill",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-lang-detector-classics-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-google-translate-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-lang-detector-fasttext-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-cmd",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A simple OVOS skill for launching shell scripts and system commands",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-days-in-history",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Informs you of historical tidbits about a given calendar day",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-color-picker",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Look up css3 colors.",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-ggwave",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "voice interface to control ggwave plugin",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-word-of-the-day",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Skill for OVOS, to get the word of the day",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-vlc",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-translations",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-dotstar",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "PHAL plugin for dotstar type LED's",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-pyradios",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Replaced by the MediaProvider plugin 'ovos-media-provider-pyradios' (pip install ovos-media-provider-pyradios), configured under intents.ovos-ocp-pipeline-plugin.media_providers — no longer installed as a skill.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-speedtest",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A simple Speedtest Skill for OVOS",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-mk2-v6-fan-control",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-i2c-detection",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "A small repo containing auto-detection scripts for i2c devices",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-landing-page",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "OpenVoiceOS is a community-driven, open-source voice AI platform for creating custom voice-controlled ​interfaces across devices with NLP, a customizable UI, and a focus on privacy and security",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/mycroft-mark1-firmware",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "firmware for the mark1 arduino (faceplate and eyes)",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-adapt-pipeline-plugin",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "Adapt Intent Parser",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-padatious-pipeline-plugin",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "A neural network intent parser",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-mpv",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-YesNo-plugin",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-solver-BM25-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-chromadb-embeddings-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-voice-embeddings-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gguf-embeddings-plugin",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "DEPRECATED — folded into OpenVoiceOS/ovos-gguf-plugin (keeps plugin name 'ovos-gguf-embeddings-plugin'). Install ovos-gguf-plugin.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gguf-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-flashrank-reranker-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-document-chunkers",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-matxa-multispeaker-cat",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-utterance-normalizer",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gguf-translate-plugin",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": "DEPRECATED — superseded by OpenVoiceOS/ovos-gguf-plugin (translate wrapper). Install ovos-gguf-plugin.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-citrinet",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-coreferee-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-nemo",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/gh-automations",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-wav2vec2",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-nos",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Galician TTS",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-coqui",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-mms",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-fasterwhisper-zuazo",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/rpi-linux",
+      "archived": false,
+      "fork": true,
+      "license": "NOASSERTION",
+      "description": "Kernel source tree for Raspberry Pi-provided kernel builds. Issues unrelated to the linux kernel should be posted on the community forum at https://forums.raspberrypi.com/",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-nos",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-whisper",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-MyNorthAI",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-xabier-zuazo",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-whisper-turbo",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-whisper-projectAINA",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-HiTZ",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ocp-pipeline-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-common-query-pipeline-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/mycroft-legacy",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-simple-listener",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/raspovos-manual",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "User manual for the raspOVOS image",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-number-parser",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-date-parser",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-color-parser",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-lang-parser",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-screenshot",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-projectAINA-remote",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/raspOVOS",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-cotovia-remote",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/linha-fina",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-ahotts",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-fuster-quotes",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-blogs",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "ovos blog site built with Next.js using the Starter Blog template",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-camera",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/raspovos-audio-setup",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-ffplay",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/padatious_cache",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "pre trained padatious intents to make first boot faster",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-dialog-normalizer-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-diagnostics",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-opendata-server",
+      "archived": false,
+      "fork": false,
+      "license": "NOASSERTION",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-wikipedia-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-wolfram-alpha-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-whisper-lm",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/wyoming-ovos-stt",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/wyoming-ovos-tts",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/wyoming-ovos-wakeword",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-wyoming-docker",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "A collection of Docker images for running OVOS services using the Wyoming Protocol.",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-yaml-editor",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-transcription-validator-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-busmon",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/kw-template-matcher",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-m2v-pipeline",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gitlocalize-intent-dataset",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/intent-test-set",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "a dataset to benchmark our intent pipelines",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovoscope",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "an end-to-end testing framework for OpenVoiceOS.",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-count",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-hivemind-pipeline-plugin",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/voices_demo",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "demo sounds file for TTS voices trained by OVOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-qdrant-embeddings-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tools",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "helper bash utils for raspOVOS and other linux systems",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-termux",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-mass",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-music-assistant",
+      "archived": true,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "[DEPRECATED — ARCHIVED] Legacy Music Assistant integration. The current stack uses the MediaProvider plugin 'ovos-media-provider-mass' (pip install ovos-media-provider-mass), configured under intents.ovos-ocp-pipeline-plugin.media_providers.",
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-pydantic-models",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Full index of all valid OpenVoiceOS bus messages + pydantic models for validation",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-precise-onnx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ddg-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "NOASSERTION",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-hardware-helpers",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/renovate-config",
+      "archived": false,
+      "fork": true,
+      "license": null,
+      "description": null,
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-plugin-arena",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "benchmark-reference",
+      "reason": "Useful benchmark structure; README explicitly labels leaderboard/rating/vote data as placeholders."
+    },
+    {
+      "name": "OpenVoiceOS/ovos_tts_transformer_NovaSR",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos_tts_transformer_FlashSR",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-onnx-asr",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-sherpa-onnx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-rover",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-stt-plugin-coreml",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS Speech-to-Text (STT) plugin that runs speech recognition models natively on Apple devices using CoreML",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-gui-api-client",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/pyhtmx-gui-client",
+      "archived": false,
+      "fork": true,
+      "license": "MIT",
+      "description": "A GUI client fo OpenVoiceOS based on HTMX + TailwindCSS + daisyUI",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-legacy-mycroft-gui-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-lux",
+      "archived": true,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "exclude-current-adoption",
+      "reason": "Archived; check maintained successor only when an unmet requirement exists."
+    },
+    {
+      "name": "OpenVoiceOS/beta-technical-manual",
+      "archived": false,
+      "fork": true,
+      "license": "CC0-1.0",
+      "description": "developer oriented documentation",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-persona-marketplace",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-localize",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "GitHub-native localization platform for OpenVoiceOS skills and plugins",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-agentic-loop",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-option-matcher-fuzzy-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tool-adapters",
+      "archived": false,
+      "fork": false,
+      "license": "NOASSERTION",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-YesNo-plugin",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-wordnet-plugin",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ma-player",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "OpenVoiceOS OCP player provider for Music Assistant",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-hierarchical-knn-pipeline",
+      "archived": false,
+      "fork": true,
+      "license": "Apache-2.0",
+      "description": "OVOS Hierarchical KNN pipeline for intent matching",
+      "decision": "defer",
+      "reason": "Fork without a demonstrated JARVIS gap; prefer the maintained original when a requirement is established."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-skill-pokepedia",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "OVOS Pokémon Battle Assistant — child-friendly voice queries against PokeAPI (en-US/es-ES/fr-FR/it-IT). Fork of denix's original on Codeberg.",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-messagebus-chat-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS ChatEngine plugin (opm.agents.chat) that proxies turns through the OVOS messagebus",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-markov-pipeline-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "NOASSERTION",
+      "description": "OVOS intent pipeline plugin using Markov chain perplexity ensemble",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/architecture",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Formal architecture specifications for OpenVoiceOS — the intent template grammar, locale resource formats, and the intent definition model",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-spec-tools",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Reference implementation of the OVOS formal specifications — sentence template expander, locale resource loader, dialog renderer, language matching, and a locale linter",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-a2a-agent-plugin",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Consume external A2A agents as OVOS persona solvers",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-tools",
+      "archived": false,
+      "fork": false,
+      "license": "NOASSERTION",
+      "description": "PHAL service provider exposing OVOS tool plugins over the messagebus",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-verifier-plugin-speaker",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS wake word verifier plugin: reject non-enrolled speakers",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-memory-plugins",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS OPM memory plugins: long-term summarization and RAG via OpenAI-compatible endpoints",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-microwakeword",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS wake-word plugin wrapping microWakeWord tflite streaming models (ESPHome ecosystem)",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-PHAL-plugin-app-launcher",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "PHAL plugin: desktop application launcher OS actions over the OVOS messagebus",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ngi0-notebooks",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Train wakeword and TTS models",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-wakewordlab",
+      "archived": false,
+      "fork": false,
+      "license": null,
+      "description": "OVOS wake word plugin using wakewordlab",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-wakeforge",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS wake word plugin for models trained with wakeforge",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-bandcamp",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for Bandcamp (replaces ovos-skill-bandcamp)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-youtube",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for YouTube (replaces ovos-skill-youtube)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-tunein",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for TuneIn (replaces ovos-skill-tunein)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-somafm",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for SomaFM (replaces ovos-skill-somafm)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-youtube-music",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for YouTube Music (replaces ovos-skill-youtube-music)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-pyradios",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for radio-browser/pyradios (replaces ovos-skill-pyradios)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-soundcloud",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for SoundCloud (replaces ovos-skill-soundcloud)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-classifier",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Pluggable media-type command/intent classification for OCP — mediavocab-enforcing, content-filtering, OPM-discoverable",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-mass",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ui-enclosure-protocol",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-plugin-cli",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Generic CLI-command playback plugin for ovos-media (and the legacy ovos-audio service)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-spotify",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-news",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-test-harness",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Cross-repo integration & conformance tests for the OVOS spec stack",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-plugin-omnivoice",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OmniVoice massively-multilingual zero-shot TTS plugin for OpenVoiceOS",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-tts-transformer-audiosr",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": null,
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-audio-transformer-plugin-bandpass",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Band-pass filter audio transformer for OpenVoiceOS",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-plugin-linguonnx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS language detection and translation plugins backed by linguonnx (ONNX, offline)",
+      "decision": "not-selected",
+      "reason": "Metadata screening did not establish a required capability beyond the selected sources; implementation not audited."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-control-panel",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Unified local web UI for OpenVoiceOS devices",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-media-provider-local",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS MediaProvider plugin for a local file-system media library (replaces ovos-skill-local-media)",
+      "decision": "media-candidate",
+      "reason": "Use only for a missing media capability after comparing current connectors and player controls."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-typed-slots-transformer",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Typed-slots transformer plugin for OVOS: number, date, duration and color spans from the OVOS parsers (OVOS-TRANSFORM-1 §3.7)",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-vad-plugin-vadonnx",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS VAD plugin exposing every vadonnx model",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-start-launcher",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Command-line launcher for installations started with OVOS Start.",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-start",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "Web setup wizard for OpenVoiceOS, with device preparation and live installation progress.",
+      "decision": "platform-reference",
+      "reason": "OVOS platform responsibility overlaps JARVIS/Omarchy; no wholesale runtime adoption."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-eot-plugin-cuelight",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "CueLight end-of-turn plugin for OpenVoiceOS",
+      "decision": "collected-for-review",
+      "reason": "Selected mechanism is mapped to a current JARVIS requirement or bounded experiment; not activated."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-efficientword-net",
+      "archived": false,
+      "fork": false,
+      "license": "Apache-2.0",
+      "description": "OVOS wake-word plugin for EfficientWord-Net, few-shot hotword detection",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    },
+    {
+      "name": "OpenVoiceOS/ovos-ww-plugin-local-wake",
+      "archived": false,
+      "fork": false,
+      "license": "MIT",
+      "description": "OVOS wake-word plugin for local-wake, wake words from a few recordings",
+      "decision": "speech-candidate",
+      "reason": "Provider/model alternative; requires target-language, hardware and latency comparison before collection or installation."
+    }
+  ]
+}

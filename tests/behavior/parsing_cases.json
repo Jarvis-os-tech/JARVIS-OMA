@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {"id":"volume-spoken", "text":"set volume to forty five percent", "expected":["system_control",{"action":"volume_set","value":45}]},
+    {"id":"polite-question-command", "text":"Could you set volume to forty five percent?", "expected":["system_control",{"action":"volume_set","value":45}]},
+    {"id":"brightness-polite", "text":"Jarvis, please set the brightness to sixty percent.", "expected":["system_control",{"action":"brightness_set","value":60}]},
+    {"id":"zero", "text":"set volume to zero", "expected":["system_control",{"action":"volume_set","value":0}]},
+    {"id":"hundred", "text":"volume one hundred percent", "expected":["system_control",{"action":"volume_set","value":100}]},
+    {"id":"hyphenated", "text":"set volume to twenty-five percent", "expected":["system_control",{"action":"volume_set","value":25}]},
+    {"id":"digits", "text":"set brightness to 40%", "expected":["system_control",{"action":"brightness_set","value":40}]},
+    {"id":"workspace", "text":"switch to workspace ten", "expected":["system_control",{"action":"workspace_switch","workspace":"10"}]},
+    {"id":"negative-digit", "text":"set volume to -5", "expected":null},
+    {"id":"negative-word", "text":"set volume to minus five", "expected":null},
+    {"id":"fractional-percent", "text":"set volume to forty point five percent", "expected":null},
+    {"id":"decimal-digit", "text":"set volume to 4.5", "expected":null},
+    {"id":"fraction", "text":"set volume to one half", "expected":null},
+    {"id":"multiple-values", "text":"set volume to thirty or forty", "expected":null},
+    {"id":"multiple-controls", "text":"set volume to thirty and brightness to forty", "expected":null},
+    {"id":"unparsed-word", "text":"set volume to approximately forty", "expected":null},
+    {"id":"out-of-range", "text":"set volume to one hundred and five", "expected":null},
+    {"id":"zero-brightness", "text":"set brightness to zero", "expected":null},
+    {"id":"workspace-range", "text":"workspace eleven", "expected":null},
+    {"id":"workspace-unit", "text":"workspace three percent", "expected":null},
+    {"id":"negation", "text":"do not set volume to forty", "expected":null},
+    {"id":"quoted-command", "text":"\"set volume to forty\"", "expected":null},
+    {"id":"quoted-value", "text":"set volume to \"forty\"", "expected":null},
+    {"id":"file-path", "text":"set volume to /tmp/forty.txt", "expected":null},
+    {"id":"phone-target", "text":"set volume to forty on my phone", "expected":null},
+    {"id":"advice", "text":"why should I set volume to forty", "expected":null},
+    {"id":"unparsed-conjunction", "text":"set volume to forty and", "expected":null}
+  ]
+}
