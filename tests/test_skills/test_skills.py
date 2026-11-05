@@ -358,7 +358,14 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
     async def test_lock_screen_adapter(self):
         skills = self.make_desktop_skills()
         skills._run = AsyncMock(return_value='')
-        result = await skills.execute('lock_screen', {})
+        # Unconfirmed request returns needs_confirmation
+        unconfirmed = await skills.execute('lock_screen', {})
+        self.assertEqual(unconfirmed['status'], 'needs_confirmation')
+        self.assertIn('lock the screen', unconfirmed['prompt'])
+        skills._run.assert_not_called()
+
+        # Confirmed execution locks the session
+        result = await skills.execute('lock_screen', {'confirm': True})
         self.assertEqual(result['status'], 'locked')
         skills._run.assert_awaited_once_with(skills._commands['loginctl'], 'lock-session')
 
@@ -422,7 +429,8 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
         read_res = await skills.execute('read_clipboard', {})
         self.assertEqual(read_res['content'], 'hello clipboard')
 
-        with patch('asyncio.create_subprocess_exec') as mock_exec:
+        with patch('asyncio.create_subprocess_exec') as mock_exec, patch(
+                'skills.ground_truth.verify_clipboard_state', new=AsyncMock(return_value={'verified': True})):
             proc = AsyncMock()
             proc.communicate = AsyncMock(return_value=(b'', b''))
             proc.returncode = 0

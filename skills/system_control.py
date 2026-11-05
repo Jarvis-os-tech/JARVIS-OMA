@@ -1028,9 +1028,18 @@ async def control_bluetooth(action: str, device: str | None = None) -> dict[str,
     return _observation_error("Unsupported Bluetooth action or missing device")
 
 
-async def control_power(action: str) -> dict[str, Any]:
+async def control_power(action: str, confirm: bool = False) -> dict[str, Any]:
     """Control power; verify profile and idle changes instead of trusting plugin defaults."""
     action = str(action).strip().lower().replace("_", "-")
+    if action in ("shutdown", "poweroff", "restart", "reboot", "lock", "lock-screen"):
+        from skills.system_power import POWER_MANAGER
+        return POWER_MANAGER.request_action(action, confirm=confirm)
+    if action == "confirm":
+        from skills.system_power import POWER_MANAGER
+        return POWER_MANAGER.confirm_action()
+    if action == "cancel":
+        from skills.system_power import POWER_MANAGER
+        return POWER_MANAGER.cancel_action()
     powerctl = shutil.which("powerprofilesctl")
     if action == "status":
         if not powerctl:
@@ -1526,15 +1535,42 @@ async def switch_workspace(workspace: int | str) -> dict[str, Any]:
             "message": "Workspace request executed, but its target was not verified. Do not claim success."}
 
 
-async def lock_screen() -> dict[str, Any]:
-    """Lock the screen session using loginctl."""
+async def lock_screen(confirm: bool = False) -> dict[str, Any]:
+    """Lock the screen session using loginctl, with confirmation sequence."""
+    if not confirm:
+        from skills.system_power import POWER_MANAGER
+        return POWER_MANAGER.request_action("lock_screen", confirm=False)
     loginctl = shutil.which("loginctl")
     if not loginctl:
         return {"status": "error", "message": "loginctl is not installed"}
     code, _, stderr = await _run_command(loginctl, "lock-session")
     if code == 0:
-        return {"status": "success", "action": "locked"}
+        return {"status": "success", "action": "locked", "confirmed": True}
     return {"status": "error", "message": stderr or "failed to lock screen"}
+
+
+async def shutdown_system(confirm: bool = False) -> dict[str, Any]:
+    """Shut down the computer with confirmation sequence."""
+    from skills.system_power import POWER_MANAGER
+    return POWER_MANAGER.request_action("shutdown", confirm=confirm)
+
+
+async def restart_system(confirm: bool = False) -> dict[str, Any]:
+    """Restart the computer with confirmation sequence."""
+    from skills.system_power import POWER_MANAGER
+    return POWER_MANAGER.request_action("restart", confirm=confirm)
+
+
+async def confirm_system_action(heard_phrase: str = "yes") -> dict[str, Any]:
+    """Confirm a pending system action (shutdown, restart, lock screen)."""
+    from skills.system_power import POWER_MANAGER
+    return POWER_MANAGER.confirm_action(heard_phrase=heard_phrase)
+
+
+async def cancel_system_action() -> dict[str, Any]:
+    """Cancel a pending system action."""
+    from skills.system_power import POWER_MANAGER
+    return POWER_MANAGER.cancel_action()
 
 
 async def take_screenshot(region: str = "full") -> dict[str, Any]:

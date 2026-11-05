@@ -3,8 +3,72 @@
   "skills": [
     {
       "name": "lock_screen",
-      "description": "Lock the screen or computer session.",
+      "description": "Lock the screen or computer session. Requires confirmation before locking.",
       "adapter": "system.lock",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Set to true only after the user explicitly confirms locking the screen."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "shutdown_system",
+      "description": "Shut down / power off the computer. Requires spoken confirmation before executing.",
+      "adapter": "system.shutdown",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Set to true only after the user explicitly confirms shutting down the system."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "restart_system",
+      "description": "Restart / reboot the computer. Requires spoken confirmation before executing.",
+      "adapter": "system.restart",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Set to true only after the user explicitly confirms restarting the system."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "confirm_system_action",
+      "description": "Confirm a pending system action (such as shutdown, restart, or lock screen) after the user says yes, confirm, or proceed.",
+      "adapter": "system.confirm_action",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "heard_phrase": {
+            "type": "string",
+            "description": "The exact confirmation phrase spoken by the user (e.g. 'yes', 'confirm', 'proceed')."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_system_action",
+      "description": "Cancel a pending system action (such as shutdown, restart, or lock screen) when the user says cancel, abort, or no.",
+      "adapter": "system.cancel_action",
       "parameters_json_schema": {
         "type": "object",
         "properties": {},

@@ -63,6 +63,7 @@ from skills.domains.github import GithubDomain, ADAPTERS as GITHUB_ADAPTERS, ADA
 from skills.domains.orchestration import OrchestrationDomain, ADAPTERS as ORCHESTRATION_ADAPTERS, ADAPTER_COMMANDS as ORCHESTRATION_COMMANDS
 from skills.domains.composio import ComposioDomain, ADAPTERS as COMPOSIO_ADAPTERS, ADAPTER_COMMANDS as COMPOSIO_COMMANDS
 from skills.domains.api_anything import ApiAnythingDomain, ADAPTERS as API_ANYTHING_ADAPTERS, ADAPTER_COMMANDS as API_ANYTHING_COMMANDS
+from skills.domains.widgets import WidgetsDomain, ADAPTERS as WIDGET_ADAPTERS, ADAPTER_COMMANDS as WIDGET_COMMANDS
 from orchestration.tool_tiers import CORE_TOOLS, META_TOOLS, DOMAINS, META_SPECS, domain_for_tool
 
 
@@ -70,7 +71,7 @@ def _normalized(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.casefold())
 
 
-class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain):
+class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain):
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
     # ── Adapter → method mapping ──────────────────────────────────────
@@ -80,8 +81,17 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **ORCHESTRATION_ADAPTERS,
         **COMPOSIO_ADAPTERS,
         **API_ANYTHING_ADAPTERS,
+        **WIDGET_ADAPTERS,
+        'harness.status': '_adapter_harness_status',
+        'harness.start_check': '_adapter_start_harness_check',
+        'harness.check_status': '_adapter_harness_check_status',
+        'harness.cancel_check': '_adapter_cancel_harness_check',
+        'learning.status': '_adapter_learning_status',
+        'learning.lessons': '_adapter_learning_lessons',
+        'learning.feedback': '_adapter_learning_feedback',
         'domains.discover': '_adapter_discover_domain_tools',
         'domains.execute': '_adapter_execute_domain_tool',
+        'parsing.values': '_adapter_parse_command_values',
         'jarvis.switch_mode': '_adapter_switch_jarvis_mode',
         'jarvis.get_mode': '_adapter_get_jarvis_mode',
         'jarvis.sync_branch': '_adapter_sync_jarvis_branch',
@@ -97,6 +107,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'workspace.switch': '_adapter_switch_workspace',
         'notification.show': '_adapter_show_notification',
         'system.lock': '_adapter_lock_screen',
+        'system.shutdown': '_adapter_shutdown_system',
+        'system.restart': '_adapter_restart_system',
+        'system.confirm_action': '_adapter_confirm_system_action',
+        'system.cancel_action': '_adapter_cancel_system_action',
         'system.screenshot': '_adapter_take_screenshot',
         'window.manage': '_adapter_manage_window',
         'system.power': '_adapter_system_power',
@@ -240,6 +254,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'workspace.switch': ('hyprctl',),
         'notification.show': ('notify-send',),
         'system.lock': ('loginctl',),
+        'system.shutdown': ('systemctl',),
+        'system.restart': ('systemctl',),
+        'system.confirm_action': (),
+        'system.cancel_action': (),
         'system.screenshot': ('grim',),
         'window.manage': ('hyprctl',),
         'system.power': ('systemctl',),
@@ -290,6 +308,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'window.list': ('hyprctl',),
         'window.focus': ('hyprctl',),
         'workspace.list': ('hyprctl',),
+        **WIDGET_COMMANDS,
         'input_bar.open': ('omarchy-launch-webapp',),
         'input_bar.close': ('hyprctl',),
         'proactive.enqueue': (),
@@ -367,6 +386,14 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         'system_power': 'control_power',
         'adjust_volume': 'set_volume',
         'adjust_brightness': 'set_brightness',
+        'shutdown': 'shutdown_system',
+        'poweroff': 'shutdown_system',
+        'power_off': 'shutdown_system',
+        'restart': 'restart_system',
+        'reboot': 'restart_system',
+        'lock': 'lock_screen',
+        'confirm': 'confirm_system_action',
+        'cancel': 'cancel_system_action',
     }
 
     def __init__(self, manifest_dirs=None, *, config=None,
@@ -468,6 +495,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             local_native = Path(__file__).resolve().parent / 'native' / 'bin' / 'vision_ctrl'
             if local_native.is_file() and os.access(str(local_native), os.X_OK):
                 return str(local_native)
+        if name == 'cli-hub':
+            integration_cli = Path.home() / '.local/share/jarvis-integrations/venv/bin/cli-hub'
+            if integration_cli.is_file() and os.access(integration_cli, os.X_OK):
+                return str(integration_cli)
         return shutil.which(name)
 
     def refresh_capabilities(self):
@@ -821,14 +852,23 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         """
         if timeout is None:
             timeout = self._command_timeout
+        env = system_control._desktop_env()
+        env['CLI_HUB_NO_ANALYTICS'] = '1'
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                limit=64 * 1024, env=system_control._desktop_env())
+                limit=64 * 1024, env=env)
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             raise SkillError(f'{argv[0]} is not installed on this desktop') from None
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
+        except asyncio.CancelledError:
+            # The outer voice/domain deadline can cancel before this command's
+            # own timeout. Do not leave an orphan acting after its turn ends.
+            if process.returncode is None:
+                process.kill()
+            await process.communicate()
+            raise
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -1211,9 +1251,13 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             finally:
                 if hasattr(self, '_task_runner') and hasattr(self._task_runner, 'close'):
                     await self._task_runner.close()
+                if getattr(self, '_task_presentation', None) is not None:
+                    self._task_presentation.close()
                 await self._file_worker.close()
 
     async def _adapter_open_input_bar(self):
+        # The JARVIS input bar includes attachments. The canvas's optional
+        # text-only field is a separate surface, not a replacement for it.
         url = self.test_bar.start()
         overlay_script = os.path.join(os.path.dirname(__file__), 'overlay_client.py')
         if os.path.isfile(overlay_script) and os.path.isfile('/usr/bin/python3'):
@@ -1232,6 +1276,11 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         return {'status': 'opened', 'accepts': ['text', 'image', 'audio', 'pdf', 'file']}
 
     async def _adapter_close_input_bar(self):
+        try:
+            from ui.jarvis_widgets.backend import shell_call
+            await asyncio.to_thread(shell_call, 'closeInput')
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            pass
         closed = self.test_bar.close()
         windows = await self._adapter_list_windows()
         matches = [item for item in windows['windows']
@@ -1369,14 +1418,14 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, WorkerBusyError) as error:
             raise SkillError(str(error)) from None
 
-    async def _adapter_remember_memory(self, text):
-        return await self._memory_operation('remember', text=text)
+    async def _adapter_remember_memory(self, text, category='auto', scope='user', steps=None, outcome=None, occurred_at=None):
+        return await self._memory_operation('remember', text=text, category=category, scope=scope, steps=steps, outcome=outcome, occurred_at=occurred_at)
 
-    async def _adapter_recall_memory(self, query='', limit=20):
-        return await self._memory_operation('recall', query=query, limit=limit)
+    async def _adapter_recall_memory(self, query='', limit=20, device=None, category='all', scope='user'):
+        return await self._memory_operation('recall', query=query, limit=limit, device=device, category=category, scope=scope)
 
-    async def _adapter_forget_memory(self, text):
-        return await self._memory_operation('forget', text=text)
+    async def _adapter_forget_memory(self, text, scope='user'):
+        return await self._memory_operation('forget', text=text, scope=scope)
 
     async def _adapter_clear_memory(self):
         return await self._memory_operation('clear')
@@ -1408,15 +1457,38 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         """Terminal updates from durable background task execution."""
         return self._task_runner.events
 
+    def _task_presenter(self):
+        if getattr(self, '_task_presentation', None) is None:
+            from orchestration.task_presentation import TaskPresentation
+            self._task_presentation = TaskPresentation(self)
+        return self._task_presentation
+
+    async def refresh_task_presentation(self):
+        presenter = self._task_presenter()
+        await presenter.refresh()
+        return await asyncio.to_thread(presenter.notices)
+
+    async def _task_event_response(self, source, job):
+        try:
+            presenter = self._task_presenter()
+            event = await asyncio.to_thread(presenter.observe, source, copy.deepcopy(job))
+        except Exception as error:
+            # Presentation failure must not turn an admitted job into a failed
+            # tool call that encourages the user/model to submit it again.
+            log.warning('Task presentation unavailable: %s', type(error).__name__)
+            return {**job, 'task_event': None, 'presentation_status': 'unavailable'}
+        return {**job, 'task_event': event}
+
     async def _adapter_start_task(self, description, plan_json):
         try:
-            return self._task_runner.start(description, plan_json)
+            job = self._task_runner.start(description, plan_json)
+            return await self._task_event_response('file_task', job)
         except TaskPlanError as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_task_status(self, task_id):
         try:
-            return self._task_runner.status(task_id)
+            return await self._task_event_response('file_task', self._task_runner.status(task_id))
         except TaskPlanError as error:
             raise SkillError(str(error)) from None
 
@@ -1425,7 +1497,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
 
     async def _adapter_cancel_task(self, task_id):
         try:
-            return self._task_runner.cancel(task_id)
+            return await self._task_event_response('file_task', self._task_runner.cancel(task_id))
         except TaskPlanError as error:
             raise SkillError(str(error)) from None
 
@@ -1711,6 +1783,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         await self._run(self._command('notify-send'),
                         f'--app-name={self._app_name}', title, message)
         return {'status': 'shown'}
+
+    async def _adapter_parse_command_values(self, **arguments):
+        from jarvis_control.parsing_service import parse_command_values
+        return await parse_command_values(**arguments)
 
     async def _adapter_create_reminder(self, minutes, message='Reminder'):
         """Create a reminder in Omarchy's native reminder system."""
@@ -2198,6 +2274,13 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
             }
 
         target_mode = 'off' if clean_action == 'stop' else clean_mode
+        if target_mode == 'camera':
+            if not Path('/dev/video0').exists():
+                raise SkillError('Camera vision is unavailable: /dev/video0 is missing. Connect a webcam first.')
+            if not shutil.which('ffmpeg'):
+                raise SkillError('Camera vision is unavailable: ffmpeg is not installed.')
+        elif target_mode == 'screen' and not (self._commands.get('grim') or shutil.which('grim')):
+            raise SkillError('Screen vision is unavailable: grim is not installed.')
         if self.vision_mode == target_mode:
             if target_mode == 'camera' and self._camera_stream_proc is not None and self._camera_stream_proc.poll() is None:
                 return {
@@ -2398,10 +2481,82 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
 
     # ── New system control adapters ───────────────────────────────────
 
-    async def _adapter_lock_screen(self):
-        """Lock the current session via loginctl."""
+    async def _adapter_lock_screen(self, confirm=False):
+        """Lock the current session via loginctl with confirmation sequence."""
+        if not confirm:
+            from skills.system_power import POWER_MANAGER
+            return POWER_MANAGER.request_action("lock_screen", confirm=False)
+        from skills.system_power import POWER_MANAGER
+        POWER_MANAGER.clear_pending()
         await self._run(self._command('loginctl'), 'lock-session')
-        return {'status': 'locked'}
+        return {'status': 'locked', 'action': 'lock_screen', 'confirmed': True}
+
+    async def _adapter_shutdown_system(self, confirm=False):
+        """Shut down the computer with confirmation sequence."""
+        if not confirm:
+            from skills.system_power import POWER_MANAGER
+            return POWER_MANAGER.request_action("shutdown", confirm=False)
+        from skills.system_power import POWER_MANAGER
+        POWER_MANAGER.clear_pending()
+        asyncio.create_task(self._deferred_power_command(self._command('systemctl'), 'poweroff', delay=2.0))
+        return {
+            'status': 'executing',
+            'action': 'shutdown',
+            'confirmed': True,
+            'message': 'Shutting down system in two seconds. Goodbye.',
+        }
+
+    async def _adapter_restart_system(self, confirm=False):
+        """Restart the computer with confirmation sequence."""
+        if not confirm:
+            from skills.system_power import POWER_MANAGER
+            return POWER_MANAGER.request_action("restart", confirm=False)
+        from skills.system_power import POWER_MANAGER
+        POWER_MANAGER.clear_pending()
+        asyncio.create_task(self._deferred_power_command(self._command('systemctl'), 'reboot', delay=2.0))
+        return {
+            'status': 'executing',
+            'action': 'restart',
+            'confirmed': True,
+            'message': 'Restarting system in two seconds.',
+        }
+
+    async def _adapter_confirm_system_action(self, heard_phrase="yes"):
+        """Confirm the pending power/session action."""
+        from skills.system_power import POWER_MANAGER, CONFIRM_PHRASES
+        pending = POWER_MANAGER.get_pending()
+        if not pending:
+            return {'status': 'error', 'message': 'No system action is currently waiting for confirmation.'}
+        cleaned = str(heard_phrase).lower().strip().strip("!.,?\"'")
+        words = set(cleaned.split())
+        if not (words & CONFIRM_PHRASES or cleaned in CONFIRM_PHRASES):
+            return {
+                'status': 'error',
+                'message': f"'{heard_phrase}' is not a recognized confirmation. Say confirm to proceed, or cancel to abort.",
+                'pending_action': pending['action'],
+            }
+        action = pending['action']
+        if action in ('shutdown', 'poweroff'):
+            return await self._adapter_shutdown_system(confirm=True)
+        if action in ('restart', 'reboot'):
+            return await self._adapter_restart_system(confirm=True)
+        if action in ('lock', 'lock_screen'):
+            return await self._adapter_lock_screen(confirm=True)
+        POWER_MANAGER.clear_pending()
+        return {'status': 'error', 'message': f"Unknown pending action: {action}"}
+
+    async def _adapter_cancel_system_action(self):
+        """Cancel the pending power/session action."""
+        from skills.system_power import POWER_MANAGER
+        return POWER_MANAGER.cancel_action()
+
+    async def _deferred_power_command(self, cmd: str, arg: str, delay: float = 2.0) -> None:
+        """Wait for spoken turn confirmation to complete, then execute power command."""
+        await asyncio.sleep(delay)
+        try:
+            await self._run(cmd, arg)
+        except Exception as error:
+            log.warning("Deferred power command %s %s failed: %s", cmd, arg, error)
 
     async def _adapter_take_screenshot(self, region='full'):
         """Capture a screenshot using grim."""
@@ -2511,6 +2666,57 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         except Exception as error:
             raise SkillError(f"Failed to sync JARVIS branch: {error}") from None
 
+    async def _learning_call(self, method, *args, **kwargs):
+        if self.learning_service is None:
+            if method == 'status':
+                return {'enabled': False, 'automatic_refinement': False,
+                        'message': 'Learning capture is disabled. Start JARVIS with --learning-dir to enable it.'}
+            raise SkillError('Research learning is disabled; start with --learning-dir')
+        try:
+            return await self._file_worker.run(getattr(self.learning_service, method), *args, **kwargs)
+        except (OSError, ValueError, KeyError, sqlite3.Error, WorkerBusyError) as error:
+            raise SkillError('Research learning operation unavailable: ' + type(error).__name__) from None
+
+    async def _adapter_learning_status(self):
+        return await self._learning_call('status')
+
+    async def _adapter_harness_status(self):
+        if self.learning_service is None:
+            from learning.jobs import local_status
+            return {**(await self._file_worker.run(local_status)), 'learning_enabled': False,
+                    'next_actions': ['Start one JARVIS instance using scripts/start-learning.sh.']}
+        return await self._learning_call('harness_status')
+
+    def _harness_jobs(self):
+        if self.learning_service is None:
+            raise SkillError('Local Harness checks require scripts/start-learning.sh or --learning-dir')
+        return self.learning_service.jobs
+
+    async def _adapter_start_harness_check(self):
+        try:
+            return self._harness_jobs().start()
+        except (ValueError, OSError) as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_harness_check_status(self, job_id=None):
+        try:
+            return self._harness_jobs().status(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_cancel_harness_check(self, job_id=None):
+        try:
+            return await self._harness_jobs().cancel(job_id)
+        except ValueError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_learning_lessons(self):
+        return await self._learning_call('lessons')
+
+    async def _adapter_learning_feedback(self, text, category='other'):
+        episode = self.learning_service.capture.previous if self.learning_service is not None else None
+        return await self._learning_call('feedback', text, category, episode)
+
     async def _adapter_system_update(self, action="check"):
         """Check, apply, or roll back standalone JARVIS OS releases."""
         try:
@@ -2528,9 +2734,12 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         except Exception as error:
             raise SkillError(f"System update failed: {error}") from None
 
-    async def _adapter_control_power(self, action):
+    async def _adapter_control_power(self, action, confirm=False):
         """Manage system power profile and sleep states."""
-        res = await system_control.control_power(action)
+        if confirm:
+            res = await system_control.control_power(action, confirm=True)
+        else:
+            res = await system_control.control_power(action)
         if res.get('status') == 'error':
             raise SkillError(res.get('message', 'failed to control power'))
         return res
@@ -2588,9 +2797,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         if process.returncode:
             raise SkillError('clipboard write failed')
         from skills import ground_truth
-        verified = await ground_truth.verify_clipboard_state(expected_snippet=content[:50], timeout=1.0)
+        verified = await ground_truth.verify_clipboard_state(expected_content=content, timeout=1.0)
         return {
-            'status': 'written',
+            'status': 'written' if verified.get('verified') else 'unverified',
+            'verified': bool(verified.get('verified')),
             'length': len(content),
             'ground_truth_verified': bool(verified.get('verified')),
         }
@@ -2783,6 +2993,11 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         # The entry point is not always `cli-anything-<name>` (26 of the 103
         # registry CLIs differ), so take it from the registry record.
         cli_name = record.get('entry_point') or f'cli-anything-{name}'
+        if not isinstance(cli_name, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}', cli_name):
+            raise SkillError('Registry returned an invalid CLI entry point')
+        local_entry = Path.home() / '.local/share/jarvis-integrations/venv/bin' / cli_name
+        if local_entry.is_file() and os.access(local_entry, os.X_OK):
+            cli_name = str(local_entry)
         cmd = [cli_name]
         if args:
             cmd.extend(str(argument) for argument in args)
@@ -2794,8 +3009,9 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 return self._cli_hub_json(output, f'launch {name}')
             return {'output': output}
         if args:
-            await self._launch(*cmd)
-            return {'status': 'launched', 'cli': cli_name}
+            output = await self._run(*cmd, timeout=60, max_output=self._CLI_HUB_MAX_OUTPUT)
+            return {'status': 'unverified', 'completed': False, 'cli': cli_name,
+                    'output': output, 'reason': 'Process exited; verify the requested application effect before claiming completion.'}
         output = await self._run(*cmd, timeout=60, max_output=self._CLI_HUB_MAX_OUTPUT)
         return {'output': output}
 

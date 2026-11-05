@@ -92,6 +92,23 @@ def test_standby_farewells():
         assert allowed is True
 
 
+@pytest.mark.parametrize('phrase', [
+    "Don't speak until I call you", 'Do not talk until I wake you',
+    'Don’t respond again until I say Hey Jarvis',
+])
+def test_natural_request_to_wait_until_recalled_is_allowed(phrase):
+    assert NLUEngine.analyze(phrase).category == IntentCategory.STANDBY
+    assert NLUEngine.validate_tool_intent('enter_standby', {}, phrase)[0]
+
+
+@pytest.mark.parametrize('phrase', [
+    'Stop talking', "That's enough", 'Wait, I meant the other window',
+    "Don't speak until I finish this sentence",
+])
+def test_stopping_current_answer_does_not_authorize_standby(phrase):
+    assert not NLUEngine.validate_tool_intent('enter_standby', {}, phrase)[0]
+
+
 @pytest.mark.parametrize('text', [
     'Could you increase the volume?', 'Jarvis, please open the browser.',
     'Can you set brightness to forty percent?', 'First send hi message to me.',
@@ -154,5 +171,139 @@ def test_jarvis_mode_voice_phrases(text, expected_action):
     result = NLUEngine.analyze(text)
     assert result.category == IntentCategory.SYSTEM_CONTROL
     assert result.suggested_action == expected_action
+
+
+def test_validate_tool_intent_redirects_website_for_platform_connect():
+    user_text = "Jarvis, connect to LinkedIn"
+    allowed, guidance = NLUEngine.validate_tool_intent("open_website", {"url": "https://linkedin.com"}, user_text)
+    assert allowed is False
+    assert "connect_platform" in guidance
+    assert "linkedin" in guidance
+
+
+def test_validate_tool_intent_redirects_for_authorization_page():
+    user_text = "Open specific platform authorization page"
+    allowed, guidance = NLUEngine.validate_tool_intent("open_website", {"url": "https://example.com"}, user_text)
+    assert allowed is False
+    assert "open_platform_authorization" in guidance or "connect_platform" in guidance
+
+
+def test_validate_tool_intent_redirects_for_connection_status():
+    user_text = "Is LinkedIn connected or not?"
+    allowed, guidance = NLUEngine.validate_tool_intent("open_website", {"url": "https://linkedin.com"}, user_text)
+    assert allowed is False
+    assert "check_platform_connection" in guidance
+
+
+def test_validate_tool_intent_allows_platform_tools():
+    assert NLUEngine.validate_tool_intent("connect_platform", {"platform": "linkedin"}, "connect to linkedin")[0] is True
+    assert NLUEngine.validate_tool_intent("open_platform_authorization", {"platform": "slack"}, "open slack auth page")[0] is True
+    assert NLUEngine.validate_tool_intent("check_platform_connection", {"platform": "slack"}, "is slack connected")[0] is True
+
+
+def test_validate_tool_intent_native_github_and_google_routing():
+    # GitHub auth words allow native github_authorize
+    assert NLUEngine.validate_tool_intent("github_authorize", {}, "open github auth page")[0] is True
+    assert NLUEngine.validate_tool_intent("github_authorize", {}, "authorize github account")[0] is True
+    assert NLUEngine.validate_tool_intent("github_authorize", {}, "connect github")[0] is True
+
+    # Google auth words allow native google_authorize
+    assert NLUEngine.validate_tool_intent("google_authorize", {}, "open google authorization page")[0] is True
+    assert NLUEngine.validate_tool_intent("google_authorize", {}, "connect google workspace")[0] is True
+
+    # Composio auth tools for GitHub and Google must redirect to native tools
+    allowed_gh, msg_gh = NLUEngine.validate_tool_intent("open_platform_authorization", {"platform": "github"}, "open github auth page")
+    assert allowed_gh is False
+    assert "github_authorize" in msg_gh
+
+    allowed_gw, msg_gw = NLUEngine.validate_tool_intent("open_platform_authorization", {"platform": "google"}, "open google auth page")
+    assert allowed_gw is False
+    assert "google_authorize" in msg_gw
+
+    # Composio status tool for GitHub and Google must redirect to native status tools
+    allowed_gh_s, msg_gh_s = NLUEngine.validate_tool_intent("check_platform_connection", {"platform": "github"}, "check github status")
+    assert allowed_gh_s is False
+    assert "github_connection_status" in msg_gh_s
+
+    allowed_gw_s, msg_gw_s = NLUEngine.validate_tool_intent("check_platform_connection", {"platform": "google"}, "check google status")
+    assert allowed_gw_s is False
+    assert "google_connection_status" in msg_gw_s
+
+
+def test_validate_tool_intent_blocks_auth_page_without_auth_keyword():
+    # User asks general repo/calendar question without auth keyword -> auth page tools blocked
+    allowed_gh, msg_gh = NLUEngine.validate_tool_intent("github_authorize", {}, "what repositories do i have on github?")
+    assert allowed_gh is False
+    assert "Do NOT invoke github_authorize" in msg_gh
+
+    allowed_gw, msg_gw = NLUEngine.validate_tool_intent("google_authorize", {}, "show my calendar events on google")
+    assert allowed_gw is False
+    assert "did not mention any authorization-related keyword" in msg_gw
+
+    allowed_pl, msg_pl = NLUEngine.validate_tool_intent("open_platform_authorization", {"platform": "spotify"}, "play music on spotify")
+    assert allowed_pl is False
+    assert "did not mention any authorization-related keyword" in msg_pl
+
+
+def test_validate_tool_intent_blocks_auth_page_on_status_inquiries():
+    # Asking whether it is connected or connecting must NOT open the authorization page
+    for phrase in [
+        "is it connecting to those or not",
+        "check if github is connected or not",
+        "connecting to those or not",
+        "is github connected",
+    ]:
+        allowed_gh, msg_gh = NLUEngine.validate_tool_intent("github_authorize", {}, phrase)
+        assert allowed_gh is False
+        assert "github_connection_status" in msg_gh
+
+    for phrase in [
+        "is google connected or not",
+        "is google connecting or not",
+        "check connection status of google",
+    ]:
+        allowed_gw, msg_gw = NLUEngine.validate_tool_intent("google_authorize", {}, phrase)
+        assert allowed_gw is False
+        assert "google_connection_status" in msg_gw
+
+    for phrase in [
+        "is notion connected or connecting",
+        "is linkedin connecting to those or not",
+        "check connection status of slack",
+    ]:
+        allowed_p, msg_p = NLUEngine.validate_tool_intent("open_platform_authorization", {"platform": "notion"}, phrase)
+        assert allowed_p is False
+        assert "check_platform_connection" in msg_p
+
+
+@pytest.mark.parametrize("text,expected_action", [
+    ("shudown the pc", "shutdown"),
+    ("shut down the computer", "shutdown"),
+    ("power off", "shutdown"),
+    ("restart the pc", "restart"),
+    ("reboot the computer", "restart"),
+    ("reboot the system", "restart"),
+    ("lock the screnn", "lock_screen"),
+    ("lock screen", "lock_screen"),
+    ("lock the screen", "lock_screen"),
+    ("lock pc", "lock_screen"),
+    ("confirm", "confirm_action"),
+    ("yes", "confirm_action"),
+    ("proceed", "confirm_action"),
+    ("cancel", "cancel_action"),
+    ("abort", "cancel_action"),
+])
+def test_power_and_confirmation_nlu_classification(text, expected_action):
+    result = NLUEngine.analyze(text)
+    assert result.category == IntentCategory.SYSTEM_CONTROL
+    assert result.suggested_action == expected_action
+
+
+def test_phonetic_misspellings_power_and_confirmation():
+    assert "shutdown" in NLUEngine.normalize_text("shudown the computer")
+    assert "screen" in NLUEngine.normalize_text("lock the screnn")
+    assert "confirmation" in NLUEngine.normalize_text("with conformation")
+
+
 
 

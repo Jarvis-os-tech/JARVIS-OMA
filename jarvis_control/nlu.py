@@ -52,6 +52,9 @@ class NLUEngine:
         (r'\b(production mood|prod mood)\b', 'production mode'),
         (r'\b(actavtethe|actavte|activatethe)\b', 'activate the'),
         (r'\b(wi fi|wi-fi)\b', 'wifi'),
+        (r'\b(shudown)\b', 'shutdown'),
+        (r'\b(screnn|scren)\b', 'screen'),
+        (r'\b(conformation)\b', 'confirmation'),
     ]
 
     # Multilingual / Hinglish conversational inquiry patterns
@@ -81,6 +84,7 @@ class NLUEngine:
     STANDBY_TRIGGERS = [
         r'\b(enter standby|go to standby|standby mode|go to sleep|sleep now|shut up|be quiet|mute yourself)\b',
         r'\b(stop listening|standby jarvis|jarvis standby)\b',
+        r"\b(?:don't|don’t|do not) (?:speak|talk|respond)(?: again)? until i (?:call|wake|recall|say hey jarvis)\b",
         r'\b(goodbye|bye jarvis|goodbye jarvis|bye bye|see you later|i have to go|i gotta go|alvida|chalta hoon)\b',
     ]
 
@@ -92,7 +96,9 @@ class NLUEngine:
         'unmute': r'\b(unmute|restore volume)\b',
         'brightness_up': r'\b(increase brightness|raise brightness|brighter)\b',
         'brightness_down': r'\b(decrease brightness|lower brightness|dimmer|dim screen)\b',
-        'lock_screen': r'\b(lock screen|lock pc|lock computer)\b',
+        'lock_screen': r'\b(lock (the )?screen|lock pc|lock computer)\b',
+        'shutdown': r'\b(shut down|shutdown|turn off the (pc|computer|system)|power off)\b',
+        'restart': r'\b(restart|reboot|restart the (pc|computer|system)|reboot the (pc|computer|system))\b',
     }
 
     # Conversational statement / troubleshooting / status check patterns
@@ -144,12 +150,12 @@ class NLUEngine:
         trailing_space = " " if text.endswith(" ") else ""
         normalized = text.strip()
 
-        # Phonetic replacements
-        for pattern, replacement in cls.PHONETIC_REPLACEMENTS:
-            normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
-
-        # Clean multiple spaces and trailing punctuation artifacts
-        normalized = re.sub(r'\s+', ' ', normalized)
+        from .command_values import transform_unprotected
+        def clean(fragment):
+            for pattern, replacement in cls.PHONETIC_REPLACEMENTS:
+                fragment = re.sub(pattern, replacement, fragment, flags=re.IGNORECASE)
+            return re.sub(r'\s+', ' ', fragment)
+        normalized = transform_unprotected(normalized, clean)
         res = normalized.strip()
         if not res:
             return ""
@@ -157,9 +163,19 @@ class NLUEngine:
 
     @classmethod
     def analyze(cls, text: str) -> NLUResult:
+        from .command_values import number_slots, parse_control_command
+        result = cls._classify(text)
+        command = parse_control_command(text)
+        if command:
+            result.entities.update(control_arguments=command[1], values=number_slots(text))
+        return result
+
+    @classmethod
+    def _classify(cls, text: str) -> NLUResult:
         """Classify user utterance into semantic intent category with entity extraction."""
         normalized = cls.normalize_text(text)
-        lower = normalized.casefold()
+        from .command_values import mask_protected
+        lower = mask_protected(normalized).casefold()
 
         # 1. Check Standby Intent
         for pattern in cls.STANDBY_TRIGGERS:
@@ -226,6 +242,51 @@ class NLUEngine:
                 category=IntentCategory.SYSTEM_CONTROL,
                 confidence=0.95,
                 suggested_action="get_jarvis_mode",
+            )
+
+        # Check explicit confirmation / cancellation of held actions
+        stripped_short = lower.strip(' .!')
+        if re.fullmatch(r'\b(yes|confirm|proceed|do it|sure|yeah|yep|go ahead|affirmative|yes please)\b', stripped_short):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="confirm_action",
+            )
+        if re.fullmatch(r'\b(no|cancel|stop|abort|don\'t|dont|nevermind|wait)\b', stripped_short):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="cancel_action",
+            )
+
+        # Check explicit shutdown / restart / lock triggers
+        if re.search(r'\b(shut down|shutdown|turn off the (pc|computer|system)|power off)\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="shutdown",
+            )
+        if re.search(r'\b(restart|reboot|restart the (pc|computer|system)|reboot the (pc|computer|system))\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="restart",
+            )
+        if re.search(r'\b(lock (the )?screen|lock pc|lock computer)\b', lower):
+            return NLUResult(
+                raw_text=text,
+                normalized_text=normalized,
+                category=IntentCategory.SYSTEM_CONTROL,
+                confidence=0.95,
+                suggested_action="lock_screen",
             )
 
         # Polite action requests are commands, even when phrased as a question.
@@ -338,15 +399,25 @@ class NLUEngine:
                 return False, 'Domain tool arguments must be an object.'
             return cls.validate_tool_intent(nested_name, nested_args, user_text)
 
+        from .command_values import control_value_guidance
+        guidance = control_value_guidance(tool_name, arguments, user_text)
+        if guidance:
+            return False, guidance
+
         targets = cls.device_targets(user_text)
-        if tool_name == 'phone_control' and 'phone' not in targets:
+        if tool_name.startswith('phone_') and tool_name != 'phone_pair' and 'phone' not in targets:
+            conversational = (tool_name in {'phone_list_contacts', 'phone_call'} and
+                              cls.analyze(user_text).is_conversational_inquiry)
             return False, (
+                ('The user is asking a conversational question. Answer their inquiry. ' if conversational else '') +
                 'This request targets the PC by default. Use the matching PC tool. '
                 'Android phone control requires an explicit phone/mobile target in the current user request; '
                 'previous phone requests do not change the default.'
             )
         pc_tools = {'launch_app', 'open_application', 'open_website', 'open_page', 'browser_task',
-                    'system_control', 'system_control_extension', 'hypr_dispatch', 'hypr_query',
+                    'system_control', 'system_control_extension', 'system_power', 'lock_screen',
+                    'shutdown_system', 'restart_system', 'confirm_last', 'cancel_last',
+                    'confirm_system_action', 'cancel_system_action', 'hypr_dispatch', 'hypr_query',
                     'list_applications', 'list_windows', 'list_workspaces', 'read_screen',
                     'type_text', 'press_key', 'send_shortcut', 'set_volume', 'set_brightness',
                     'switch_workspace', 'manage_window', 'focus_window'}
@@ -355,6 +426,140 @@ class NLUEngine:
 
         if not user_text and tool_name != 'phone_pair':
             return True, ""
+
+        from .command_values import mask_protected
+        lower_user = mask_protected(user_text).casefold() if user_text else ''
+        platform_names = [
+            'linkedin', 'github', 'slack', 'notion', 'spotify', 'google calendar', 'gcal',
+            'google drive', 'gdrive', 'google sheets', 'gsheets', 'google docs', 'gdocs',
+            'google workspace', 'google', 'gmail', 'discord', 'linear', 'jira', 'trello',
+            'twitter', 'asana', 'zoom', 'airtable', 'hubspot', 'salesforce', 'figma',
+            'gitlab', 'reddit', 'dropbox', 'clickup', 'whatsapp', 'telegram', 'stripe',
+            'zendesk', 'shopify', 'teams', 'outlook', 'todoist'
+        ]
+        detected_platform = None
+        for p in platform_names:
+            if re.search(r'\b' + re.escape(p) + r'\b', lower_user):
+                detected_platform = p
+                break
+
+        auth_page_tools = {'github_authorize', 'google_authorize', 'open_platform_authorization', 'connect_platform'}
+        auth_word_pattern = (
+            r'\b(authori[zs]e|authori[zs]ation|authori[zs]ing|authori[zs]ed|'
+            r'auth|authenticat(e|ion|ing|ed)|re-?authori[zs]e|re-?authenticat(e|ion)|'
+            r'login\s*page|log\s*in|sign\s*in|connect|reconnect|link|re-?link)\b'
+        )
+        has_auth_word = bool(re.search(auth_word_pattern, lower_user))
+
+        is_connection_status_intent = bool(re.search(
+            r'\b(is\s*it\s*connect(ed|ing)?|connecting\s*to\s*those\s*or\s*not|connected\s*or\s*not|connecting\s*or\s*not|check\s*connection|status\s*of\s*connection|connection\s*status)\b',
+            lower_user
+        ) or (re.search(r'\b(is|are|check|verify)\b.*\b(connect(ed|ing)?|linked)\b', lower_user) and (detected_platform or 'platform' in lower_user or 'service' in lower_user)))
+
+        # Rule: Status inquiries must NEVER open an authorization page
+        if is_connection_status_intent:
+            if tool_name in auth_page_tools:
+                target = detected_platform or arguments.get('platform') or 'the platform'
+                if target in ('github', 'gh', 'git') or tool_name == 'github_authorize':
+                    log.info('NLU Gate blocked %s: user asked for connection status ("%s")', tool_name, user_text)
+                    return False, (
+                        f"The user is asking whether GitHub is connected or not: '{user_text}'. "
+                        "Do NOT open the authorization page or invoke github_authorize. "
+                        "Invoke native 'github_connection_status' instead to check and report connection status."
+                    )
+                if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail') or tool_name == 'google_authorize':
+                    log.info('NLU Gate blocked %s: user asked for connection status ("%s")', tool_name, user_text)
+                    return False, (
+                        f"The user is asking whether Google Workspace is connected or not: '{user_text}'. "
+                        "Do NOT open the authorization page or invoke google_authorize. "
+                        "Invoke native 'google_connection_status' instead to check and report connection status."
+                    )
+                log.info('NLU Gate blocked %s: user asked for connection status ("%s")', tool_name, user_text)
+                return False, (
+                    f"The user is asking whether {target} is connected or connecting: '{user_text}'. "
+                    f"Do NOT open the authorization page or invoke {tool_name}. "
+                    f"Invoke 'check_platform_connection' with platform='{target}' instead to check and report status."
+                )
+
+            if tool_name in ('open_website', 'open_application', 'launch_app', 'open_page', 'web_search'):
+                target = detected_platform or 'the platform'
+                log.info('NLU Gate redirected %s to status tool: "%s"', tool_name, user_text)
+                if target in ('github', 'gh', 'git'):
+                    return False, f"The user is asking whether GitHub is connected. Invoke 'github_connection_status' instead of {tool_name}."
+                if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
+                    return False, f"The user is asking whether Google Workspace is connected. Invoke 'google_connection_status' instead of {tool_name}."
+                return False, f"The user is asking whether {target} is connected or connecting. Invoke 'check_platform_connection' with platform='{target}' instead of {tool_name}."
+
+        # Rule: Authorization page tools require an explicit authorization-related keyword
+        if tool_name in auth_page_tools:
+            if not has_auth_word:
+                log.info('NLU Gate blocked %s: no authorization-related word in utterance ("%s")', tool_name, user_text)
+                if tool_name == 'github_authorize':
+                    return False, (
+                        "Do NOT invoke github_authorize. The user asked: "
+                        f"'{user_text}'. All repositories and agent architectures are local on this PC (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). "
+                        "Use local inspection tools (such as list_files, search_files, read_file) or discuss the repository directly."
+                    )
+                return False, (
+                    f"Do NOT invoke '{tool_name}' (do not open the authorization page). "
+                    "The user did not mention any authorization-related keyword (authorize, auth, authenticate, login page, sign in, connect, link). "
+                    f"Utterance was: '{user_text}'. Address their inquiry or use inspection/read tools without opening an authorization page."
+                )
+
+            # User DID mention an auth word; enforce native GitHub & Google routing
+            if tool_name in ('open_platform_authorization', 'connect_platform'):
+                target_platform = (arguments.get('platform') or detected_platform or '').strip().lower()
+                if target_platform in ('github', 'gh', 'git'):
+                    return False, "For GitHub authorization, invoke native 'github_authorize' instead of Composio tools."
+                if target_platform in ('google', 'google workspace', 'workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
+                    return False, "For Google Workspace authorization, invoke native 'google_authorize' instead of Composio tools."
+
+            if tool_name == 'github_authorize':
+                if not any(w in lower_user for w in ('github', 'git', 'repo', 'code')):
+                    return False, "The user did not request GitHub authorization."
+
+            if tool_name == 'google_authorize':
+                if not any(w in lower_user for w in ('google', 'workspace', 'gmail', 'calendar', 'drive', 'docs', 'sheets')):
+                    return False, "The user did not request Google Workspace authorization."
+
+            return True, ""
+
+        # Gating check_platform_connection for native platforms
+        if tool_name == 'check_platform_connection':
+            target_platform = (arguments.get('platform') or detected_platform or '').strip().lower()
+            if target_platform in ('github', 'gh', 'git'):
+                return False, "For GitHub connection status, invoke native 'github_connection_status' instead of check_platform_connection."
+            if target_platform in ('google', 'google workspace', 'workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
+                return False, "For Google Workspace connection status, invoke native 'google_connection_status' instead of check_platform_connection."
+            return True, ""
+
+        # Gating execute_platform_action for native platforms
+        if tool_name == 'execute_platform_action':
+            target_platform = (arguments.get('platform') or detected_platform or '').strip().lower()
+            if target_platform in ('github', 'gh', 'git'):
+                return False, "GitHub is configured natively on JARVIS OS. Use native GitHub tools (github_list_repositories, github_list_issues, etc.) instead of execute_platform_action."
+            if target_platform in ('google', 'google workspace', 'workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
+                return False, "Google Workspace is configured natively on JARVIS OS. Use native Google Workspace tools (gmail_search, calendar_list_events, drive_search_files, etc.) instead of execute_platform_action."
+            return True, ""
+
+        if tool_name in ('list_connected_platforms', 'disconnect_platform', 'github_connection_status', 'google_connection_status'):
+            return True, ""
+
+        # Redirect open_website when user explicitly requested to connect/authorize a platform
+        if has_auth_word and (detected_platform or any(w in lower_user for w in ('platform', 'service', 'account', 'authorization page', 'login page'))):
+            if tool_name in ('open_website', 'open_application', 'launch_app', 'open_page', 'browser_task'):
+                target = detected_platform or 'the platform'
+                log.info('NLU Gate redirected %s to platform integration: "%s"', tool_name, user_text)
+                if target in ('github', 'gh', 'git') or 'github' in lower_user:
+                    return False, f"The user wants to connect to or authorize GitHub. Do NOT invoke {tool_name}. Invoke native 'github_authorize' instead, which opens the OAuth page."
+                if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail') or 'google' in lower_user:
+                    return False, f"The user wants to connect to or authorize Google Workspace. Do NOT invoke {tool_name}. Invoke native 'google_authorize' instead, which opens the OAuth page."
+                return False, (
+                    f"The user wants to connect to or authorize {target}. "
+                    f"Do NOT invoke {tool_name}. "
+                    f"Invoke 'connect_platform' (or 'open_platform_authorization') with platform='{target}' instead, "
+                    "which generates the direct OAuth link and opens the authorization page."
+                )
 
         analysis = cls.analyze(user_text)
 
@@ -385,28 +590,8 @@ class NLUEngine:
 
         # Guard 3: Standby gating
         if tool_name == 'enter_standby' and analysis.category != IntentCategory.STANDBY:
-            lower = user_text.casefold()
+            lower = lower_user
             if not any(w in lower for w in ('standby', 'sleep', 'quiet', 'mute', 'chup', 'ruko', 'bye', 'goodbye', 'have to go', 'gotta go', 'alvida')):
                 return False, "User did not command to enter standby mode."
-
-        # Guard 4: Block github_authorize unless user explicitly commands GitHub authorization / login
-        if tool_name == 'github_authorize':
-            lower = user_text.casefold()
-            explicit_auth = bool(re.search(r'\b(authorize github|login github|connect github|link github|github login|github authorize)\b', lower))
-            if not explicit_auth:
-                log.info('NLU Gate blocked %s: user did not request GitHub authorization ("%s")', tool_name, user_text)
-                return False, (
-                    "Do NOT invoke github_authorize. The user asked to scan, examine, or report on codebases/repositories: "
-                    f"'{user_text}'. All repositories and agent architectures are local on this PC (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). "
-                    "Use local inspection tools (such as list_files, search_files, read_file) or discuss the repository directly."
-                )
-
-        # Guard 5: Block google_authorize unless user explicitly commands Google authorization / login
-        if tool_name == 'google_authorize':
-            lower = user_text.casefold()
-            explicit_auth = bool(re.search(r'\b(authorize google|login google|connect google|link google|google login|google authorize)\b', lower))
-            if not explicit_auth:
-                log.info('NLU Gate blocked %s: user did not request Google authorization ("%s")', tool_name, user_text)
-                return False, "Do NOT invoke google_authorize unless the user explicitly requests to link their Google account."
 
         return True, ""

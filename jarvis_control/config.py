@@ -76,7 +76,10 @@ LOG_FILE = STATE_DIR / "session.log"
 DEFAULT_CONFIRM = [
     r"\bshutdown\b",
     r"\breboot\b",
+    r"\brestart\b",
     r"\bpoweroff\b",
+    r"\block[-_ ]?screen\b",
+    r"\block\s+(pc|screen|computer)\b",
     r"\bsuspend\b",
     r"\bhibernat",
     r"\bomarchy\s+update\b",

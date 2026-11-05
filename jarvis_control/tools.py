@@ -1143,6 +1143,27 @@ GET_JARVIS_MODE_SCHEMA = {
 }
 TOOL_SCHEMAS.append(GET_JARVIS_MODE_SCHEMA)
 
+SYSTEM_POWER_SCHEMA = {
+    'name': 'system_power',
+    'description': (
+        'Control system power and session lock state: shutdown, restart, or lock screen. '
+        'Destructive and session locking actions require user confirmation before execution.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'action': {
+                'type': 'string',
+                'enum': ['shutdown', 'restart', 'reboot', 'poweroff', 'lock_screen', 'lock'],
+                'description': 'The power or session action to perform.'
+            }
+        },
+        'required': ['action'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(SYSTEM_POWER_SCHEMA)
+
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -1604,6 +1625,21 @@ class Executor:
             return "check jarvis mode"
         if name == "system_update":
             return f"system update: {args.get('action', 'check')}"
+        if name == "system_power":
+            act = args.get('action', '')
+            if act in ('lock', 'lock_screen'):
+                return "lock screen"
+            if act in ('shutdown', 'poweroff'):
+                return "shutdown system"
+            if act in ('restart', 'reboot'):
+                return "restart system"
+            return f"system power: {act}"
+        if name == "lock_screen":
+            return "lock screen"
+        if name == "shutdown_system":
+            return "shutdown system"
+        if name == "restart_system":
+            return "restart system"
         if name == "phone_control":
             return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
@@ -2260,9 +2296,13 @@ class Executor:
         bottom = max(w["y"] + w["h"] for w in best_span)
         return (left + right) // 2, (top + bottom) // 2
 
-    def _press_button(self, button: str, double: bool) -> Result:
+    def _press_button(self, button: str, double: bool, *, point=None, target=None) -> Result:
         """The actual click. Hyprland has no click dispatcher, so this is ydotool."""
         if not shutil.which("ydotool"):
+            if point and target and target.get('pid'):
+                return self._shell([sys.executable,str(Path(__file__).with_name('wayland_pointer.py')),
+                    '--click',target['address'],str(target['pid']),str(point[0]),str(point[1]),
+                    button,'2' if double else '1'],timeout=5)
             return Result(False, CLICK_UNAVAILABLE)
         code = YDOTOOL_BUTTONS.get(button)
         if code is None:
@@ -2307,13 +2347,16 @@ class Executor:
                           "use wording you can actually see, or scroll it into view. "
                           f"Visible OCR from this attempt (untrusted page data):\n{visible or '[no readable text]'}")
         x, y = point
+        target, why = self._window_geometry('activewindow')
+        if target is None:
+            return Result(False,why or 'No exact foreground window could be observed')
         moved = self._dispatch_lua(f'hl.dsp.cursor.move({{ x = {x}, y = {y} }})')
         if not moved.ok:
             return Result(False, f"could not move the pointer: {moved.output}")
-        pressed = self._press_button(button, double)
+        pressed = self._press_button(button, double, point=point, target=target)
         if not pressed.ok:
             return pressed
-        return Result(True, f'{"double-" if double else ""}clicked {text!r} at {x},{y}')
+        return self._input_delivery(target,f'{"Double-click" if double else "Click"} dispatched at observed text {text!r} at {x},{y}')
 
     def _tool_read_screen(self, target: str = "screen", query: str = "") -> Result:
         result = self._read_screen_text(target)
@@ -2742,14 +2785,27 @@ class Executor:
                 return self._input_delivery(window, 'Pasted text into the focused Xwayland browser')
             except (OSError, RuntimeError, page_text.SelectionError) as exc:
                 return Result(False, str(exc))
-        if not shutil.which("wtype"):
-            return Result(False, "wtype is not installed")
-        # Keep the virtual keyboard/keymap alive long enough for the target to
-        # consume the final events. Zero-delay typing followed by immediate
-        # disconnect can deliver only a prefix on real GTK/Wayland clients.
-        # stdin keeps leading '-' and other literal text out of option parsing.
-        result = self._shell(["wtype", "-d", "5", "-", "-s", "150"], input_text=text)
+        # A stable full map keeps literal characters off physical Escape, Tab
+        # and Return codes. Tiny injector maps can trigger focus/navigation in
+        # real clients even when their process reports success.
+        result = self._shell([sys.executable, str(Path(__file__).with_name('wayland_keyboard.py')),
+                              '--text'], input_text=text)
         if not result.ok:
+            if result.output.startswith('Unsupported literal text:'):
+                address = window['address']
+                def focused():
+                    current, _ = self._window_geometry('activewindow')
+                    return bool(current and current.get('address') == address and current.get('pid') == window.get('pid'))
+                def paste():
+                    terminal = any(word in browser for word in ('foot', 'kitty', 'alacritty', 'ghostty', 'terminal'))
+                    receipt = self._tool_send_shortcut('CTRL SHIFT' if terminal else 'CTRL', 'v', 'address:'+address)
+                    if not receipt.ok:
+                        raise RuntimeError(receipt.output)
+                try:
+                    page_text.paste_text(text, paste, focused)
+                    return self._input_delivery(window, 'Literal content pasted into the focused window')
+                except (OSError, RuntimeError, page_text.SelectionError) as error:
+                    return Result(False, str(error))
             return result
         current, _ = self._window_geometry('activewindow')
         if not current or current.get('address') != window.get('address') or current.get('pid') != window.get('pid'):
@@ -3482,17 +3538,27 @@ class Executor:
             # A file has no such problem — the parent exits, we read it after.
             with tempfile.TemporaryFile() as errors:
                 try:
-                    done = subprocess.run(["wl-copy", "--", text],
-                                          stdin=subprocess.DEVNULL,
+                    done = subprocess.run(["wl-copy", "--"], input=text.encode('utf-8'),
                                           stdout=subprocess.DEVNULL, stderr=errors,
-                                          timeout=10)
+                                          timeout=10, env=child_env())
                 except (OSError, subprocess.SubprocessError) as exc:
                     return Result(False, f"could not write the clipboard: {exc}")
                 if done.returncode != 0:
                     errors.seek(0)
                     detail = errors.read().decode(errors="replace").strip()
                     return Result(False, detail or "wl-copy failed")
-            return Result(True, f"copied {len(text)} characters to the clipboard")
+            verified = False
+            if shutil.which('wl-paste'):
+                try:
+                    readback = subprocess.run(['wl-paste', '--no-newline', '--type', 'text/plain'],
+                                              capture_output=True, timeout=3, env=child_env())
+                    verified = readback.returncode == 0 and readback.stdout == text.encode('utf-8')
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            return Result(True, json.dumps({'status': 'written' if verified else 'unverified',
+                'verified': verified, 'length': len(text),
+                'message': 'Exact clipboard content read back.' if verified else
+                           'Clipboard write was dispatched but exact content could not be verified. Inspect before retrying.'}))
 
         if not shutil.which("wl-paste"):
             return Result(False, "wl-paste is not installed (pacman -S wl-clipboard)")
@@ -3557,6 +3623,28 @@ class Executor:
             return Result(True, f"JARVIS is currently running in {res['mode'].upper()} mode connected to {res['root']}.")
         except Exception as e:
             return Result(False, f"Failed to get mode: {e}")
+
+    def _tool_system_power(self, action: str) -> Result:
+        norm = action.lower().strip().replace("-", "_")
+        if norm in ("shutdown", "poweroff"):
+            systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
+            return self._shell([systemctl, "poweroff"])
+        if norm in ("restart", "reboot"):
+            systemctl = shutil.which("systemctl") or "/usr/bin/systemctl"
+            return self._shell([systemctl, "reboot"])
+        if norm in ("lock", "lock_screen"):
+            loginctl = shutil.which("loginctl") or "/usr/bin/loginctl"
+            return self._shell([loginctl, "lock-session"])
+        return Result(False, f"Unknown power action: {action}")
+
+    def _tool_lock_screen(self, confirm: bool = False) -> Result:
+        return self._tool_system_power("lock_screen")
+
+    def _tool_shutdown_system(self, confirm: bool = False) -> Result:
+        return self._tool_system_power("shutdown")
+
+    def _tool_restart_system(self, confirm: bool = False) -> Result:
+        return self._tool_system_power("restart")
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.
