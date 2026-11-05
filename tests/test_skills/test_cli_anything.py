@@ -111,9 +111,12 @@ class CLIAnythingSkillTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.skills, '_run', new_callable=AsyncMock) as mock_run, \
              patch.object(self.skills, '_launch', new_callable=AsyncMock) as mock_launch:
             mock_run.return_value = json.dumps([{'name': 'gimp', 'entry_point': 'cli-anything-gimp'}])
+            mock_run.side_effect = [mock_run.return_value, 'process output']
             result = await self.skills.execute('cli_hub_launch', {'name': 'gimp', 'args': ['file.png']})
-            self.assertEqual(result, {'status': 'launched', 'cli': 'cli-anything-gimp'})
-            mock_launch.assert_called_once_with('cli-anything-gimp', 'file.png')
+            self.assertEqual(result['status'], 'unverified')
+            self.assertFalse(result['completed'])
+            mock_launch.assert_not_called()
+            self.assertEqual(mock_run.call_args.args, ('cli-anything-gimp', 'file.png'))
 
     async def test_cli_hub_matrix_list_returns_parsed_json(self):
         with patch.object(self.skills, '_run', new_callable=AsyncMock) as mock_run:

@@ -2,6 +2,149 @@
   "version": 1,
   "skills": [
     {
+      "name": "open_platform_authorization",
+      "description": "Open official OAuth authorization page in user's browser for third-party platforms (LinkedIn, Slack, Notion, Spotify, Linear, Jira, Discord, Twitter/X). ONLY invoke when user explicitly mentions an authorization word (authorize, auth, login, sign in, connect, link). For GitHub use github_authorize; for Google Workspace use google_authorize.",
+      "adapter": "composio.open_auth",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Name or slug of the platform (e.g. 'linkedin', 'slack', 'notion', 'spotify', 'linear', 'jira')"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "platform"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_platform_connection",
+      "description": "Check whether JARVIS is connected to a third-party platform (LinkedIn, Slack, Notion, Spotify, Linear, Jira, Discord, Twitter/X). Returns ACTIVE, CONNECTING, or NOT_CONNECTED. Invoke when user asks if connected or connecting. For GitHub use github_connection_status; for Google use google_connection_status.",
+      "adapter": "composio.check_connection",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Name or slug of the platform to check (e.g. 'linkedin', 'slack', 'notion', 'spotify')"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "platform"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "connect_platform",
+      "description": "Connect JARVIS to a third-party platform (LinkedIn, Slack, Notion, Spotify, Linear, Discord, Twitter/X). Opens authorization page only if not connected and user explicitly commanded authorization. For GitHub use github_authorize; for Google Workspace use google_authorize.",
+      "adapter": "composio.connect_platform",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Name or slug of the platform to connect (e.g. 'linkedin', 'slack', 'notion', 'spotify', 'linear')"
+          },
+          "reconnect": {
+            "type": "boolean",
+            "description": "Force re-authenticating even if an active connection already exists"
+          },
+          "open_in_browser": {
+            "type": "boolean",
+            "description": "Whether to automatically open the authentication link in the default browser (defaults to true)"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "platform"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "execute_platform_action",
+      "description": "Execute an action or query on a connected third-party platform (Slack, Notion, Linear, Spotify, Discord) via Composio. For GitHub and Google Workspace, use native tools (github_list_repositories, gmail_search, calendar_list_events, drive_search_files).",
+      "adapter": "composio.execute_action",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Target platform name (e.g. 'github', 'slack', 'notion', 'google calendar')"
+          },
+          "action": {
+            "type": "string",
+            "description": "Action or goal to perform (e.g. 'get authenticated user profile', 'list open issues', 'send message to channel', 'list repositories')"
+          },
+          "arguments": {
+            "type": "object",
+            "description": "Optional parameters or arguments to pass to the tool"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "platform",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_connected_platforms",
+      "description": "List all currently connected and active external platforms and integrations.",
+      "adapter": "composio.list_platforms",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "disconnect_platform",
+      "description": "Disconnect or revoke access to a connected platform.",
+      "adapter": "composio.disconnect_platform",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "description": "Platform name or slug to disconnect (e.g. 'github', 'slack')"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User identifier (defaults to 'local-user')"
+          }
+        },
+        "required": [
+          "platform"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "composio_connection_status",
       "description": "Check connection status for a Composio app or toolkit (e.g. github, gmail, slack, notion).",
       "adapter": "composio.status",

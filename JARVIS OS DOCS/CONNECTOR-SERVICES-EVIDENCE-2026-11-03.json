@@ -1,0 +1,140 @@
+{
+  "date": "2026-11-03",
+  "scope": "connector_service_integration",
+  "tests": {
+    "passed": 1506,
+    "subtests_passed": 146,
+    "skipped": 1,
+    "warnings": 2,
+    "seconds": 79.17,
+    "focused_passed": 35
+  },
+  "live": {
+    "discovery": {
+      "api_anything": {
+        "tools": 5,
+        "total_matches": 5,
+        "ms": 20.72
+      },
+      "cli_anything": {
+        "tools": 9,
+        "total_matches": 9,
+        "ms": 18.65
+      },
+      "composio": {
+        "tools": 5,
+        "total_matches": 5,
+        "ms": 20.64
+      },
+      "integrations": {
+        "tools": 1,
+        "total_matches": 1,
+        "ms": 26.12
+      }
+    },
+    "checks": {
+      "integration_service_status": {
+        "ok": true,
+        "completed": true,
+        "status": "completed",
+        "ms": 200.67
+      },
+      "cli_hub_search": {
+        "ok": true,
+        "completed": true,
+        "status": "completed",
+        "ms": 554.76
+      },
+      "api_anything_search": {
+        "ok": true,
+        "completed": true,
+        "status": "completed",
+        "ms": 2585.16
+      }
+    },
+    "readiness": {
+      "ok": true,
+      "status": "complete",
+      "checked_at": "2026-11-03T12:35:54.235008+00:00",
+      "scope": "local_service_readiness_not_account_authorization",
+      "services": {
+        "api_anything": {
+          "installed": true,
+          "service_ready": true,
+          "execution_mode": "supervised_service",
+          "domain": "api_anything"
+        },
+        "cli_anything": {
+          "installed": true,
+          "executable": "/home/g0pi/.local/share/jarvis-integrations/venv/bin/cli-hub",
+          "domain": "cli_anything",
+          "individual_harnesses_verified": false
+        },
+        "composio": {
+          "sdk_installed": true,
+          "configured": true,
+          "domain": "composio",
+          "authorization": "check_platform_connection_for_each_platform"
+        },
+        "agent_reach": {
+          "service_ready": true,
+          "scope": "retrieval_only"
+        }
+      },
+      "execution_policy": {
+        "automatic_write_replay": false,
+        "api_writes": "explicit allow_writes plus stable request_key; verified readback required",
+        "routing": "Composio account actions; discovered API operations; installed CLI application harnesses; observed GUI when required"
+      }
+    },
+    "voice": {
+      "connected": false,
+      "standby": true,
+      "muted": false,
+      "control_enabled": true,
+      "tool_count": 263,
+      "voice_tool_count": 95,
+      "error": ""
+    }
+  },
+  "deployment": {
+    "installed": "/home/g0pi/.local/share/jarvis-runtime/releases/20261103T123444785625Z-system-integration",
+    "parent": "/home/g0pi/.local/share/jarvis-runtime/releases/20261103T121454952667Z-system-integration",
+    "privacy_before": {
+      "muted": false,
+      "standby": true
+    },
+    "module_hashes": {
+      "connectors/api_anything.py": "6dbea3fd901c84d7c81d0189ec4fd55b837d863d2d58e8f1b7d879771d398bb1",
+      "connectors/api_service.py": "089e9532cc0e8fc7d3d089d2ec0984004239cba11472baf56cc67c40fcbc5544",
+      "connectors/integration_status.py": "3a0b35c0137331beb515e76061f55851ebc51f2d9f64a0c0bd988871cd3f6081",
+      "skills/domains/api_anything.py": "58f18f5f290944f665a6f10b7f8c09a741950ef43089b37e1bd79f4c1731a35d",
+      "orchestration/tool_tiers.py": "6a11a14798e50ff7c0d2a2567235ce71e9ea24e261c8a29d03cb7dd25de79545",
+      "jarvis_control/execution_policy.py": "2ebbb78a609d66402a7ba024d3fecaade7743b4cdba4492f9f7b3376eac5cbf2",
+      "skill_manifests/api-anything.json": "d8b32fa44e325e4c7abee41a4bb26d7cace8a57071024c944c72cd2a721afba4",
+      "skills/skills.py": "172b9f63812fd03d428ff73794325950e6a08c5391f2c528943e1b8d286bf9b8",
+      "jarvis_voice/persona.py": "bfca8dd948c4ed4f02d0dbef5a2e206985caff852531d5859a16dd82d0234fb7",
+      "jarvis_voice/daemon.py": "886b7d437ab88d3eba3bed51e27042f5b04537cf4119c0e756cc38c457a06a25"
+    }
+  },
+  "service": {
+    "unit": "jarvis-api-agent.service",
+    "active": "active",
+    "substate": "running",
+    "restarts": 0,
+    "socket_mode": "0600",
+    "directory_mode": "0700"
+  },
+  "dependencies": {
+    "environment": "/home/g0pi/.local/share/jarvis-integrations/venv",
+    "cli-anything-hub": "0.4.1",
+    "pip": "26.3"
+  },
+  "limits": [
+    "Account configuration is not authorization.",
+    "Individual application harnesses were not blanket installed.",
+    "Catalog checks do not prove arbitrary API or app actions.",
+    "No external mutations or messages were performed.",
+    "No guarantee of zero model interpretation errors."
+  ]
+}

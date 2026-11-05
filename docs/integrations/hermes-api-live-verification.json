@@ -1,0 +1,265 @@
+{
+  "create": {
+    "ok": true,
+    "class": "success",
+    "data": {
+      "success": true,
+      "job_id": "14031d39d467",
+      "name": "Jarvis native API verification 2026-11-02",
+      "skill": null,
+      "skills": [],
+      "schedule": "once in 365d",
+      "repeat": "once",
+      "deliver": "local",
+      "next_run_at": null,
+      "job": {
+        "job_id": "14031d39d467",
+        "name": "Jarvis native API verification 2026-11-02",
+        "skill": null,
+        "skills": [],
+        "prompt_preview": "Connection verification only. Reply JARVIS_CRON_API_OK.",
+        "model": null,
+        "provider": null,
+        "pinned": false,
+        "base_url": null,
+        "schedule": "once in 365d",
+        "repeat": "once",
+        "deliver": "local",
+        "next_run_at": null,
+        "last_run_at": null,
+        "last_status": null,
+        "last_delivery_error": null,
+        "last_delivery_unverified": null,
+        "last_fire_error": null,
+        "last_error": null,
+        "enabled": false,
+        "state": "paused",
+        "paused_at": "2026-11-02T17:25:06.213495+05:30",
+        "paused_reason": "Temporary integration verification; never run"
+      },
+      "message": "Cron job 'Jarvis native API verification 2026-11-02' created. Created PAUSED \u2014 resume to schedule, or explicitly run now.",
+      "gateway_running": true
+    },
+    "transport": "installed_hermes_native_handler"
+  },
+  "deduplicated": true,
+  "update": {
+    "ok": false,
+    "class": "unknown",
+    "error": "Prior write has no final receipt. Inspect native state; it will not be sent again."
+  },
+  "resume": {
+    "ok": true,
+    "class": "success",
+    "data": {
+      "success": true,
+      "job": {
+        "job_id": "14031d39d467",
+        "name": "Jarvis native API verification 2026-11-02",
+        "skill": null,
+        "skills": [],
+        "prompt_preview": "Connection verification updated; no actions.",
+        "model": null,
+        "provider": null,
+        "pinned": false,
+        "base_url": null,
+        "schedule": "once in 365d",
+        "repeat": "once",
+        "deliver": "local",
+        "next_run_at": "2027-11-02T17:25:06.213213+05:30",
+        "last_run_at": null,
+        "last_status": null,
+        "last_delivery_error": null,
+        "last_delivery_unverified": null,
+        "last_fire_error": null,
+        "last_error": null,
+        "enabled": true,
+        "state": "scheduled",
+        "paused_at": null,
+        "paused_reason": null
+      }
+    },
+    "transport": "installed_hermes_native_handler"
+  },
+  "pause": {
+    "ok": true,
+    "class": "success",
+    "data": {
+      "success": true,
+      "job": {
+        "job_id": "14031d39d467",
+        "name": "Jarvis native API verification 2026-11-02",
+        "skill": null,
+        "skills": [],
+        "prompt_preview": "Connection verification updated; no actions.",
+        "model": null,
+        "provider": null,
+        "pinned": false,
+        "base_url": null,
+        "schedule": "once in 365d",
+        "repeat": "once",
+        "deliver": "local",
+        "next_run_at": "2027-11-02T17:25:06.213213+05:30",
+        "last_run_at": null,
+        "last_status": null,
+        "last_delivery_error": null,
+        "last_delivery_unverified": null,
+        "last_fire_error": null,
+        "last_error": null,
+        "enabled": false,
+        "state": "paused",
+        "paused_at": "2026-11-02T17:27:16.751795+05:30",
+        "paused_reason": null
+      }
+    },
+    "transport": "installed_hermes_native_handler"
+  },
+  "listed": {
+    "ok": true,
+    "count": 1
+  },
+  "remove": {
+    "ok": true,
+    "class": "success",
+    "data": {
+      "success": true,
+      "message": "Cron job 'Jarvis native API verification 2026-11-02' removed.",
+      "removed_job": {
+        "id": "14031d39d467",
+        "name": "Jarvis native API verification 2026-11-02",
+        "schedule": "once in 365d"
+      }
+    },
+    "transport": "installed_hermes_native_handler"
+  },
+  "uninterrupted_update_check": {
+    "create": {
+      "ok": true,
+      "class": "success",
+      "data": {
+        "success": true,
+        "job_id": "895db3253586",
+        "name": "Temporary Jarvis API edit check",
+        "skill": null,
+        "skills": [],
+        "schedule": "once in 365d",
+        "repeat": "once",
+        "deliver": "local",
+        "next_run_at": null,
+        "job": {
+          "job_id": "895db3253586",
+          "name": "Temporary Jarvis API edit check",
+          "skill": null,
+          "skills": [],
+          "prompt_preview": "Connection verification only.",
+          "model": null,
+          "provider": null,
+          "pinned": false,
+          "base_url": null,
+          "schedule": "once in 365d",
+          "repeat": "once",
+          "deliver": "local",
+          "next_run_at": null,
+          "last_run_at": null,
+          "last_status": null,
+          "last_delivery_error": null,
+          "last_delivery_unverified": null,
+          "last_fire_error": null,
+          "last_error": null,
+          "enabled": false,
+          "state": "paused",
+          "paused_at": "2026-11-02T17:33:50.276448+05:30",
+          "paused_reason": "Verification only"
+        },
+        "message": "Cron job 'Temporary Jarvis API edit check' created. Created PAUSED \u2014 resume to schedule, or explicitly run now.",
+        "gateway_running": true
+      },
+      "transport": "installed_hermes_native_handler"
+    },
+    "update": {
+      "ok": true,
+      "class": "success",
+      "data": {
+        "success": true,
+        "job": {
+          "job_id": "895db3253586",
+          "name": "Temporary Jarvis API edit check",
+          "skill": null,
+          "skills": [],
+          "prompt_preview": "Verified native API update.",
+          "model": null,
+          "provider": null,
+          "pinned": false,
+          "base_url": null,
+          "schedule": "once in 365d",
+          "repeat": "once",
+          "deliver": "local",
+          "next_run_at": null,
+          "last_run_at": null,
+          "last_status": null,
+          "last_delivery_error": null,
+          "last_delivery_unverified": null,
+          "last_fire_error": null,
+          "last_error": null,
+          "enabled": false,
+          "state": "paused",
+          "paused_at": "2026-11-02T17:33:50.276448+05:30",
+          "paused_reason": "Verification only"
+        }
+      },
+      "transport": "installed_hermes_native_handler"
+    },
+    "list_verified": false,
+    "remove": {
+      "ok": true,
+      "class": "success",
+      "data": {
+        "success": true,
+        "message": "Cron job 'Temporary Jarvis API edit check' removed.",
+        "removed_job": {
+          "id": "895db3253586",
+          "name": "Temporary Jarvis API edit check",
+          "schedule": "once in 365d"
+        }
+      },
+      "transport": "installed_hermes_native_handler"
+    },
+    "update_verified": true,
+    "list_verification_note": "The first checker expected id/prompt; Hermes returns job_id/prompt_preview. The native update result confirms the changed preview. Temporary job was removed."
+  },
+  "installed_parallel_workflow": {
+    "checked_at": "2026-11-02T13:16:22.065447+00:00",
+    "installed_release": "20261102T122152Z-hermes-direct-api",
+    "installed_source_hashes_match": true,
+    "installed_file_count": 20,
+    "parent_state": "completed",
+    "review_round": 1,
+    "notice_acknowledged": true,
+    "workers": [
+      {
+        "agent": "codex",
+        "state": "completed",
+        "exit_code": 0,
+        "workspace": "/home/g0pi/JARVIS OS/.jarvis-orchestration/workspaces/c594540d039c43af901ae8cdc6dc3b74/worktree",
+        "expected_token_present": true,
+        "final_output_matches": true,
+        "workspace_verification": "not_applicable",
+        "changed_files": []
+      },
+      {
+        "agent": "omp",
+        "state": "completed",
+        "exit_code": 0,
+        "workspace": "/home/g0pi/JARVIS OS/.jarvis-orchestration/workspaces/e68f5f4c04134c998ccb213aa89bd45e/worktree",
+        "expected_token_present": true,
+        "final_output_matches": true,
+        "workspace_verification": "not_applicable",
+        "changed_files": []
+      }
+    ],
+    "distinct_worker_workspaces": true,
+    "regression_tests_passed": 110,
+    "verification_scope": "Bounded connection workflow and native cron lifecycle; not proof of arbitrary task success.",
+    "parent_contains_both_expected_answers": true
+  }
+}

@@ -10,13 +10,15 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 from typing import Any, Dict, List, Optional
 
 from connectors import credentials
 from core.secret_env import sanitized_subprocess_env
 
 # Path to the api-anything project & daemon
-DAEMON_PROJECT_DIR = Path("/home/g0pi/Projects/api-anything")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DAEMON_PROJECT_DIR = Path(os.environ.get("API_ANYTHING_DIR", Path.home() / "Projects/api-anything"))
 DAEMON_DIR = DAEMON_PROJECT_DIR / "daemon"
 DAEMON_SCRIPT = DAEMON_DIR / "daemon.ts"
 CLI_SCRIPT = DAEMON_PROJECT_DIR / "src/cli.ts"
@@ -39,30 +41,35 @@ def _child_env() -> Dict[str, str]:
     """Prepare environment for child processes with required keys from /home/g0pi/JARVIS OS/.env."""
     env = sanitized_subprocess_env()
 
-    # Explicitly supply LLM API keys loaded from /home/g0pi/JARVIS OS/.env
-    gemini_key = (
-        credentials.get("GEMINI_API_KEY_4")
-        or credentials.get("GEMINI_API_KEY")
-        or credentials.get("GEMINI_API_KEY_1")
-        or credentials.get("GEMINI_API_KEY_3")
-        or credentials.get("GEMINI_API_KEY_5")
-    )
-    if gemini_key:
-        env["GEMINI_API_KEY"] = gemini_key
+    # Explicitly supply all Gemini keys loaded from /home/g0pi/JARVIS OS/.env
+    for k in (
+        "GEMINI_API_KEY",
+        "GEMINI_API_KEY_4",
+        "GEMINI_API_KEY_1",
+        "GEMINI_API_KEY_3",
+        "GEMINI_API_KEY_5",
+    ):
+        val = credentials.get(k)
+        if val:
+            env[k] = val
 
-    nvidia_key = (
-        credentials.get("NVIDIA_API_KEY")
-        or credentials.get("NVIDIA_NIM_API_KEY")
-    )
-    if nvidia_key:
-        env["NVIDIA_API_KEY"] = nvidia_key
-        env["NVIDIA_NIM_API_KEY"] = nvidia_key
+    if not env.get("GEMINI_API_KEY"):
+        env["GEMINI_API_KEY"] = env.get("GEMINI_API_KEY_4") or env.get("GEMINI_API_KEY_1") or ""
+
+    # Explicitly supply all NVIDIA keys
+    for k in ("NVIDIA_API_KEY", "NVIDIA_NIM_API_KEY"):
+        val = credentials.get(k)
+        if val:
+            env[k] = val
+
+    if not env.get("NVIDIA_API_KEY"):
+        env["NVIDIA_API_KEY"] = env.get("NVIDIA_NIM_API_KEY") or ""
 
     nvidia_url = credentials.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
     if nvidia_url:
         env["NVIDIA_BASE_URL"] = nvidia_url
 
-    env["JARVIS_ENV_PATH"] = "/home/g0pi/JARVIS OS/.env"
+    env["JARVIS_ENV_PATH"] = str(PROJECT_ROOT / ".env")
     env["NO_COLOR"] = "1"
     return env
 
@@ -73,70 +80,108 @@ async def _exec_bun_cmd(*args: str, timeout: float = 60.0, cwd: Optional[Path] =
     env = _child_env()
     work_dir = str(cwd or DAEMON_PROJECT_DIR)
 
-    proc = await asyncio.create_subprocess_exec(
-        bun,
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=work_dir,
-        env=env,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            bun, *args, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=work_dir, env=env, start_new_session=True,
+        )
+    except OSError as exc:
+        return {'ok': False, 'status': 'unavailable', 'error': str(exc)}
+
+    async def terminate():
+        # The API agent may own an MCP/browser subprocess. Cancel its whole
+        # process group so an outer tool deadline cannot leave it working.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        await proc.wait()
 
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return {"ok": False, "error": f"Command timed out after {timeout}s"}
+        await terminate()
+        return {'ok': False, 'status': 'unknown', 'completed': False,
+                'error': f'Command timed out after {timeout}s; final effect is unknown. Do not replay a write.'}
+    except asyncio.CancelledError:
+        await terminate()
+        raise
 
     out_text = stdout.decode("utf-8", errors="replace").strip()
     err_text = stderr.decode("utf-8", errors="replace").strip()
 
-    # Find last JSON line from stdout or stderr
-    for line in reversed(out_text.splitlines()):
+    # Both channels are used by the upstream machine interface. An exit
+    # failure always wins over an earlier success-shaped log line.
+    payload = None
+    for line in reversed((out_text if proc.returncode == 0 else err_text + '\n' + out_text).splitlines()):
         line = line.strip()
         if line.startswith("{") and line.endswith("}"):
             try:
-                return json.loads(line)
+                candidate = json.loads(line)
+                if isinstance(candidate, dict):
+                    if payload is None or candidate.get('ok') is False:
+                        payload = candidate
+                    if candidate.get('ok') is False:
+                        break
             except json.JSONDecodeError:
                 continue
 
     if proc.returncode != 0:
-        return {"ok": False, "error": err_text or out_text or f"Process exited with code {proc.returncode}"}
+        return {'ok': False, 'completed': False, 'status': 'failed',
+                'error': (payload or {}).get('error') or f'API process exited with code {proc.returncode}',
+                'exit_code': proc.returncode}
 
-    return {"ok": True, "raw": out_text}
+    if payload is None:
+        # CLI lists legitimately return arrays; parse the complete stdout too.
+        try:
+            value = json.loads(out_text)
+            if isinstance(value, list):
+                return {'ok': True, 'data': value}
+        except ValueError:
+            pass
+        return {'ok': False, 'status': 'unverified', 'completed': False,
+                'error': 'API process returned no machine-readable result'}
+    if payload.get('write') in ('accepted', 'may_have_applied'):
+        payload.update(status='unverified', completed=False,
+                       reason='Write was submitted but its effect has not been verified; do not repeat it.')
+    return payload
+
+
+async def _request(operation: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    from connectors.api_service import request, dispatch_local
+    # Only a failure to connect permits local execution. Once a request was
+    # submitted, an interrupted response must never replay an external action.
+    result = await request(operation, arguments)
+    return await dispatch_local(operation, arguments) if result is None else result
 
 
 async def search(query: str) -> Dict[str, Any]:
     """Search for existing website API operations in local ledger and shared registry."""
     if not query.strip():
         return {"ok": False, "error": "Query cannot be empty"}
-    return await _exec_bun_cmd(str(CLI_SCRIPT), "search", query.strip(), cwd=DAEMON_PROJECT_DIR)
+    return await _request('search', {'query': query.strip()})
 
 
 async def list_operations(site: str) -> Dict[str, Any]:
     """List available operations, parameter schemas, and caveats for a site."""
     if not site.strip():
         return {"ok": False, "error": "Site name cannot be empty"}
-    return await _exec_bun_cmd(str(CLI_SCRIPT), "ops", site.strip(), cwd=DAEMON_PROJECT_DIR)
+    return await _request('operations', {'site': site.strip()})
 
 
-async def call_operation(site: str, op: str, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def call_operation(site: str, op: str, args: Optional[Dict[str, Any]] = None,
+                         allow_writes: bool = False, request_key: Optional[str] = None) -> Dict[str, Any]:
     """Execute a learned API operation on a site with specified arguments."""
-    cmd_args = [str(CLI_SCRIPT), "call", site.strip(), op.strip()]
-    if args:
-        for k, v in args.items():
-            cmd_args.append(f"{k}={v}")
-
-    return await _exec_bun_cmd(*cmd_args, timeout=45.0, cwd=DAEMON_PROJECT_DIR)
+    return await _request('call', {'site': site, 'op': op, 'args': args or {},
+                                 'allow_writes': allow_writes, 'request_key': request_key})
 
 
 async def propose_blueprint(problem: str) -> Dict[str, Any]:
     """Propose an API Blueprint for a new website using Gemini 2.5 Flash."""
-    return await _exec_bun_cmd(str(DAEMON_SCRIPT), "--propose", problem.strip(), timeout=120.0, cwd=DAEMON_DIR)
+    return await _request('propose', {'problem': problem.strip()})
 
 
 async def learn_and_activate(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     """Execute traffic capture, parameter learning, and NVIDIA NIM integrity validation."""
-    blueprint_json = json.dumps(blueprint)
-    return await _exec_bun_cmd(str(DAEMON_SCRIPT), "--learn", blueprint_json, timeout=180.0, cwd=DAEMON_DIR)
+    return await _request('learn', {'blueprint': blueprint})

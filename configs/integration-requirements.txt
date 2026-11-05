@@ -1,0 +1,3 @@
+# Isolated under ~/.local/share/jarvis-integrations/venv, never system Python.
+cli-anything-hub==0.4.1
+pip==26.3

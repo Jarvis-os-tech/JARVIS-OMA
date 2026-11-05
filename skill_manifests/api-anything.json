@@ -39,7 +39,7 @@
     },
     {
       "name": "api_anything_call",
-      "description": "Execute a learned web API operation directly using high-speed raw HTTP (Tier 1).",
+      "description": "Execute an exact discovered API operation with typed JSON arguments. Reads by default; writes need explicit allow_writes and a stable request_key. Only write=applied proves a write effect.",
       "adapter": "api_anything.call",
       "parameters_json_schema": {
         "type": "object",
@@ -56,6 +56,14 @@
             "type": "object",
             "description": "Key-value arguments matching the operation schema",
             "additionalProperties": true
+          },
+          "allow_writes": {
+            "type": "boolean",
+            "description": "Enable only a write explicitly requested by the user."
+          },
+          "request_key": {
+            "type": "string",
+            "description": "Stable idempotency key for this requested write. Preserve it across response loss; never invent a new key to force a retry."
           }
         },
         "required": [
@@ -99,6 +107,16 @@
         "required": [
           "blueprint"
         ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "integration_service_status",
+      "description": "Check live local API service, CLI-Anything installation, Composio SDK/configuration and Agent-Reach health. Configuration is not account authorization; check each platform connection separately.",
+      "adapter": "integrations.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
         "additionalProperties": false
       }
     }

@@ -1,16 +1,22 @@
 [Unit]
-Description=JARVIS API Agent Daemon — api-anything dual-model web harvester
+Description=JARVIS API Agent structured execution service
 After=graphical-session.target network.target
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/g0pi/.bun/bin/bun run /home/g0pi/Projects/api-anything/daemon/daemon.ts
-WorkingDirectory=/home/g0pi/Projects/api-anything/daemon
-Restart=always
+ExecStart=%h/.local/share/jarvis-runtime/venv/bin/python -B -m connectors.api_service
+WorkingDirectory=%h/.local/share/jarvis-runtime/current
+Restart=on-failure
 RestartSec=3
 Environment=NO_COLOR=1
 Environment=XDG_RUNTIME_DIR=%t
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=CLI_HUB_NO_ANALYTICS=1
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=5
+NoNewPrivileges=true
 StandardOutput=journal
 StandardError=journal
 
