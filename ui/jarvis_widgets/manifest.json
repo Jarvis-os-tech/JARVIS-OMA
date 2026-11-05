@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "jarvis.widgets",
+  "name": "JARVIS Context Widgets",
+  "version": "0.2.0",
+  "description": "Task-driven canvas, QR cards, floating content and typed input inside the existing shell. No island or separate GUI.",
+  "kinds": ["panel"],
+  "keepLoaded": true,
+  "entryPoints": {"panel": "Widgets.qml"}
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=JARVIS JIT Voice-Widget HUD Bridge
+After=graphical-session.target pipewire.service jarvis-voice.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/jarvis-widget-hud
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target graphical-session.target

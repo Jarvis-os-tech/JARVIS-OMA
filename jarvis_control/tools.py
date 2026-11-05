@@ -41,7 +41,8 @@ QUERY_KINDS = {
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
                    "read_url", "fetch_web_page", "get_jarvis_mode",
-                   "reach_search", "reach_transcript", "confirm_system_action", "cancel_system_action"}
+                   "reach_search", "reach_transcript", "confirm_system_action", "cancel_system_action",
+                   "show_widget", "manage_widget"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -1260,6 +1261,76 @@ CANCEL_SYSTEM_ACTION_SCHEMA = {
 }
 TOOL_SCHEMAS.append(CANCEL_SYSTEM_ACTION_SCHEMA)
 
+SHOW_WIDGET_SCHEMA = {
+    'name': 'show_widget',
+    'description': (
+        'Show an on-screen contextual widget card on the desktop. '
+        'Use when the user explicitly asks to show, display, or view details, notes, summaries, tables, or charts. '
+        'Supports kinds: "text" (markdown text), "table", "chart", "qr", "progress", or "view". '
+        'Default presentation is "floating".'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'kind': {
+                'type': 'string',
+                'enum': ['text', 'table', 'chart', 'qr', 'progress', 'view'],
+                'description': 'Type of widget card to render.'
+            },
+            'title': {
+                'type': 'string',
+                'description': 'Readable header for the card.'
+            },
+            'data_json': {
+                'type': 'string',
+                'description': 'JSON string containing widget payload (e.g. {"text": "# Markdown..."} or {"labels": [...], "values": [...]}).'
+            },
+            'widget_id': {
+                'type': 'string',
+                'description': 'Optional widget identifier to update an existing card.'
+            },
+            'presentation': {
+                'type': 'string',
+                'enum': ['floating', 'canvas'],
+                'default': 'floating'
+            },
+            'expires_seconds': {
+                'type': 'integer',
+                'description': 'Lifetime in seconds before auto-dismissal (default 60).',
+                'default': 60
+            }
+        },
+        'required': ['kind', 'title', 'data_json'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(SHOW_WIDGET_SCHEMA)
+
+MANAGE_WIDGET_SCHEMA = {
+    'name': 'manage_widget',
+    'description': (
+        'Manage, dismiss, clear, or inspect on-screen desktop widgets. '
+        'Use when the user says "dismiss widget", "close that", "clear widgets", etc.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'action': {
+                'type': 'string',
+                'enum': ['dismiss', 'clear', 'clear_all', 'status', 'pin', 'unpin'],
+                'description': 'Management action to perform.'
+            },
+            'widget_id': {
+                'type': 'string',
+                'description': 'Optional widget ID to dismiss or pin (omit for all or latest).'
+            }
+        },
+        'required': ['action'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(MANAGE_WIDGET_SCHEMA)
+
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -1764,6 +1835,10 @@ class Executor:
             return "confirm system action"
         if name == "cancel_system_action":
             return "cancel system action"
+        if name == "show_widget":
+            return f"show widget: {args.get('title', '')} ({args.get('kind', '')})"
+        if name == "manage_widget":
+            return f"manage widget: {args.get('action', '')} {args.get('widget_id', '')}".strip()
         if name == "phone_control":
             return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
@@ -3805,6 +3880,31 @@ class Executor:
         from skills.system_power import POWER_MANAGER
         res = POWER_MANAGER.cancel_action()
         return Result(True, res.get("message", "Action cancelled."))
+
+    def _tool_show_widget(self, kind: str, title: str, data_json: str, widget_id: str = "",
+                           presentation: str = "floating", expires_seconds: int = 60) -> Result:
+        from ui.jarvis_widgets import backend
+        try:
+            data = json.loads(data_json) if isinstance(data_json, str) else data_json
+            widget = backend.make_widget(kind, title, data, widget_id=widget_id,
+                                         presentation=presentation, expires_seconds=expires_seconds)
+            res = backend.shell_call("present", widget)
+            return Result(True, json.dumps(res, ensure_ascii=False))
+        except Exception as e:
+            return Result(False, f"Failed to show widget: {e}")
+
+    def _tool_manage_widget(self, action: str, widget_id: str = "") -> Result:
+        from ui.jarvis_widgets import backend
+        try:
+            if action in ("clear", "clear_all"):
+                res = backend.shell_call("clearAll" if action == "clear_all" else "clear")
+            elif action == "status":
+                res = backend.shell_call("status")
+            else:
+                res = backend.shell_call("manage", {"id": widget_id, "action": action})
+            return Result(True, json.dumps(res, ensure_ascii=False))
+        except Exception as e:
+            return Result(False, f"Failed to manage widget: {e}")
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.

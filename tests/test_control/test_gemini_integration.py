@@ -34,6 +34,10 @@ def test_gemini_tool_declarations_and_instruction():
     assert "confirm_last" in names
     assert "cancel_last" in names
 
+    # Verify widget canvas tools
+    assert "show_widget" in names
+    assert "manage_widget" in names
+
     # Instruction should reflect all attached tools
     inst = build_instruction(gemini_tools)
     assert f"CURRENT ATTACHED OS TOOLS ({len(names)} available)" in inst

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "show_widget",
+      "description": "Create a task-specific interactive widget over the existing desktop. Prefer kind=view: call widget_schema first, then generate its layout, controls, calculations and canvas shapes for this request. Reuse widget_id to refine it; inspect state before replacing user inputs. Default floating. Also supports text, QR, local media PiP, tables/charts/progress. Use real source data; never invent measurements or pairing credentials. JARVIS manages dismissal/placement; no Esc or navigation buttons.",
+      "adapter": "widgets.show",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "kind": {"type": "string", "enum": ["view", "text", "qr", "image", "pip", "table", "chart", "progress"]},
+          "title": {"type": "string", "description": "Readable title, at most 160 characters."},
+          "data_json": {"type": "string", "description": "JSON ≤48 KiB. view: see widget_schema. text:{text}; qr:{content}; image/pip:{path,caption}; table:{columns,rows}; chart:{labels,values,unit}; progress:{text,value,maximum}. Omit unknown progress. Local media only."},
+          "widget_id": {"type": "string", "description": "Optional existing ID to update; 1–80 letters, digits, underscores or hyphens."},
+          "presentation": {"type": "string", "enum": ["canvas", "floating"]},
+          "expires_seconds": {"type": "integer", "minimum": 0, "maximum": 86400}
+        },
+        "required": ["kind", "title", "data_json"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "manage_canvas",
+      "description": "Manage contextual views in the current desktop. status returns widget titles, IDs and current user input state. clear removes unpinned widgets; clear_all removes every widget (for clear the widgets). close hides views without cancelling tasks. input shows the native text bar. No separate GUI, island or modal desktop screen.",
+      "adapter": "widgets.canvas",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {"action": {"type": "string", "enum": ["open", "close", "input", "clear", "clear_all", "status"]}},
+        "required": ["action"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "manage_widget",
+      "description": "Handle close that, keep this, move it and widget state through conversation. Omit widget_id for the last interacted/latest widget; use status for explicit targets. move uses integer x,y percentages 0..100 across usable screen. pin prevents expiry for this session. state reads current control values. Dismissal does not cancel underlying work.",
+      "adapter": "widgets.manage",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "widget_id": {"type": "string", "description": "Known widget ID returned by show_widget or manage_canvas status."},
+          "action": {"type": "string", "enum": ["dismiss", "pin", "unpin", "float", "canvas", "move", "state"]},
+          "x": {"type": "integer", "minimum": 0, "maximum": 100},
+          "y": {"type": "integer", "minimum": 0, "maximum": 100}
+        },
+        "required": ["action"], "additionalProperties": false
+      }
+    },
+    {
+      "name": "widget_schema",
+      "description": "Get the runtime UI generation contract and example before creating kind=view widgets. Compose a custom layout with controls, arithmetic bindings, actions and drawn diagrams. This supplies grammar only and does not show a sample widget.",
+      "adapter": "widgets.schema",
+      "parameters_json_schema": {"type": "object", "properties": {}, "additionalProperties": false}
+    }
+  ]
+}

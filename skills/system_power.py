@@ -66,7 +66,13 @@ class SystemPowerManager:
             widget = backend.make_widget(
                 "text",
                 "⚠️ Confirmation Required",
-                {"text": f"Action: {friendly.capitalize()}\nSay 'confirm' or 'yes' to proceed, or 'cancel' to abort."},
+                {
+                    "text": f"Action: **{friendly.capitalize()}**\nSay 'confirm' or 'yes' to proceed, or 'cancel' to abort.",
+                    "actions": [
+                        {"label": "Confirm", "action": "confirm", "prompt": "confirm", "primary": True},
+                        {"label": "Cancel", "action": "cancel", "prompt": "cancel", "primary": False}
+                    ]
+                },
                 widget_id="jarvis-power-confirm",
                 presentation="floating",
                 expires_seconds=int(CONFIRMATION_TIMEOUT_SECONDS),
