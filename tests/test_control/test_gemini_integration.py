@@ -37,6 +37,7 @@ def test_gemini_tool_declarations_and_instruction():
     # Verify widget canvas tools
     assert "show_widget" in names
     assert "manage_widget" in names
+    assert "capture_vision_widget" in names
 
     # Instruction should reflect all attached tools
     inst = build_instruction(gemini_tools)

@@ -21,8 +21,8 @@ except ModuleNotFoundError:
 
 KINDS = {"view", "text", "qr", "image", "pip", "table", "chart", "progress"}
 FIELDS = {
-    "text": {"text", "actions"}, "qr": {"content"}, "image": {"path", "caption"},
-    "pip": {"path", "caption"}, "table": {"columns", "rows"},
+    "text": {"text", "actions"}, "qr": {"content"}, "image": {"path", "caption", "actions"},
+    "pip": {"path", "caption", "actions"}, "table": {"columns", "rows"},
     "chart": {"labels", "values", "unit"},
     "progress": {"text", "value", "maximum", "actions"},
     "view": {"state", "computed", "layout", "width"},
@@ -88,8 +88,22 @@ def validate(kind, data):
             raise ValueError("Choose a local supported image or video file")
         if path.stat().st_size > 128 * 1024 * 1024:
             raise ValueError("Media exceeds the 128 MiB widget limit")
-        return {"source": path.as_uri(), "video": path.suffix.lower() in VIDEO_SUFFIXES,
-                "caption": text(data.get("caption", ""), 1000)}
+        out = {
+            "source": path.as_uri(),
+            "video": path.suffix.lower() in VIDEO_SUFFIXES,
+            "caption": text(data.get("caption", ""), 1000)
+        }
+        if "actions" in data and isinstance(data["actions"], list):
+            out["actions"] = [
+                {
+                    "label": text(item.get("label", ""), 40),
+                    "action": text(item.get("action", ""), 40),
+                    "prompt": text(item.get("prompt", item.get("action", "")), 100),
+                    "primary": bool(item.get("primary", False))
+                }
+                for item in data["actions"] if isinstance(item, dict)
+            ]
+        return out
     if kind == "table":
         columns, rows = data.get("columns"), data.get("rows")
         if not isinstance(columns, list) or not 1 <= len(columns) <= 8:

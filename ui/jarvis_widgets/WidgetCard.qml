@@ -28,11 +28,12 @@ Rectangle {
     readonly property bool hasActions: Array.isArray(widgetData.actions) && widgetData.actions.length > 0
     readonly property int textLength: String(widgetData.text || "").length
     implicitWidth: widget.kind === "view" ? Math.min(520, Math.max(340, widgetData.width || 380))
-        : ["chart", "table"].includes(widget.kind) ? 440
+        : ["chart", "table", "image", "pip"].includes(widget.kind) ? 460
         : widget.kind === "text" && textLength > 250 ? 420
         : 340
     implicitHeight: (widget.kind === "view" ? Math.min(660, (widgetData.layout ? generatedHeight : 280) + 72)
-        : ["qr", "image", "pip"].includes(widget.kind) ? 340
+        : ["image", "pip"].includes(widget.kind) ? 320
+        : widget.kind === "qr" ? 340
         : ["chart", "table"].includes(widget.kind) ? 320
         : widget.kind === "progress" ? 115
         : widget.kind === "task" ? 135
@@ -230,6 +231,7 @@ Rectangle {
                 Layout.fillHeight: true
                 color: card.widget.kind === "qr" ? "white" : "#101923"
                 radius: 12
+                clip: true
                 Image {
                     id: image
                     anchors.fill: parent

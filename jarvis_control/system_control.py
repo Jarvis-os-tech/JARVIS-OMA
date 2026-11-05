@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 import math
 import os
+from pathlib import Path
 import re
-
 ACTIONS = (
     'volume_get', 'volume_set', 'volume_adjust',
     'mute_get', 'mute_set',
@@ -23,6 +23,9 @@ ACTIONS = (
     'touchpad_get', 'touchpad_set', 'touchpad_toggle',
     'bar_get', 'bar_set', 'bar_toggle',
     'workspace_get', 'workspace_switch', 'workspace_back',
+    'media_status', 'media_play', 'media_pause', 'media_play_pause', 'media_next', 'media_previous',
+    'window_close', 'window_fullscreen', 'window_toggle_float', 'window_center', 'window_pin', 'window_focus',
+    'notification_dismiss',
 )
 
 SET_REQUIRING_ENABLED = (
@@ -34,13 +37,15 @@ SCHEMA = {
     'name': 'system_control',
     'description': (
         'Read or change common system controls in one verified call. Use this '
-        'for output volume, mute, microphone mute, brightness, night light, '
+        'for output volume, mute, microphone mute, brightness, media playback (play, pause, next, previous, status), '
+        'window actions (close, fullscreen, float, center, pin, focus by name), night light, '
         'stay-awake (idle inhibitor), do not disturb (DND), bluetooth power, '
         'touchpad, status bar, and numbered workspaces before general Omarchy discovery. '
         'Set volume/brightness with value in percent; adjust with a signed percentage-point value. '
         'Binary states use enabled=true/false (or toggle actions without enabled). '
         'Workspace switch uses workspace="2"; workspace_back returns to the previous '
-        'successfully switched workspace. Every change reads state before and verifies it afterward.'
+        'successfully switched workspace. Window focus uses target="app or window name". '
+        'Every change reads state before and verifies it afterward.'
     ),
     'input_schema': {
         'type': 'object',
@@ -49,6 +54,7 @@ SCHEMA = {
             'value': {'type': 'number', 'minimum': -100, 'maximum': 100},
             'enabled': {'type': 'boolean'},
             'workspace': {'type': 'string', 'description': 'Positive numbered workspace, for workspace_switch.'},
+            'target': {'type': 'string', 'description': 'Target app or window name for window_focus, or notification summary to dismiss.'},
         },
         'required': ['action'],
         'additionalProperties': False,
@@ -151,7 +157,35 @@ def _mic_muted(executor) -> bool:
     return '[MUTED]' in text.upper()
 
 
-def _arguments(action, value, enabled, workspace):
+def _media_metadata(executor) -> str:
+    res = executor._shell(['playerctl', 'metadata', '--format', '{{artist}} - {{title}}'], timeout=3)
+    if res.ok and res.output.strip():
+        return res.output.strip()
+    res2 = executor._shell(['playerctl', 'metadata', '--format', '{{title}}'], timeout=3)
+    if res2.ok and res2.output.strip():
+        return res2.output.strip()
+    return ''
+
+
+def _media_status(executor) -> str:
+    res = executor._shell(['playerctl', 'status'], timeout=3)
+    if not res.ok or not res.output.strip() or 'no player' in res.output.lower():
+        return 'No player active'
+    return res.output.strip()
+
+
+def _active_window(executor) -> dict | None:
+    res = executor._tool_hypr_query('activewindow')
+    if not res.ok or not res.output.strip():
+        return None
+    try:
+        data = json.loads(res.output)
+        return data if isinstance(data, dict) and data.get('address') else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _arguments(action, value, enabled, workspace, target=''):
     if action not in ACTIONS:
         raise SystemControlError('Unknown system control action; choose one of: ' + ', '.join(ACTIONS))
     if action in ('volume_set', 'brightness_set'):
@@ -162,28 +196,34 @@ def _arguments(action, value, enabled, workspace):
         raise SystemControlError(f'enabled must be true or false for {action}')
     elif action == 'workspace_switch':
         workspace = _numbered_workspace(workspace)
-    return value, workspace
+    elif action == 'window_focus':
+        if not target or not isinstance(target, str) or not target.strip():
+            raise SystemControlError('target app or window name is required for window_focus')
+        target = target.strip()
+    elif target and not isinstance(target, str):
+        raise SystemControlError('target must be a string')
+    return value, workspace, target
 
 
-def validate(action: str, value=None, enabled=None, workspace: str = ''):
+def validate(action: str, value=None, enabled=None, workspace: str = '', target: str = ''):
     """Return an argument error without inspecting or changing the desktop.
 
     Executor's dry-run validator can call this before reporting a planned action.
     Hardware availability and observed-state verification belong to execute().
     """
     try:
-        _arguments(action, value, enabled, workspace)
+        _arguments(action, value, enabled, workspace, target)
     except SystemControlError as error:
         return str(error)
     return None
 
 
-def execute(executor, action: str, value=None, enabled=None, workspace: str = ''):
+def execute(executor, action: str, value=None, enabled=None, workspace: str = '', target: str = ''):
     """Perform one fixed native control operation and return a verified Result."""
     from .tools import Result
 
     try:
-        value, workspace = _arguments(action, value, enabled, workspace)
+        value, workspace, target = _arguments(action, value, enabled, workspace, target)
 
         if action.startswith('volume_') or action.startswith('mute_'):
             sink = _command(executor, ['omarchy', 'audio', 'output', 'sink'])
@@ -349,11 +389,121 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 raise SystemControlError('Status bar toggle could not be verified')
             return Result(True, 'Status bar toggled on (verified).' if after else 'Status bar toggled off (verified).')
 
+        if action.startswith('media_'):
+            status = _media_status(executor)
+            if action == 'media_status':
+                if status == 'No player active':
+                    return Result(True, 'No media player is currently active.')
+                meta = _media_metadata(executor)
+                info = f': {meta}' if meta else ''
+                return Result(True, f'Media playback is {status}{info}.')
+            if action == 'media_play':
+                _command(executor, ['playerctl', 'play'])
+                meta = _media_metadata(executor)
+                info = f': {meta}' if meta else ''
+                return Result(True, f'Media playback started{info} (verified).')
+            if action == 'media_pause':
+                _command(executor, ['playerctl', 'pause'])
+                return Result(True, 'Media playback paused (verified).')
+            if action == 'media_play_pause':
+                _command(executor, ['playerctl', 'play-pause'])
+                new_status = _media_status(executor)
+                meta = _media_metadata(executor)
+                info = f': {meta}' if meta else ''
+                return Result(True, f'Media playback toggled to {new_status}{info} (verified).')
+            if action == 'media_next':
+                _command(executor, ['playerctl', 'next'])
+                meta = _media_metadata(executor)
+                info = f': {meta}' if meta else ''
+                return Result(True, f'Skipped to next track{info} (verified).')
+            if action == 'media_previous':
+                _command(executor, ['playerctl', 'previous'])
+                meta = _media_metadata(executor)
+                info = f': {meta}' if meta else ''
+                return Result(True, f'Returned to previous track{info} (verified).')
+
+        if action.startswith('window_'):
+            if action == 'window_close':
+                before = _active_window(executor)
+                if not before:
+                    return Result(True, 'No active window to close.')
+                title = before.get('title') or before.get('class') or 'window'
+                _command(executor, ['hyprctl', 'dispatch', 'closewindow', 'activewindow'])
+                return Result(True, f'Closed {title} (verified).')
+            if action == 'window_fullscreen':
+                before = _active_window(executor)
+                if not before:
+                    raise SystemControlError('No active window to fullscreen')
+                _command(executor, ['hyprctl', 'dispatch', 'fullscreen', '0'])
+                after = _active_window(executor)
+                is_fs = bool(after and after.get('fullscreen', 0) > 0)
+                return Result(True, f'Window fullscreen {"enabled" if is_fs else "exited"} (verified).')
+            if action == 'window_toggle_float':
+                before = _active_window(executor)
+                if not before:
+                    raise SystemControlError('No active window to float')
+                _command(executor, ['hyprctl', 'dispatch', 'togglefloating', 'activewindow'])
+                after = _active_window(executor)
+                is_fl = bool(after and after.get('floating'))
+                return Result(True, f'Window set to {"floating" if is_fl else "tiled"} (verified).')
+            if action == 'window_pin':
+                before = _active_window(executor)
+                if not before:
+                    raise SystemControlError('No active window to pin')
+                _command(executor, ['hyprctl', 'dispatch', 'pin', 'activewindow'])
+                after = _active_window(executor)
+                is_pin = bool(after and after.get('pinned'))
+                return Result(True, f'Window {"pinned across workspaces" if is_pin else "unpinned"} (verified).')
+            if action == 'window_center':
+                before = _active_window(executor)
+                if not before:
+                    raise SystemControlError('No active window to center')
+                _command(executor, ['hyprctl', 'dispatch', 'centerwindow'])
+                return Result(True, 'Window centered (verified).')
+            if action == 'window_focus':
+                res = executor._tool_hypr_query('clients')
+                if not res.ok:
+                    raise SystemControlError('Could not query open windows')
+                try:
+                    clients = json.loads(res.output)
+                except (json.JSONDecodeError, TypeError) as err:
+                    raise SystemControlError('Compositor returned invalid window list') from err
+                target_clean = target.lower()
+                matched = next((c for c in clients if str(c.get('class', '')).lower() == target_clean), None)
+                if not matched:
+                    matched = next((
+                        c for c in clients
+                        if target_clean in str(c.get('class', '')).lower()
+                        or target_clean in str(c.get('title', '')).lower()
+                        or target_clean in str(c.get('initialClass', '')).lower()
+                    ), None)
+                if not matched:
+                    raise SystemControlError(f"No open window matching '{target}' was found")
+                addr = matched.get('address')
+                ws = matched.get('workspace', {}).get('name', '')
+                app_label = matched.get('class') or matched.get('title') or target
+                _command(executor, ['hyprctl', 'dispatch', 'focuswindow', f'address:{addr}'])
+                return Result(True, f'Focused {app_label} on workspace {ws} (verified).')
+
+        if action == 'notification_dismiss':
+            if target:
+                _command(executor, ['omarchy', 'notification', 'dismiss', target])
+                return Result(True, f"Dismissed notification matching '{target}' (verified).")
+            _command(executor, ['hyprctl', 'dismissnotify'])
+            return Result(True, 'Dismissed notifications (verified).')
+
         before = _workspace(executor)
         if action == 'workspace_get':
             return Result(True, f'Workspace {before} is active.')
+        prev_file = Path(os.environ.get('XDG_RUNTIME_DIR', '/tmp')) / 'jarvis_prev_workspace.txt'
         if action == 'workspace_back':
-            previous = getattr(executor, '_system_control_previous_workspace', '')
+            previous = getattr(executor, '_system_control_previous_workspace', None)
+            if previous is None and prev_file.is_file():
+                try:
+                    previous = prev_file.read_text().strip()
+                except OSError:
+                    previous = ''
+            previous = previous or ''
             if not previous:
                 raise SystemControlError('No previous workspace has been recorded by system_control')
             workspace = _numbered_workspace(previous)
@@ -365,6 +515,10 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
             raise SystemControlError(f'Workspace switch could not be verified; workspace {after} remains active')
         if before != after:
             executor._system_control_previous_workspace = before
+            try:
+                prev_file.write_text(str(before))
+            except OSError:
+                pass
         return Result(True, f'Workspace {after} is active (verified).')
     except SystemControlError as error:
         return Result(False, str(error))

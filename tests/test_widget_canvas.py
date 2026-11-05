@@ -73,6 +73,17 @@ class WidgetDataTests(unittest.TestCase):
                 self.assertTrue(path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_image_and_pip_widgets_support_actions(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            item = backend.make_widget("image", "Snapshot", {
+                "path": tmp.name,
+                "caption": "Captured window",
+                "actions": [{"label": "Dismiss", "action": "dismiss"}]
+            })
+            self.assertEqual(item["kind"], "image")
+            self.assertIn("actions", item["data"])
+            self.assertEqual(item["data"]["actions"][0]["label"], "Dismiss")
+
     def test_unknown_ipc_targets_cannot_look_successful(self):
         with patch.object(backend.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "Target not found.", "")):
             with self.assertRaises(RuntimeError): backend.shell_call("open")

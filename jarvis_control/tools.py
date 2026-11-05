@@ -42,7 +42,7 @@ READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
                    "read_url", "fetch_web_page", "get_jarvis_mode",
                    "reach_search", "reach_transcript", "confirm_system_action", "cancel_system_action",
-                   "show_widget", "manage_widget"}
+                   "show_widget", "manage_widget", "capture_vision_widget"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
 # we reject them here.
@@ -1265,8 +1265,8 @@ SHOW_WIDGET_SCHEMA = {
     'name': 'show_widget',
     'description': (
         'Show an on-screen contextual widget card on the desktop. '
-        'Use when the user explicitly asks to show, display, or view details, notes, summaries, tables, or charts. '
-        'Supports kinds: "text" (markdown text), "table", "chart", "qr", "progress", or "view". '
+        'Use when the user explicitly asks to show, display, or view details, notes, summaries, tables, charts, images, or PiP. '
+        'Supports kinds: "text" (markdown text), "table", "chart", "qr", "image", "pip", "progress", or "view". '
         'Default presentation is "floating".'
     ),
     'input_schema': {
@@ -1274,7 +1274,7 @@ SHOW_WIDGET_SCHEMA = {
         'properties': {
             'kind': {
                 'type': 'string',
-                'enum': ['text', 'table', 'chart', 'qr', 'progress', 'view'],
+                'enum': ['text', 'table', 'chart', 'qr', 'image', 'pip', 'progress', 'view'],
                 'description': 'Type of widget card to render.'
             },
             'title': {
@@ -1283,7 +1283,7 @@ SHOW_WIDGET_SCHEMA = {
             },
             'data_json': {
                 'type': 'string',
-                'description': 'JSON string containing widget payload (e.g. {"text": "# Markdown..."} or {"labels": [...], "values": [...]}).'
+                'description': 'JSON string containing widget payload (e.g. {"text": "# Markdown..."} or {"labels": [...], "values": [...]}, or {"path": "/path/to/img.png", "caption": "..."}).'
             },
             'widget_id': {
                 'type': 'string',
@@ -1330,6 +1330,47 @@ MANAGE_WIDGET_SCHEMA = {
     }
 }
 TOOL_SCHEMAS.append(MANAGE_WIDGET_SCHEMA)
+
+CAPTURE_VISION_WIDGET_SCHEMA = {
+    'name': 'capture_vision_widget',
+    'description': (
+        'Capture a visual snapshot of the desktop screen, active window, or webcam, '
+        'and display it directly as an on-screen visual widget card. '
+        'Use when the user asks to "take a screenshot and show me", "show webcam/camera", '
+        '"inspect screen visually", or "capture this window".'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'source': {
+                'type': 'string',
+                'enum': ['screen', 'activewindow', 'camera'],
+                'default': 'screen',
+                'description': 'Visual capture source: "screen" (entire focused monitor), "activewindow", or "camera" (local webcam).'
+            },
+            'title': {
+                'type': 'string',
+                'description': 'Optional header title for the widget card.'
+            },
+            'caption': {
+                'type': 'string',
+                'description': 'Optional caption or analysis note displayed under the image.'
+            },
+            'presentation': {
+                'type': 'string',
+                'enum': ['floating', 'canvas'],
+                'default': 'floating'
+            },
+            'expires_seconds': {
+                'type': 'integer',
+                'description': 'Lifetime in seconds before auto-dismissal (default 60).',
+                'default': 60
+            }
+        },
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(CAPTURE_VISION_WIDGET_SCHEMA)
 
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
@@ -1839,6 +1880,8 @@ class Executor:
             return f"show widget: {args.get('title', '')} ({args.get('kind', '')})"
         if name == "manage_widget":
             return f"manage widget: {args.get('action', '')} {args.get('widget_id', '')}".strip()
+        if name == "capture_vision_widget":
+            return f"capture vision widget: {args.get('source', 'screen')}"
         if name == "phone_control":
             return f"phone control: {args.get('action', '')} {args.get('package_name', '')} {args.get('key', '')}".strip()
         if name == "task_submit":
@@ -3905,6 +3948,103 @@ class Executor:
             return Result(True, json.dumps(res, ensure_ascii=False))
         except Exception as e:
             return Result(False, f"Failed to manage widget: {e}")
+
+    def _capture_screen_image(self, target: str = "screen") -> str:
+        """Capture a region using grim and return the absolute PNG path."""
+        target = (target or "screen").strip()
+        geometry = None
+        if target in ("screen", "", "monitor", "all"):
+            monitors = self._query_json("monitors")
+            focused = next((m for m in monitors if m.get("focused")), None) \
+                or (monitors[0] if monitors else None)
+            if not focused:
+                raise RuntimeError("No monitor found to capture")
+            geometry = f'{focused["x"]},{focused["y"]} {focused["width"]}x{focused["height"]}'
+        elif target in ("activewindow", "active", "focused"):
+            clients = self._query_json("clients")
+            window = next((c for c in clients if c.get("focusHistoryID") == 0), None)
+            if not window:
+                raise RuntimeError("No focused window found to capture")
+            geometry = f'{window["at"][0]},{window["at"][1]} {window["size"][0]}x{window["size"][1]}'
+        elif target.startswith("address:0x"):
+            window, err = self._window_geometry(target)
+            if not window:
+                raise RuntimeError(err or f"Could not find window {target}")
+            geometry = f'{window["at"][0]},{window["at"][1]} {window["size"][0]}x{window["size"][1]}'
+        else:
+            monitors = self._query_json("monitors")
+            focused = next((m for m in monitors if m.get("focused")), None) or (monitors[0] if monitors else None)
+            if focused:
+                geometry = f'{focused["x"]},{focused["y"]} {focused["width"]}x{focused["height"]}'
+
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "jarvis/widgets"
+        runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        dest = runtime / f"screen_{int(time.time()*1000)}.png"
+
+        cmd = ["grim"]
+        if geometry:
+            cmd.extend(["-g", geometry])
+        cmd.append(str(dest))
+
+        run = subprocess.run(cmd, capture_output=True, timeout=10)
+        if run.returncode != 0 or not dest.exists():
+            raise RuntimeError(run.stderr.decode(errors="replace").strip() or "Screen capture failed")
+        dest.chmod(0o600)
+        return str(dest)
+
+    def _capture_camera_frame(self, device: str = "/dev/video0") -> str:
+        """Capture a single frame from video device using ffmpeg."""
+        if not os.path.exists(device):
+            raise RuntimeError(f"Camera device {device} not found")
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "jarvis/widgets"
+        runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+        dest = runtime / f"cam_{int(time.time()*1000)}.jpg"
+
+        cmd = [
+            "ffmpeg", "-y", "-f", "v4l2", "-i", device,
+            "-vframes", "1", "-f", "image2", str(dest)
+        ]
+        run = subprocess.run(cmd, capture_output=True, timeout=10)
+        if run.returncode != 0 or not dest.exists():
+            raise RuntimeError(run.stderr.decode(errors="replace").strip() or "Camera capture failed")
+        dest.chmod(0o600)
+        return str(dest)
+
+    def _tool_capture_vision_widget(self, source: str = "screen", title: str = "",
+                                    caption: str = "", presentation: str = "floating",
+                                    expires_seconds: int = 60) -> Result:
+        from ui.jarvis_widgets import backend
+        try:
+            source = (source or "screen").strip().lower()
+            if source == "camera":
+                image_path = self._capture_camera_frame()
+                card_title = title or "Camera View"
+                kind = "pip"
+            else:
+                image_path = self._capture_screen_image(source)
+                card_title = title or ("Active Window" if source == "activewindow" else "Screen Snapshot")
+                kind = "image"
+
+            data = {
+                "path": image_path,
+                "caption": caption or f"Captured from {source}",
+                "actions": [
+                    {"label": "Dismiss", "action": "dismiss", "primary": False}
+                ]
+            }
+            widget = backend.make_widget(kind, card_title, data,
+                                         presentation=presentation,
+                                         expires_seconds=expires_seconds)
+            res = backend.shell_call("present", widget)
+            return Result(True, json.dumps({
+                "ok": True,
+                "widget_id": widget["id"],
+                "source": source,
+                "path": image_path,
+                "title": card_title
+            }, ensure_ascii=False))
+        except Exception as e:
+            return Result(False, f"Vision capture widget failed: {e}")
 
     def _tool_system_query(self, topic: str) -> Result:
         """Read-only facts, from a fixed list of commands.
