@@ -2458,7 +2458,7 @@ class Executor:
         answer = self._shell(["omarchy-shell", "lock", "isLocked"], timeout=4)
         return answer.ok and answer.output.strip().lower() == "true"
 
-    def _ocr_words(self, geometry: str) -> tuple[list[dict], str]:
+    def _ocr_words(self, geometry: str, scale: float = 1.0) -> tuple[list[dict], str]:
         """OCR a region into positioned words: [{text, x, y, w, h, conf}, ...].
 
         tesseract's `tsv` output carries a bounding box per word, which is the
@@ -2496,9 +2496,13 @@ class Executor:
                 conf = float(cell[10])
                 if conf < MIN_OCR_CONFIDENCE:
                     continue
+                scale_factor = scale if scale > 0 else 1.0
                 words.append({"text": cell[11].strip(),
-                              "x": origin_x + int(cell[6]), "y": origin_y + int(cell[7]),
-                              "w": int(cell[8]), "h": int(cell[9]), "conf": conf})
+                              "x": origin_x + int(round(int(cell[6]) / scale_factor)),
+                              "y": origin_y + int(round(int(cell[7]) / scale_factor)),
+                              "w": int(round(int(cell[8]) / scale_factor)),
+                              "h": int(round(int(cell[9]) / scale_factor)),
+                              "conf": conf})
             except ValueError:
                 continue
         return words, ""
@@ -2580,11 +2584,14 @@ class Executor:
         if not screen:
             return Result(False, "no monitor to look at")
         try:
-            geometry = f'{screen["x"]},{screen["y"]} {screen["width"]}x{screen["height"]}'
+            scale = float(screen.get("scale", 1.0)) or 1.0
+            logical_w = int(round(screen["width"] / scale))
+            logical_h = int(round(screen["height"] / scale))
+            geometry = f'{screen["x"]},{screen["y"]} {logical_w}x{logical_h}'
         except KeyError:
             return Result(False, "could not read the monitor geometry")
 
-        words, error = self._ocr_words(geometry)
+        words, error = self._ocr_words(geometry, scale=scale)
         if error:
             return Result(False, error)
         point = self._find_phrase(words, text)
@@ -2718,8 +2725,10 @@ class Executor:
             if not focused:
                 return Result(False, "no monitor to read")
             try:
-                geometry = (f'{focused["x"]},{focused["y"]} '
-                            f'{focused["width"]}x{focused["height"]}')
+                scale = float(focused.get("scale", 1.0)) or 1.0
+                logical_w = int(round(focused["width"] / scale))
+                logical_h = int(round(focused["height"] / scale))
+                geometry = f'{focused["x"]},{focused["y"]} {logical_w}x{logical_h}'
             except KeyError:
                 return Result(False, "could not read the monitor geometry")
             return self._ocr_region(geometry)
