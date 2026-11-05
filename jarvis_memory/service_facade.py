@@ -54,6 +54,7 @@ class UniversalMemoryService:
         allowed_statuses = {"active", "proposed"} if include_proposals else {"active"}
         records = [record for record in records
                    if record["status"] in allowed_statuses
+                   and record["sensitivity"] != "secret-forbidden"
                    and (scopes is None or record["scope"] in scopes)
                    and (types is None or record["kind"] in types)
                    and (record["expires_at"] is None or record["expires_at"] > now)]
@@ -75,7 +76,7 @@ class UniversalMemoryService:
 
     def read(self, record_id):
         record = self.store.get(record_id)
-        if record is None:
+        if record is None or record["sensitivity"] == "secret-forbidden":
             raise KeyError(record_id)
         return record
 
@@ -103,7 +104,10 @@ class UniversalMemoryService:
                                   agent_id=agent_id, authority=authority)
 
     def history(self, record_id):
-        return self.store.history(record_id)
+        revisions = self.store.history(record_id)
+        restricted = {revision["id"] for revision in revisions
+                      if revision.get("sensitivity") == "secret-forbidden"}
+        return [revision for revision in revisions if revision["id"] not in restricted]
 
     def forget(self, record_id):
         return self.store.forget(record_id)

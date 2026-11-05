@@ -1,0 +1,21 @@
+{
+  "installed": "/home/g0pi/.local/share/jarvis-runtime/releases/20261104T041719135690Z-clean-memory-vault",
+  "previous": "/home/g0pi/.local/share/jarvis-runtime/releases/20261104T040641426067Z-organized-memory",
+  "backup": "/home/g0pi/.local/state/jarvis/backups/clean-vault-1793765839133597609",
+  "vault": "/home/g0pi/Documents/JARVIS Memory",
+  "generated_nodes": 32,
+  "preserved_edited_notes": 0,
+  "sections": [
+    "01 Short-Term Memory",
+    "02 Long-Term Memory",
+    "03 Episodic Memory",
+    "04 Semantic Memory",
+    "05 Procedural Memory",
+    "06 Shared Memory"
+  ],
+  "service_states": {
+    "jarvis-voice.service": "inactive",
+    "jarvis-device-bridge.service": "active"
+  },
+  "old_generated_folder_trashed": true
+}

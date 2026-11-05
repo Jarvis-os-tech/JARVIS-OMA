@@ -11,6 +11,7 @@ from typing import Any
 
 from .bridge import MemoryBridge, MemoryError as BridgeMemoryError
 from .config import Config, MemoryConfig
+from .categories import CATEGORIES
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class MemorySkills:
         self._memory_writes: set[asyncio.Task] = set()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='jarvis-memory')
         self._closed = False
+        self._capture_dropped = 0
+        self._capture_failures = 0
         self.memory = MemoryBridge(self._memory_config, api_key=api_key)
 
         # Declarations matching manifest
@@ -49,20 +52,26 @@ class MemorySkills:
         else:
             self.declarations = []
         parameters = {
-            'remember_memory': ({'text': {'type': 'string'}}, ['text']),
+            'remember_memory': ({'text': {'type': 'string'}, 'category': {'type': 'string'}, 'scope': {'type': 'string'}}, ['text']),
             'recall_memory': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}, 'device': {'type': 'string', 'enum': ['all', 'pc', 'mobile']}}, []),
             'recall_conversation': ({'query': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}, 'device': {'type': 'string', 'enum': ['all', 'pc', 'mobile']}}, []),
-            'forget_memory': ({'text': {'type': 'string'}}, ['text']),
+            'forget_memory': ({'text': {'type': 'string'}, 'scope': {'type': 'string'}}, ['text']),
             'clear_memory': ({}, []),
             'update_memory_profile': ({'name': {'type': 'string'}, 'content': {'type': 'string'}}, ['name', 'content']),
             'index_memory_document': ({'path': {'type': 'string'}}, ['path']),
             'memory_status': ({}, []),
             'sync_memory_vault': ({}, []),
-            'correct_memory': ({'memory_id': {'type': 'string'}, 'text': {'type': 'string'}}, ['memory_id', 'text']),
+            'correct_memory': ({'memory_id': {'type': 'string'}, 'text': {'type': 'string'}, 'reason': {'type': 'string'}}, ['memory_id', 'text']),
             'memory_history': ({'memory_id': {'type': 'string'}}, ['memory_id']),
         }
         for declaration in self.declarations:
             properties, required = parameters[declaration['name']]
+            if declaration['name'] == 'recall_memory':
+                properties.update(category={'type': 'string', 'enum': ['all', *CATEGORIES, 'conversations', 'documents']}, scope={'type': 'string'})
+            elif declaration['name'] == 'remember_memory':
+                properties['category']['enum'] = ['auto', *CATEGORIES]
+                properties.update(steps={'type':'array', 'items':{'type':'string'}}, outcome={'type':'string'}, occurred_at={'type':'integer'})
+                declaration['description'] = 'Save categorized user-stated memory. Categories include preferences, personal, facts and instructions. Instructions are guidance, not execution authorization. Scope defaults to user; project:NAME is isolated.'
             declaration['parameters_json_schema'] = {
                 'type': 'object', 'properties': properties, 'required': required,
             }
@@ -121,11 +130,11 @@ class MemorySkills:
         except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, ValueError) as error:
             raise SkillError(str(error)) from None
 
-    async def _adapter_remember_memory(self, text: str) -> dict[str, Any]:
-        return await self._memory_operation("remember", text=text)
+    async def _adapter_remember_memory(self, text: str, category='auto', scope='user', steps=None, outcome=None, occurred_at=None) -> dict[str, Any]:
+        return await self._memory_operation("remember", text=text, category=category, scope=scope, steps=steps, outcome=outcome, occurred_at=occurred_at)
 
-    async def _adapter_recall_memory(self, query: str = "", limit: int = 20) -> dict[str, Any]:
-        res = await self._memory_operation("recall", query=query, limit=limit)
+    async def _adapter_recall_memory(self, query: str = "", limit: int = 20, device: str | None = None, category='all', scope='user') -> dict[str, Any]:
+        res = await self._memory_operation("recall", query=query, limit=limit, device=device, category=category, scope=scope)
         status = await self._memory_operation("status")
         res["total_stored_messages"] = status.get("conversation_messages", 0)
         return res
@@ -142,8 +151,8 @@ class MemorySkills:
             "summary": f"Retrieved {len(turns)} conversation turns from continuous memory.",
         }
 
-    async def _adapter_forget_memory(self, text: str) -> dict[str, Any]:
-        return await self._memory_operation("forget", text=text)
+    async def _adapter_forget_memory(self, text: str, scope='user') -> dict[str, Any]:
+        return await self._memory_operation("forget", text=text, scope=scope)
 
     async def _adapter_clear_memory(self) -> dict[str, Any]:
         return await self._memory_operation("clear")
@@ -155,21 +164,28 @@ class MemorySkills:
         return await self._memory_operation("index_document", path=path)
 
     async def _adapter_memory_status(self) -> dict[str, Any]:
-        return await self._memory_operation("status")
+        result = await self._memory_operation("status")
+        result['capture_worker'] = {'pending': len(self._memory_writes),
+            'dropped_exchanges': self._capture_dropped, 'failed_exchanges': self._capture_failures,
+            'counters_scope': 'current_process', 'closed': self._closed}
+        return result
 
     async def _adapter_sync_memory_vault(self) -> dict[str, Any]:
         return await self._memory_operation("sync_obsidian")
 
-    async def _adapter_correct_memory(self, memory_id: str, text: str) -> dict[str, Any]:
-        return await self._memory_operation("correct", memory_id=memory_id, text=text)
+    async def _adapter_correct_memory(self, memory_id: str, text: str, reason: str = '') -> dict[str, Any]:
+        return await self._memory_operation("correct", memory_id=memory_id, text=text, reason=reason)
 
     async def _adapter_memory_history(self, memory_id: str) -> dict[str, Any]:
         return await self._memory_operation("memory_history", memory_id=memory_id)
 
     def queue_memory_exchange(self, user: str, assistant: str, device: str = "pc") -> None:
+        if not self._memory_config.enabled:
+            return
         if not user and not assistant:
             return
         if len(self._memory_writes) >= 16:
+            self._capture_dropped += 1
             log.warning("Memory capture backlog full; dropping exchange")
             return
 
@@ -190,6 +206,7 @@ class MemorySkills:
             except asyncio.CancelledError:
                 pass
             except Exception as error:
+                self._capture_failures += 1
                 log.warning("Memory capture failed: %s", type(error).__name__)
 
         task.add_done_callback(finished)

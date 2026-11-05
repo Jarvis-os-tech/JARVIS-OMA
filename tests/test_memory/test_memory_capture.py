@@ -57,6 +57,46 @@ class MemoryCaptureTests(unittest.TestCase):
         second = extract_memories('We decided to use Redis.')[0]
         self.assertNotEqual(first['key'], second['key'])
 
+    def test_expanded_identity_and_roles(self):
+        name_mem = extract_memories('I am Gopi.')[0]
+        self.assertEqual(name_mem['kind'], 'identity')
+        self.assertEqual(name_mem['key'], 'identity:name')
+
+        role_mem = extract_memories('Then I am a student of CSE and I am passionate about AI technology.')[0]
+        self.assertEqual(role_mem['kind'], 'identity')
+        self.assertEqual(role_mem['key'], 'identity:role')
+
+        loc_mem = extract_memories('I live in Hyderabad.')[0]
+        self.assertEqual(loc_mem['kind'], 'identity')
+        self.assertEqual(loc_mem['key'], 'identity:location')
+
+        email_mem = extract_memories('My email is user@example.com.')[0]
+        self.assertEqual(email_mem['kind'], 'identity')
+        self.assertEqual(email_mem['key'], 'identity:email')
+
+    def test_constraints_and_authorization_rules(self):
+        c1 = extract_memories("Don't choose the compose authorization for GitHub.")[0]
+        self.assertEqual(c1['kind'], 'constraint')
+
+        c2 = extract_memories("I don't authorize GitHub from Composio.")[0]
+        self.assertEqual(c2['kind'], 'constraint')
+
+        c3 = extract_memories("We only use the GitHub and Google Workspace our local authentication pages, not the compose pages.")[0]
+        self.assertEqual(c3['kind'], 'constraint')
+
+    def test_tech_stack_and_environment(self):
+        p1 = extract_memories("We use Hyprland as our window manager.")[0]
+        self.assertEqual(p1['kind'], 'project')
+
+        p2 = extract_memories("Our tech stack is Python, FastHTML, and SQLite.")[0]
+        self.assertEqual(p2['kind'], 'project')
+
+        f1 = extract_memories("Save this note: review logs tomorrow.")[0]
+        self.assertEqual(f1['kind'], 'fact')
+
+        i1 = extract_memories("From now on, speak concisely.")[0]
+        self.assertEqual(i1['kind'], 'instruction')
+
 
 if __name__ == '__main__':
     unittest.main()

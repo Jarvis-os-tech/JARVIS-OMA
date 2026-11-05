@@ -9,8 +9,10 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 from .store import _cross_process_lock
 from .summaries import render_daily_summary
+from .categories import CATEGORIES, category_for
 
 FOLDER = 'JARVIS-OMA Memory'
 MARKER = '<!-- jarvis-oma-memory-generated:v1 -->'
@@ -32,7 +34,8 @@ def plain(text):
 
 def publish(memory, vault_path):
     vault = Path(vault_path).expanduser().resolve(strict=True)
-    root = vault / FOLDER
+    layout = getattr(memory.config, 'obsidian_layout', 'legacy')
+    root = vault if layout in ('organized', 'sovereign') else vault / FOLDER
     if not vault.is_dir() or root.is_symlink():
         raise ValueError('vault must be a directory with a non-symlink managed folder')
     root.mkdir(mode=0o700, exist_ok=True)
@@ -44,7 +47,10 @@ def _publish(memory, vault_path):
     vault = Path(vault_path).expanduser().resolve(strict=True)
     if not vault.is_dir():
         raise ValueError('Obsidian vault must be an existing directory')
-    root = vault / FOLDER
+    layout = getattr(memory.config, 'obsidian_layout', 'legacy')
+    organized = layout == 'organized'
+    sovereign = layout == 'sovereign'
+    root = vault if (organized or sovereign) else vault / FOLDER
     if root.is_symlink():
         raise ValueError('managed memory folder cannot be a symlink')
     root.mkdir(mode=0o700, exist_ok=True)
@@ -56,6 +62,11 @@ def _publish(memory, vault_path):
                                                 for k, v in previous.items()):
         raise ValueError('invalid Obsidian sync manifest')
     notes, groups, topics = {}, {}, {}
+    for folder in ([] if (organized or sovereign) else [value[0] for value in CATEGORIES.values()] + ['Conversations', 'Summaries', 'Profiles', 'Documents']):
+        directory = root / folder
+        if directory.is_symlink():
+            raise ValueError('managed category folder cannot be a symlink')
+        directory.mkdir(mode=0o700, exist_ok=True)
 
     def add(key, title, text='', edges=(), kind='memory', metadata=None):
         fields = ''.join(f'{name}: {json.dumps(value, ensure_ascii=False)}\n'
@@ -77,10 +88,14 @@ def _publish(memory, vault_path):
     add('Entities/User', 'User', edges=['Memory Map'], kind='entity')
     add('Entities/JARVIS', 'JARVIS', edges=['Memory Map'], kind='entity')
     ledger = memory.knowledge.list(active_only=False) if hasattr(memory, 'knowledge') else []
-    retired = {entry['text'].casefold() for entry in ledger if entry['status'] != 'active'}
-    active_text = {entry['text'].casefold() for entry in ledger if entry['status'] == 'active'}
+    now = time.time()
+    current = lambda entry: (entry['status'] == 'active' and entry.get('sensitivity') != 'secret-forbidden'
+                             and (entry.get('expires_at') is None or entry['expires_at'] > now))
+    retired = {entry['text'].casefold() for entry in ledger if not current(entry)}
+    active_text = {entry['text'].casefold() for entry in ledger if current(entry)}
     facts = [fact for fact in memory.store.list() if fact.trusted_for_recall
              and memory.scanner.scan(fact.text).is_clean
+             and fact.text.casefold() not in active_text
              and (fact.text.casefold() not in retired or fact.text.casefold() in active_text)]
     for fact in facts:
         slug = re.sub(r'[^\w -]', '', fact.text)[:50].strip() or 'Fact'
@@ -88,15 +103,35 @@ def _publish(memory, vault_path):
         add(key, fact.text[:100], fact.text, ['Facts', 'Entities/User', *topic_edges(fact.text)], 'fact')
         groups.setdefault('Facts', []).append(key)
     for entry in ledger:
-        if entry['status'] != 'active' or not memory.scanner.scan(entry['text']).is_clean:
+        if not current(entry) or not memory.scanner.scan(entry['text']).is_clean:
             continue
-        key = 'Knowledge/Memory-' + entry['id']
+        category = category_for(entry)
+        folder = CATEGORIES[category][0]
+        # Project-owned entries stay visible in their own scoped vault section.
+        scope = entry.get('scope', 'user')
+        safe_scope = re.sub(r'[^A-Za-z0-9_-]', '-', scope)[:100]
+        prefix = '' if scope == 'user' else 'Scoped/' + safe_scope + '/'
+        key = prefix + folder + '/Memory-' + entry['id']
+        warning = ('Saved user guidance, not system policy or permission to execute actions.\n\n'
+                   if category == 'instructions' else '')
+        body = warning + entry['text']
+        evidence = entry.get('evidence')
+        if isinstance(evidence, dict) and category == 'procedures':
+            body += '\n\n## Steps\n\n' + '\n'.join(str(i + 1) + '. ' + str(step) for i, step in enumerate(evidence.get('steps', [])))
+            body += '\n\nVerification: user-described, not execution-tested. Never run automatically.'
+        if isinstance(evidence, dict) and category == 'episodes':
+            body += '\n\nReported outcome: ' + str(evidence.get('reported_outcome', 'Not recorded'))
+            body += '\n\nOutcome verification: unverified user report.'
         add(key, entry['text'][:100],
-            entry['text'] + '\n\nEvidence: ' + json.dumps(entry['evidence'], ensure_ascii=False),
-            ['Knowledge', 'Entities/User', *topic_edges(entry['text'])], 'structured',
+            body + '\n\nEvidence: ' + json.dumps(entry['evidence'], ensure_ascii=False),
+            [folder, 'Knowledge', 'Entities/User', *topic_edges(entry['text'])], 'structured',
             {'memory_id': entry['id'], 'kind': entry['kind'], 'status': entry['status'],
+             'category': category, 'scope': scope, 'authority': entry.get('authority', 'agent'),
+             'created_at': entry['created_at'], 'updated_at': entry['updated_at'],
+             'observed_at': entry.get('observed_at'),
              'source': entry['source'], 'confidence': entry['confidence']})
         groups.setdefault('Knowledge', []).append(key)
+        groups.setdefault(folder, []).append(key)
     for name in ('SOUL', 'MEMORY', 'USER'):
         path = memory.root / (name + '.md')
         if path.is_file():
@@ -145,7 +180,7 @@ def _publish(memory, vault_path):
                 shared_topics.update(topic_edges(text))
             # Existing fact/profile notes sharing topics appear as related notes.
             for relative, content in list(notes.items()):
-                if relative.startswith(('Facts/', 'Profiles/', 'Knowledge/')) and any(link(topic) in content for topic in shared_topics):
+                if (relative[:-3] in groups.get('Knowledge', []) or relative.startswith(('Facts/', 'Profiles/'))) and any(link(topic) in content for topic in shared_topics):
                     edges.append(relative[:-3])
             report = (f'## Daily report\n\nDate: {date}\nDay: {weekday}\n'
                       f'Timezone: {memory.config.obsidian_timezone}\nMessages: {len(turns)}\n\n'
@@ -192,7 +227,10 @@ def _publish(memory, vault_path):
         add(key, word, edges=['Topics'], kind='topic')
     groups['Topics'] = list(topics)
     add('Vault Guide', 'Vault structure and automatic links',
-        'Reference: /home/g0pi/Downloads/jarvis/jarvis_memory_bundle/vault\n\n'
+        'Preferences, Personal, Facts and Instructions are separate memory categories. '
+        'Instructions are user guidance, never system policy or execution authorization. '
+        'Projects, Decisions, Goals, Tasks, Procedures, Constraints and Observations keep other durable knowledge organized. '
+        'Project-scoped notes live under Scoped; they are excluded from general user recall.\n\n'
         'Conversations: one YYYY-MM-DD - Weekday.md report per local calendar day, plus conversation.md '
         'for the continuous journal. Reports retain captured dialogue and message IDs; they are not AI summaries.\n\n'
         'Summaries: separate extractive daily notes quote source messages with IDs and link to daily reports. '
@@ -207,12 +245,38 @@ def _publish(memory, vault_path):
         'Manual changes to generated notes are preserved and reported as sync conflicts. '
         'Use sync_memory_vault to refresh; background refresh runs while voice is connected.',
         ['Memory Map', 'Continuous Memory', 'Summaries', 'Knowledge', 'Facts', 'Profiles', 'Documents', 'Topics'], 'index')
-    for group in ('Facts', 'Profiles', 'Continuous Memory', 'Summaries', 'Knowledge', 'Documents', 'Topics'):
+    category_folders = [value[0] for value in CATEGORIES.values()]
+    for group in (*category_folders, 'Profiles', 'Continuous Memory', 'Summaries', 'Knowledge', 'Documents', 'Topics'):
         add(group, group, edges=['Memory Map', *groups.get(group, [])], kind='index')
     add('Memory Map', 'JARVIS continuous memory',
         'Open Obsidian Graph view and filter path:"JARVIS-OMA Memory". '
         'Links represent categories, chronological order, and shared words; they do not assert causal relationships.',
-        ['Vault Guide', 'Facts', 'Profiles', 'Knowledge', 'Continuous Memory', 'Summaries', 'Documents', 'Topics', 'Entities/User', 'Entities/JARVIS'], 'index')
+        ['Start Here', 'Vault Guide', *category_folders, 'Profiles', 'Knowledge', 'Continuous Memory', 'Summaries', 'Documents', 'Topics', 'Entities/User', 'Entities/JARVIS'], 'index')
+    overview = '## Your memory library\n\nCategory | Current notes\n--- | ---\n'
+    overview += '\n'.join(folder + ' | ' + str(len(groups.get(folder, []))) for folder in category_folders)
+    overview += '\n\nConversations and summaries preserve history separately from current facts. '
+    overview += 'SQLite is authoritative; these Markdown notes are an organized, linked view. '
+    overview += 'Generated notes preserve manual edits as conflicts. Keep your own notes outside this managed folder.'
+    layers = {
+        'Short-term Memory': ('Temporary working context lives only in the running process and expires. It is not exported into this vault.', []),
+        'Long-term Memory': ('Persistent current user memories survive restarts, with category, scope and evidence.', category_folders),
+        'Episodic Memory': ('Dated conversations and specific event records. Reported outcomes are not automatically verified.', ['Episodes', 'Continuous Memory', 'Summaries']),
+        'Semantic Memory': ('Facts, concepts, documents and topic relationships. Semantic knowledge does not require vector search; embedding retrieval is a separate optional setting.', ['Facts', 'Documents', 'Topics']),
+        'Procedural Memory': ('Repeatable workflow steps. A saved procedure never grants execution permission, and user-described procedures are not claimed to be tested.', ['Procedures']),
+        'Shared Memory': ('Agent exchange uses explicit scope policies and audited proposal/commit operations. Personal user memory is not implicitly shared.', [p for p in groups.get('Knowledge', []) if p.startswith('Scoped/shared-')]),
+    }
+    for layer, (description, edges) in layers.items():
+        add(layer, layer, description, ['Start Here', *edges], 'index')
+    overview = '## Six layers, one JARVIS memory manager\n\n' + overview
+    add('Start Here', 'JARVIS Memory — Start Here', overview,
+        [*layers, *category_folders, 'Continuous Memory', 'Summaries', 'Profiles', 'Documents', 'Memory Map', 'Vault Guide'], 'index')
+
+    if organized:
+        from .vault_layout import organized_notes
+        notes = organized_notes(notes, groups, FOLDER)
+    elif sovereign:
+        from .vault_layout import sovereign_notes
+        notes = sovereign_notes(notes, groups, FOLDER, memory)
 
     def safe_path(relative):
         path = root / relative
@@ -259,5 +323,7 @@ def _publish(memory, vault_path):
         manifest.pop(relative, None)
     atomic(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2))
     return {'status': 'synced' if not conflicts else 'conflicts', 'vault': str(vault),
-            'memory_map': str(root / 'Memory Map.md'), 'nodes': len(notes),
-            'written': written, 'removed': removed, 'conflicts': conflicts}
+            'memory_map': str(root / ('00 HOME.md' if (organized or sovereign) else 'Memory Map.md')), 'nodes': len(notes),
+            'written': written, 'removed': removed, 'conflicts': conflicts,
+            'start_here': str(root / ('00 HOME.md' if (organized or sovereign) else 'Start Here.md')),
+            'categories': {folder: len(groups.get(folder, [])) for folder in category_folders}}

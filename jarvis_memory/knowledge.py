@@ -17,7 +17,7 @@ from uuid import uuid4
 from hashlib import sha256
 
 
-KINDS = frozenset({"fact", "preference", "decision", "goal", "constraint",
+KINDS = frozenset({"fact", "preference", "identity", "instruction", "requirement", "decision", "goal", "constraint",
                    "observation", "event", "entity", "procedure", "task", "project"})
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
@@ -31,8 +31,6 @@ CREATE TABLE IF NOT EXISTS entries (
  sensitivity TEXT NOT NULL DEFAULT 'private', superseded_by TEXT,
  source_hash TEXT NOT NULL DEFAULT '', evidence_refs TEXT NOT NULL DEFAULT '[]'
 );
-CREATE UNIQUE INDEX IF NOT EXISTS active_keys ON entries(key)
- WHERE key <> '' AND status = 'active';
 CREATE TABLE IF NOT EXISTS revisions (
  sequence INTEGER PRIMARY KEY AUTOINCREMENT, family TEXT NOT NULL,
  snapshot TEXT NOT NULL
@@ -53,6 +51,7 @@ _MIGRATION_COLUMNS = {
 }
 AUTHORITIES = frozenset({"user", "verified", "tool", "agent", "summary"})
 SENSITIVITIES = frozenset({"public", "internal", "private", "secret-forbidden"})
+_UNSET = object()
 
 
 class KnowledgeStore:
@@ -91,6 +90,8 @@ class KnowledgeStore:
                 for name, declaration in _MIGRATION_COLUMNS.items():
                     if name not in existing:
                         connection.execute(f"ALTER TABLE entries ADD COLUMN {name} {declaration}")
+                connection.execute('DROP INDEX IF EXISTS active_keys')
+                connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS active_scope_keys ON entries(scope,key) WHERE key <> '' AND status='active'")
                 for identifier, text in connection.execute(
                         "SELECT id,text FROM entries WHERE source_hash='' OR source_hash IS NULL"):
                     connection.execute("UPDATE entries SET source_hash=? WHERE id=?",
@@ -178,35 +179,51 @@ class KnowledgeStore:
         return self._entry(row)
 
     def upsert(self, text, kind="fact", key="", source="", evidence=None, confidence=1.0, *,
-               scope="user", author="", agent_id="", observed_at=None, expires_at=None,
+               scope="user", author="", agent_id="", observed_at=None, expires_at=_UNSET,
                authority="agent", sensitivity="private", source_hash="", evidence_refs=()):
         encoded, encoded_refs = self._validate(
             text, kind, key, source, evidence, confidence, scope=scope, author=author,
-            agent_id=agent_id, observed_at=observed_at, expires_at=expires_at,
+            agent_id=agent_id, observed_at=observed_at, expires_at=None if expires_at is _UNSET else expires_at,
             authority=authority, sensitivity=sensitivity, source_hash=source_hash,
             evidence_refs=evidence_refs)
         with self._connection(write=True) as connection:
             duplicate = connection.execute(
-                "SELECT * FROM entries WHERE text=? AND kind=? AND key=? AND status='active'",
-                (text, kind, key)).fetchone()
+                "SELECT * FROM entries WHERE text=? AND kind=? AND key=? AND scope=? AND status='active'",
+                (text, kind, key, scope)).fetchone()
             if duplicate:
                 # Identical observations are idempotent. New evidence is kept
                 # as a revision, while the initial source remains in history.
-                if (duplicate["source"], duplicate["evidence"], duplicate["confidence"],
-                    duplicate["evidence_refs"]) != (source, encoded, confidence, encoded_refs):
-                    connection.execute("UPDATE entries SET source=?, evidence=?, confidence=?, evidence_refs=?, updated_at=? WHERE id=?",
-                                       (source, encoded, confidence, encoded_refs, time.time(), duplicate["id"]))
+                authority_rank = {"summary": 1, "agent": 2, "tool": 3, "verified": 4, "user": 5}
+                sensitivity_rank = {"public": 1, "internal": 2, "private": 3, "secret-forbidden": 4}
+                may_refresh = authority_rank[authority] >= authority_rank[duplicate["authority"]]
+                metadata = (source, encoded, confidence, encoded_refs,
+                            author or duplicate["author"], agent_id or duplicate["agent_id"],
+                            observed_at if observed_at is not None else duplicate["observed_at"],
+                            duplicate["expires_at"] if expires_at is _UNSET else expires_at,
+                            max((duplicate["authority"], authority), key=authority_rank.get),
+                            max((duplicate["sensitivity"], sensitivity), key=sensitivity_rank.get),
+                            source_hash or duplicate["source_hash"])
+                previous_metadata = tuple(duplicate[name] for name in (
+                    "source", "evidence", "confidence", "evidence_refs", "author", "agent_id",
+                    "observed_at", "expires_at", "authority", "sensitivity", "source_hash"))
+                if not may_refresh:
+                    metadata = (*previous_metadata[:8], metadata[8], metadata[9], previous_metadata[10])
+                if previous_metadata != metadata:
+                    connection.execute("UPDATE entries SET source=?, evidence=?, confidence=?, evidence_refs=?,"
+                                       "author=?, agent_id=?, observed_at=?, expires_at=?, authority=?,"
+                                       "sensitivity=?, source_hash=?, updated_at=? WHERE id=?",
+                                       (*metadata, time.time(), duplicate["id"]))
                     duplicate = connection.execute("SELECT * FROM entries WHERE id=?", (duplicate["id"],)).fetchone()
                     self._record(connection, duplicate, "evidence")
                 return self._entry(duplicate)
-            previous = connection.execute("SELECT * FROM entries WHERE key=? AND status='active'", (key,)).fetchone() if key else None
+            previous = connection.execute("SELECT * FROM entries WHERE key=? AND scope=? AND status='active'", (key, scope)).fetchone() if key else None
             memory_id = uuid4().hex
             if previous:
                 self._supersede(connection, previous, "explicit key replacement", memory_id)
             return self._insert(connection, text, kind, key, source, encoded, confidence,
                                 family=previous["family"] if previous else None, memory_id=memory_id,
                                 scope=scope, author=author, agent_id=agent_id,
-                                observed_at=observed_at, expires_at=expires_at, authority=authority,
+                                observed_at=observed_at, expires_at=None if expires_at is _UNSET else expires_at, authority=authority,
                                 sensitivity=sensitivity, source_hash=source_hash, evidence_refs=encoded_refs)
 
     def _supersede(self, connection, row, reason, superseded_by=None):
@@ -257,7 +274,7 @@ class KnowledgeStore:
             if row["status"] != "proposed":
                 raise ValueError("only proposed entries can be committed")
             previous = connection.execute(
-                "SELECT * FROM entries WHERE key=? AND status='active'", (row["key"],)).fetchone() if row["key"] else None
+                "SELECT * FROM entries WHERE key=? AND scope=? AND status='active'", (row["key"], row['scope'])).fetchone() if row["key"] else None
             if previous:
                 self._supersede(connection, previous, "committed proposal", memory_id)
                 connection.execute("UPDATE entries SET family=? WHERE id=?", (previous["family"], memory_id))

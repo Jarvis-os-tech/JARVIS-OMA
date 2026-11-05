@@ -1,0 +1,74 @@
+{
+  "sync": {
+    "status": "synced",
+    "vault": "/home/g0pi/Documents/JARVIS Memory",
+    "memory_map": "/home/g0pi/Documents/JARVIS Memory/00 HOME.md",
+    "nodes": 32,
+    "written": 0,
+    "removed": 0,
+    "conflicts": [],
+    "start_here": "/home/g0pi/Documents/JARVIS Memory/00 HOME.md",
+    "categories": {
+      "Preferences": 0,
+      "Personal": 0,
+      "Facts": 0,
+      "Instructions": 1,
+      "Projects": 0,
+      "Decisions": 0,
+      "Goals": 0,
+      "Tasks": 4,
+      "Procedures": 0,
+      "Constraints": 0,
+      "Observations": 0,
+      "Episodes": 0
+    }
+  },
+  "broken_managed_links": 0,
+  "conversation_messages": 2530,
+  "memory_categories": {
+    "preferences": 0,
+    "personal": 0,
+    "facts": 0,
+    "instructions": 1,
+    "projects": 0,
+    "decisions": 0,
+    "goals": 0,
+    "tasks": 4,
+    "procedures": 0,
+    "constraints": 0,
+    "observations": 0,
+    "episodes": 0
+  },
+  "memory_layers": {
+    "short_term": {
+      "storage": "process memory",
+      "persistent": false,
+      "items": 0
+    },
+    "long_term": {
+      "storage": "SQLite knowledge ledger",
+      "persistent": true,
+      "items": 5
+    },
+    "episodic": {
+      "storage": "dated conversation history and event records",
+      "events": 0
+    },
+    "semantic": {
+      "storage": "facts, concepts and indexed documents",
+      "facts": 0,
+      "vector_search_enabled": false
+    },
+    "procedural": {
+      "storage": "procedure records",
+      "items": 0,
+      "automatic_execution": false
+    },
+    "shared": {
+      "storage": "scoped ledger via policy-checked MCP",
+      "items": 0,
+      "agent_writes": "proposal then permitted commit"
+    }
+  },
+  "historical_archive_notes": 335
+}

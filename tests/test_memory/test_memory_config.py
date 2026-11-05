@@ -113,7 +113,9 @@ class MemoryConfigTests(unittest.TestCase):
         for schema in by_name.values():
             self.assertFalse(schema['additionalProperties'])
             for prop in schema['properties'].values():
-                self.assertIn(prop['type'], ('string', 'integer', 'boolean'))
+                self.assertIn(prop['type'], ('string', 'integer', 'boolean', 'array', 'number'))
+                if prop['type'] == 'array':
+                    self.assertEqual(prop['items'], {'type': 'string'})
 
 
 if __name__ == '__main__':

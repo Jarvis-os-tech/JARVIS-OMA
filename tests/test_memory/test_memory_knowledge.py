@@ -152,7 +152,7 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertEqual(len(legacy["source_hash"]), 64)
 
     def test_proposal_is_not_active_until_committed(self):
-        active = self.store.upsert("Old decision", key="launch", authority="user")
+        active = self.store.upsert("Old decision", key="launch", authority="user", scope="project:jarvis")
         proposed = self.store.propose("New decision", key="launch", author="codex",
                                       agent_id="codex", scope="project:jarvis",
                                       evidence_refs=["test:1"])

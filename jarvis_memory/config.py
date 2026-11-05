@@ -28,6 +28,7 @@ class MemoryConfig:
     obsidian_vault: str = ""
     obsidian_auto_sync: bool = True
     obsidian_timezone: str = "Asia/Kolkata"
+    obsidian_layout: str = "legacy"  # organized = six sections, without word-topic nodes
     structured_capture: bool = True  # Local evidence-grounded extraction
     semantic_retrieval: bool = False  # Requires configured embedding model
     semantic_provider: str = "gemini"
@@ -57,6 +58,7 @@ class MemoryConfig:
             "extraction_url",
             "obsidian_vault",
             "obsidian_timezone",
+            "obsidian_layout",
             "semantic_provider",
             "semantic_model",
             "semantic_url",
@@ -65,6 +67,8 @@ class MemoryConfig:
                 raise ValueError(f"memory.{name} must be a string")
         if self.semantic_provider not in ("gemini", "ollama"):
             raise ValueError("memory.semantic_provider must be gemini or ollama")
+        if self.obsidian_layout not in ('legacy', 'organized', 'sovereign'):
+            raise ValueError('memory.obsidian_layout must be legacy, organized, or sovereign')
         if (
             isinstance(self.semantic_min_score, bool)
             or not isinstance(self.semantic_min_score, (int, float))

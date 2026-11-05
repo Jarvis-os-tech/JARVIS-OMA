@@ -120,6 +120,8 @@ class UniversalMemoryMCP:
 
     def _read_record(self, record_id):
         record = self.service.read(record_id)
+        if record["sensitivity"] == "secret-forbidden":
+            raise MCPMemoryError("record is not available to shared clients")
         if not self.policy.can_read(record["scope"]):
             raise MCPMemoryError("record is outside the client's read scopes")
         return record
@@ -127,6 +129,8 @@ class UniversalMemoryMCP:
     def _writable_record(self, record_id, permission):
         self._require_permission(permission)
         record = self.service.read(record_id)
+        if record["sensitivity"] == "secret-forbidden":
+            raise MCPMemoryError("record is not available to shared clients")
         if not self.policy.can_write(record["scope"]):
             raise MCPMemoryError("record is outside the client's write scopes")
         return record
@@ -194,6 +198,8 @@ class UniversalMemoryMCP:
                     record = self._writable_record(args.get("record_id"), "forget")
                     scope, record_id = record["scope"], record["id"]
                     result = self.service.forget(record_id)
+                if isinstance(result, dict) and result.get("sensitivity") == "secret-forbidden":
+                    raise MCPMemoryError("record is not available to shared clients")
             except Exception:
                 self.audit.append(client_id=self.policy.client_id, operation=operation,
                                   request_id=request_id, scope=scope, record_id=record_id,

@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "record_sessions": true,
+  "auto_capture_running": false,
+  "structured_capture": true,
+  "retrieval_backend": "local-ranked-lexical-concept",
+  "semantic_status": "disabled",
+  "semantic_retrieval": {
+    "enabled": false,
+    "status": "disabled",
+    "provider": null
+  },
+  "request_ok": true
+}
