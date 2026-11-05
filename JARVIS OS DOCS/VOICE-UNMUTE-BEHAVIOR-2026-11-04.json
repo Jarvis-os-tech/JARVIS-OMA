@@ -1,0 +1,422 @@
+{
+  "schema_version": 1,
+  "passed": true,
+  "pytest_exit_code": 0,
+  "duration_seconds": 21.684,
+  "collected_tests": 229,
+  "cases": [
+    {
+      "id": "INPUT-1",
+      "expectation": "The default input bar retains attachments and closes its server and window.",
+      "passed": true,
+      "tests": [
+        "tests/test_widget_canvas.py::WidgetAdapterTests::test_input_bar_preserves_attachments_when_canvas_is_available",
+        "tests/test_widget_canvas.py::WidgetAdapterTests::test_closing_input_also_closes_attachment_server_and_legacy_window"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "ATTACH-1",
+      "expectation": "Text and image/audio content reach the session, PDFs yield extracted text or an unreadable result, and unauthorized submissions are rejected.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[photo.png-image/png-\\x89PNG\\r\\n\\x1a\\nsynthetic-image/png]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[clip.wav-audio/wav-RIFF\\x00\\xffWAVEsynthetic-audio/wav]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[clip.mp3--ID3\\x00\\xffsynthetic-audio/mpeg]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[notes.txt-text/plain-Example notes-Example notes]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[notes.pdf-application/pdf-%PDF-synthetic-Extracted example notes]",
+        "tests/behavior/test_multimodal_contracts.py::test_attachment_bytes_and_metadata_reach_session[scan.pdf-application/pdf-%PDF-synthetic-scan-unreadable or scanned]",
+        "tests/behavior/test_multimodal_contracts.py::test_input_submission_requires_token_and_preserves_bytes",
+        "tests/test_daemon.py::test_send_inputs_formats_code_and_image_attachments"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "VISION-1",
+      "expectation": "Screen frames reach the session; unavailable vision stays off and reports an error.",
+      "passed": true,
+      "tests": [
+        "tests/test_vision_runtime.py::test_cold_screen_capture_returns_frame_without_a_preview_cache",
+        "tests/test_vision_runtime.py::test_vision_stream_delivers_frames_to_the_attached_session",
+        "tests/test_vision_runtime.py::test_missing_camera_is_reported_without_claiming_active_vision",
+        "tests/test_vision_runtime.py::test_missing_camera_via_local_control_does_not_change_voice_state",
+        "tests/test_vision_runtime.py::test_local_vision_failure_returns_an_error_instead_of_an_empty_reply"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "CANCEL-1",
+      "expectation": "Cancellation reaches local callbacks, cleans workers and kills and reaps the owned desktop command.",
+      "passed": true,
+      "tests": [
+        "tests/test_ipc.py::test_local_confirm_and_cancel_await_control_callbacks",
+        "tests/test_daemon.py::test_supervise_cancellation_awaits_workers",
+        "tests/test_ground_truth_contracts.py::test_cancelled_desktop_command_is_killed_and_reaped"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "PERMISSION-1",
+      "expectation": "Denied operations do not run; held operations need a new human confirmation turn and can be cancelled.",
+      "passed": true,
+      "tests": [
+        "tests/test_control/test_policy.py::test_destructive_commands_are_denied",
+        "tests/test_control/test_policy.py::test_confirm_patterns_trigger_needs_confirmation",
+        "tests/test_control/test_policy.py::test_executor_catches_needs_confirmation_into_held_result",
+        "tests/test_daemon.py::test_spoken_confirmation_needs_real_new_turn"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "RESULT-1",
+      "expectation": "Missing, failed, queued and unverified receipts cannot become spoken success; verified results may, and duplicate calls execute once.",
+      "passed": true,
+      "tests": [
+        "tests/test_action_speech_evidence.py::test_spoken_success_without_any_tool_is_suppressed_and_not_saved_as_fact",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[ERROR: app unavailable]",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[result1]",
+        "tests/test_action_speech_evidence.py::test_failed_or_unverified_receipt_cannot_release_success_audio[result2]",
+        "tests/test_action_speech_evidence.py::test_verified_result_allows_normal_model_speech_and_new_turn_resets_proof",
+        "tests/test_action_speech_evidence.py::test_capability_discovery_is_not_evidence_that_an_action_happened",
+        "tests/test_ground_truth_contracts.py::test_authorization_link_does_not_complete_service_connection",
+        "tests/test_daemon.py::test_tool_call_id_deduplicates_control_effect"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "RELEASE-1",
+      "expectation": "Failed candidate health or restart restores both release pointers.",
+      "passed": true,
+      "tests": [
+        "tests/test_release_switching.py::test_restart_failure_restores_both_pointers[failure0]",
+        "tests/test_release_switching.py::test_restart_failure_restores_both_pointers[failure1]",
+        "tests/test_release_switching.py::test_health_failure_preserves_older_rollback_target"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "PARSING-1",
+      "expectation": "Exact spoken controls preserve original evidence, reject ambiguity and mismatched model values, and temporal candidates use explicit anchors without scheduling.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[volume-spoken]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[polite-question-command]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[brightness-polite]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[zero]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[hundred]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[hyphenated]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[digits]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[workspace]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[negative-digit]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[negative-word]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[fractional-percent]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[decimal-digit]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[fraction]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[multiple-values]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[multiple-controls]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[unparsed-word]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[out-of-range]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[zero-brightness]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[workspace-range]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[workspace-unit]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[negation]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[quoted-command]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[quoted-value]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[file-path]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[phone-target]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[advice]",
+        "tests/behavior/test_command_parsing.py::test_golden_local_control_commands[unparsed-conjunction]",
+        "tests/behavior/test_command_parsing.py::test_values_keep_unicode_offsets_signs_fractions_and_multiple_values",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Type \"java  forty five\"]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Type `java twenty`]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Type 'java forty']",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[open /tmp/java/forty.txt]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[open ~/Downloads/twenty.txt]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Read https://example.test/forty/20]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[inspect build42 and report_20.txt]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Type \\u201cjava  forty\\u201d]",
+        "tests/behavior/test_command_parsing.py::test_protected_content_is_never_rewritten_or_extracted[Type \"java  forty]",
+        "tests/behavior/test_command_parsing.py::test_quoted_instructions_cannot_trigger_standby_or_pairing",
+        "tests/behavior/test_command_parsing.py::test_nlu_exposes_control_evidence_without_rewriting_words",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args0-set volume to forty five percent-True]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args1-set volume to forty five percent-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_brightness-args2-set volume to forty five percent-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[system_control-args3-set volume to forty five percent-True]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[system_control-args4-set volume to forty five percent-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args5-set volume to minus five-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args6-set volume to thirty or forty-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args7-Could you set volume to thirty or forty?-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args8-set volume to forty point five-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[set_volume-args9-set volume to one hundred and five-False]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[switch_workspace-args10-switch to workspace two-True]",
+        "tests/behavior/test_command_parsing.py::test_model_arguments_must_match_spoken_control_value[switch_workspace-args11-switch to workspace two-False]",
+        "tests/behavior/test_command_parsing.py::test_temporal_values_use_explicit_anchor_and_dedupe_spans[tomorrow at five pm-2026-11-04T17:00:00+05:30-None]",
+        "tests/behavior/test_command_parsing.py::test_temporal_values_use_explicit_anchor_and_dedupe_spans[in thirty minutes-2026-11-04T00:15:00+05:30-1800]",
+        "tests/behavior/test_command_parsing.py::test_temporal_values_use_explicit_anchor_and_dedupe_spans[in two hours and thirty minutes-2026-11-04T02:15:00+05:30-9000]",
+        "tests/behavior/test_command_parsing.py::test_temporal_values_use_explicit_anchor_and_dedupe_spans[tomorrow at 17:30-2026-11-04T17:30:00+05:30-None]",
+        "tests/behavior/test_command_parsing.py::test_temporal_values_use_explicit_anchor_and_dedupe_spans[2026-11-04T17:30:00+05:30-2026-11-04T17:30:00+05:30-None]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at five]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at 5:30]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[tomorrow]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at 5 pm PST]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at 5 pm pst]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at 5 pm CST]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[at 5 pm eastern]",
+        "tests/behavior/test_command_parsing.py::test_temporal_ambiguity_requires_clarification[on 04/05/2026]",
+        "tests/behavior/test_command_parsing.py::test_dst_fold_or_gap_is_rejected[2026-11-01T01:30:00]",
+        "tests/behavior/test_command_parsing.py::test_dst_fold_or_gap_is_rejected[2026-03-08T02:30:00]",
+        "tests/behavior/test_command_parsing.py::test_relative_durations_count_elapsed_seconds_across_dst[2026-11-01T00:30:00-04:00-2026-11-01T01:30:00-05:00]",
+        "tests/behavior/test_command_parsing.py::test_relative_durations_count_elapsed_seconds_across_dst[2026-03-08T01:30:00-05:00-2026-03-08T04:30:00-04:00]",
+        "tests/behavior/test_command_parsing.py::test_transcription_chunks_keep_verbatim_user_evidence",
+        "tests/behavior/test_command_parsing.py::test_unsupported_language_missing_dependency_and_no_match_differ",
+        "tests/behavior/test_command_parsing.py::test_temporal_tool_runs_worker_with_fixed_anchor",
+        "tests/behavior/test_command_parsing.py::test_cancelled_parser_is_killed_and_reaped",
+        "tests/behavior/test_command_parsing.py::test_timed_out_parser_is_killed_and_cannot_report_success",
+        "tests/behavior/test_command_parsing.py::test_invalid_anchor_is_rejected_before_starting_worker",
+        "tests/behavior/test_command_parsing.py::test_parsing_tool_is_registered_read_only_and_not_action_evidence",
+        "tests/behavior/test_command_parsing.py::test_registry_executes_read_only_parser_with_original_text"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "TASK-EVENTS-1",
+      "expectation": "Task status, cards and notices share schema-validated evidence; replay, stale updates and delivery failures cannot invent completion or lose pending outcomes.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_task_events.py::test_journal_rejects_stale_revisions_and_terminal_regression",
+        "tests/behavior/test_task_events.py::test_progress_cannot_regress_or_exceed_measured_total",
+        "tests/behavior/test_task_events.py::test_unchanged_snapshot_still_advances_producer_fence",
+        "tests/behavior/test_task_events.py::test_capacity_never_discards_unacknowledged_terminal_outcomes",
+        "tests/behavior/test_task_events.py::test_restart_replay_and_stale_acknowledgement",
+        "tests/behavior/test_task_events.py::test_bounded_history_resyncs_from_snapshot",
+        "tests/behavior/test_task_events.py::test_sources_with_same_local_id_have_distinct_cards",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[model-job0-response_received-False-response_only]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[agent-job1-response_received-False-response_only]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[hermes-job2-response_received-False-response_only]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[hermes-job3-completed-True-workspace_checks]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[hermes-job4-interrupted-False-execution_unknown]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[file_task-job5-cancelling-False-none]",
+        "tests/behavior/test_task_events.py::test_projection_never_confuses_returned_text_or_cancellation_with_verified_effects[file_task-job6-completed-True-file_step_checks]",
+        "tests/behavior/test_task_events.py::test_delivery_failure_preserves_notice_and_retries",
+        "tests/behavior/test_task_events.py::test_lost_in_memory_job_becomes_needs_review_after_restart",
+        "tests/behavior/test_task_events.py::test_only_one_presenter_can_reconcile_a_profile",
+        "tests/behavior/test_task_events.py::test_real_file_task_status_card_and_notice_share_the_same_event",
+        "tests/behavior/test_task_events.py::test_cancellation_card_waits_for_operation_and_retains_partial_effects",
+        "tests/behavior/test_task_events.py::test_presentation_failure_cannot_turn_admission_into_a_retryable_failure",
+        "tests/behavior/test_task_events.py::test_generated_consumer_schema_is_current",
+        "tests/behavior/test_task_events.py::test_generic_widgets_cannot_forge_task_cards",
+        "tests/behavior/test_task_events.py::test_javascript_consumer_rejects_stale_events_and_unverified_success"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "MEMORY-ORGANIZED-1",
+      "expectation": "Six-layer memory keeps working context temporary, isolates scopes, exports categorized current notes and enforces agent sharing policy.",
+      "passed": true,
+      "tests": [
+        "tests/test_memory/test_organized_memory.py::test_category_recall_and_single_canonical_vault_note[preferences-I prefer concise answers.]",
+        "tests/test_memory/test_organized_memory.py::test_category_recall_and_single_canonical_vault_note[personal-My name is Demo Student.]",
+        "tests/test_memory/test_organized_memory.py::test_category_recall_and_single_canonical_vault_note[facts-The Cedar reference number is CED-417.]",
+        "tests/test_memory/test_organized_memory.py::test_category_recall_and_single_canonical_vault_note[instructions-Include voice test commands after adding features.]",
+        "tests/test_memory/test_organized_memory.py::test_category_recall_and_single_canonical_vault_note[projects-The Cedar project is a study planner.]",
+        "tests/test_memory/test_organized_memory.py::test_scoped_keys_do_not_replace_or_recall_other_project",
+        "tests/test_memory/test_organized_memory.py::test_project_remember_cannot_leak_via_legacy_facts",
+        "tests/test_memory/test_organized_memory.py::test_auto_capture_personal_and_instruction_kinds_are_supported",
+        "tests/test_memory/test_organized_memory.py::test_vault_excludes_expired_and_secret_forbidden_entries",
+        "tests/test_memory/test_organized_memory.py::test_voice_memory_tools_accept_category_and_scope",
+        "tests/test_memory/test_organized_memory.py::test_six_layers_have_temporary_working_and_persistent_events_and_procedures",
+        "tests/test_memory/test_organized_memory.py::test_shared_manager_enforces_agent_policy_and_proposal_commit",
+        "tests/test_memory/test_organized_memory.py::test_scoped_forget_preserves_identical_user_memory",
+        "tests/test_memory/test_organized_memory.py::test_clean_vault_has_six_sections_no_topic_nodes_and_resolves_links"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "MEMORY-QUALITY-1",
+      "expectation": "Memory evaluation uses isolated synthetic stores, verifies its graders, reports known quality failures and refuses missing cases or failed embedding providers.",
+      "passed": true,
+      "tests": [
+        "tests/test_memory/test_quality_evaluation.py::test_metrics_match_hand_scored_ranks_and_do_not_reward_duplicates",
+        "tests/test_memory/test_quality_evaluation.py::test_offline_report_detects_real_gaps_and_preserves_lifecycle",
+        "tests/test_memory/test_quality_evaluation.py::test_baseline_rejects_missing_cases_and_new_failures",
+        "tests/test_memory/test_quality_evaluation.py::test_embedding_failure_is_not_a_lexical_benchmark_success",
+        "tests/test_memory/test_quality_evaluation.py::test_cli_strict_mode_writes_failed_evidence_and_leaves_user_state_untouched"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-TURN-1",
+      "expectation": "Brief thinking pauses remain in one turn and early interruptions require speech and playback evidence.",
+      "passed": true,
+      "tests": [
+        "tests/test_daemon.py::test_default_turn_wait_preserves_thinking_pauses_and_closes_after_1_2s",
+        "tests/test_hie_startup_interruption.py::test_capture_admits_verified_interruption_100ms_after_first_write",
+        "tests/test_hie_startup_interruption.py::test_playback_reference_rejects_startup_echo_without_startup_holdoff"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-ACK-1",
+      "expectation": "Only admitted work selects contextual acknowledgement; deferred speech preserves arguments and current-turn ownership.",
+      "passed": true,
+      "tests": [
+        "tests/test_situational_acknowledgements.py::test_admitted_contextual_phrase_is_queued_immediately_and_only_once",
+        "tests/test_situational_acknowledgements.py::test_generic_transcript_does_not_select_action_claim",
+        "tests/test_hie_contextual_ack.py::test_rejected_tool_does_not_play_acknowledgement",
+        "tests/test_hie_pipeline.py::test_deferred_contextual_ack_replays_only_current_running_work[running]",
+        "tests/test_hie_pipeline.py::test_deferred_contextual_ack_replays_only_current_running_work[finished]",
+        "tests/test_hie_pipeline.py::test_deferred_contextual_ack_replays_only_current_running_work[stale]"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-PROGRESS-1",
+      "expectation": "Progress speech comes from measured task events, coalesces changes, respects privacy and drops stale state.",
+      "passed": true,
+      "tests": [
+        "tests/test_hie_progress.py::test_progress_is_measured_coalesced_and_stale_revisions_are_ignored",
+        "tests/test_hie_progress.py::test_disappeared_snapshot_drops_pending_progress",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[completed]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[revision]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[revision_only]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[generation]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[stream]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[removed]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[muted]",
+        "tests/test_hie_progress.py::test_progress_revalidates_selected_task_after_waiting_for_send_lock[unchanged]",
+        "tests/test_hie_progress.py::test_background_monitor_speaks_task_facts_only_when_idle_and_connected",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[muted]",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[standby]",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[speaking]",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[wake_pending]",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[wake_active]",
+        "tests/test_hie_progress.py::test_background_progress_respects_privacy_and_speech_state[greeting]"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-DELIVERY-1",
+      "expectation": "The live voice instruction guides natural pacing and contextual care without diagnosing emotion from vocal features.",
+      "passed": true,
+      "tests": [
+        "tests/test_hie_delivery.py::test_compiled_voice_guides_natural_task_and_explanation_delivery",
+        "tests/test_hie_delivery.py::test_explicit_distress_is_met_with_care_without_pitch_based_diagnosis"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-LISTENING-1",
+      "expectation": "Sparse listening cues preserve resumed microphone audio and require a safe active conversation.",
+      "passed": true,
+      "tests": [
+        "tests/test_hie_pipeline.py::test_long_narrative_backchannel_preserves_resumed_microphone_turn",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[muted]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[standby]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[tool]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[answer]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[disabled]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[short_pause]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[no_text]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[no_aec]",
+        "tests/test_hie_pipeline.py::test_backchannels_require_safe_conversation_state[ack_played]",
+        "tests/test_hie_pipeline.py::test_answer_preempts_listening_audio_without_invalidating_user_frames"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "HIE-RECOVERY-1",
+      "expectation": "Stopping listening audio fences old writes without invalidating queued user-turn audio.",
+      "passed": true,
+      "tests": [
+        "tests/test_hie_playback_fence.py::test_preserving_cancel_during_prime_discards_old_chunk",
+        "tests/test_hie_playback_fence.py::test_preserving_cancel_during_spawn_stops_unpublished_process",
+        "tests/test_hie_playback_fence.py::test_preserving_cancel_during_drain_fences_old_audio_and_accounting"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "VOICE-LOCK-1",
+      "expectation": "The frozen voice baseline rejects changed, missing, added or redirected protected source.",
+      "passed": true,
+      "tests": [
+        "tests/test_voice_lock.py::test_current_voice_baseline_is_intact",
+        "tests/test_voice_lock.py::test_voice_lock_detects_changed_missing_and_added_code",
+        "tests/test_voice_lock.py::test_voice_lock_rejects_symlink_replacement",
+        "tests/test_voice_lock.py::test_voice_lock_rejects_paths_outside_workspace",
+        "tests/test_voice_lock.py::test_voice_lock_preserves_only_the_pinned_internal_link"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "GATE-1",
+      "expectation": "The gate rejects failures, skips, xfails, missing cases, setup/cleanup errors and stale release evidence.",
+      "passed": true,
+      "tests": [
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): assert True-True]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): assert False-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_example(): pytest.skip(\"unavailable\")-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.xfail(reason=\"known bug\")\\ndef test_example(): assert False-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.xfail(reason=\"unexpected pass\")\\ndef test_example(): assert True-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.fixture(autouse=True)\\ndef setup(): raise RuntimeError(\"setup failed\")\\ndef test_example(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.fixture(autouse=True)\\ndef setup():\\n yield\\n raise RuntimeError(\"teardown failed\")\\ndef test_example(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[def test_different(): pass-False]",
+        "tests/behavior/test_gate_enforcement.py::test_real_pytest_runs_cannot_silently_weaken_gate[@pytest.mark.parametrize(\"value\", [1, 2])\\ndef test_example(value): assert value > 0-True]",
+        "tests/behavior/test_gate_enforcement.py::test_empty_or_duplicate_contracts_are_rejected",
+        "tests/behavior/test_gate_enforcement.py::test_release_missing_gate_blocks_before_running_candidate",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[1-report0-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-report1-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-None-False]",
+        "tests/behavior/test_gate_enforcement.py::test_release_requires_success_and_fresh_gate_evidence[0-report3-True]",
+        "tests/behavior/test_gate_enforcement.py::test_timeout_replaces_stale_success_with_failure"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    },
+    {
+      "id": "VOICE-MUTE-1",
+      "expectation": "Physical microphone mute transitions reach only the owned AEC source; independent virtual mutes, invalid state and cancellation remain respected.",
+      "passed": true,
+      "tests": [
+        "tests/test_microphone_mute_sync.py::test_physical_mute_transition_updates_only_owned_aec[True-False]",
+        "tests/test_microphone_mute_sync.py::test_physical_mute_transition_updates_only_owned_aec[False-True]",
+        "tests/test_microphone_mute_sync.py::test_independent_virtual_mute_is_preserved_until_physical_transition",
+        "tests/test_microphone_mute_sync.py::test_unknown_physical_state_never_unmutes[[]]",
+        "tests/test_microphone_mute_sync.py::test_unknown_physical_state_never_unmutes[{}]",
+        "tests/test_microphone_mute_sync.py::test_unknown_physical_state_never_unmutes[[null]]",
+        "tests/test_microphone_mute_sync.py::test_unknown_physical_state_never_unmutes[not-json]",
+        "tests/test_microphone_mute_sync.py::test_unknown_physical_state_never_unmutes[[{\"name\":\"physical-input\",\"mute\":\"false\"}]]",
+        "tests/test_microphone_mute_sync.py::test_failed_update_is_retried_without_losing_physical_transition",
+        "tests/test_microphone_mute_sync.py::test_inactive_aec_never_changes_audio",
+        "tests/test_microphone_mute_sync.py::test_health_monitor_syncs_before_reporting_recovered_input",
+        "tests/test_microphone_mute_sync.py::test_missing_owned_node_or_ambiguous_physical_input_is_not_changed[[{\"name\":\"physical-input\",\"mute\":false}]]",
+        "tests/test_microphone_mute_sync.py::test_missing_owned_node_or_ambiguous_physical_input_is_not_changed[[{\"name\":\"physical-input\",\"mute\":false},{\"name\":\"physical-input\",\"mute\":false}]]",
+        "tests/test_microphone_mute_sync.py::test_unknown_initial_mute_establishes_baseline_without_overriding_user",
+        "tests/test_microphone_mute_sync.py::test_shutdown_cancellation_is_not_swallowed"
+      ],
+      "missing": [],
+      "failed_or_incomplete": []
+    }
+  ],
+  "scope": "Deterministic local contracts; not live desktop or cloud acceptance",
+  "source_sha256": "eafa585ce7e059806f4ae442d2414ae3c0af4f3517abbf796420ac1b5f62d582",
+  "source_unchanged": true,
+  "contract_sha256": "b97ff952d84f7043726350681fd8e57b4418d9904e0bc1788657d06253ebb298"
+}

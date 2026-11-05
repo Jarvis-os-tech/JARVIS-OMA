@@ -181,3 +181,71 @@ class StandbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(len(enqueued_pcm) > 0)
         self.assertEqual(len(enqueued_pcm[0]), 94080)
 
+
+
+class StandbyReleaseTests(unittest.IsolatedAsyncioTestCase):
+    async def test_external_wake_releases_a_generic_blocked_audio_read(self):
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+        class Stream:
+            async def read(self, size):
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+        detector = SimpleNamespace(reset=lambda:None, process=lambda frame:False)
+        controller = StandbyController(detector=detector, arming_delay=0)
+        await controller.request()
+        listener = asyncio.create_task(controller.listen_for_wake_word(Stream()))
+        await entered.wait()
+        controller.wake()
+        await asyncio.wait_for(listener, .2)
+        self.assertTrue(cancelled.is_set())
+        self.assertFalse(controller.engaged)
+
+    async def test_cancelled_listener_cleans_up_pending_audio_read(self):
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+        class Stream:
+            async def read(self, size):
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+        controller=StandbyController(detector=SimpleNamespace(reset=lambda:None),arming_delay=0)
+        listener=asyncio.create_task(controller.listen_for_wake_word(Stream()))
+        await entered.wait();listener.cancel()
+        with self.assertRaises(asyncio.CancelledError):await listener
+        self.assertTrue(cancelled.is_set())
+        self.assertFalse(controller.engaged)
+
+    async def test_wake_during_announcement_cancels_old_standby_transition(self):
+        from jarvis_voice.daemon import LiveVoice
+        from jarvis_voice.playback import Playback
+        voice=LiveVoice(Playback('test'));voice.connected=True
+        voice.standby=StandbyController(detector=SimpleNamespace(reset=lambda:None))
+        voice.player.enqueue=lambda data:voice.standby.wake()
+        await voice.standby.request()
+        monitor=asyncio.create_task(voice.monitor_standby())
+        await asyncio.sleep(.55)
+        self.assertFalse(monitor.done())
+        self.assertFalse(voice.standby.engaged)
+        monitor.cancel()
+        with self.assertRaises(asyncio.CancelledError):await monitor
+
+    async def test_old_listener_does_not_erase_new_standby_request(self):
+        controller=StandbyController(detector=SimpleNamespace(reset=lambda:None,process=lambda frame:False),arming_delay=0)
+        await controller.request()
+        listener=asyncio.create_task(controller.listen_for_wake_word(asyncio.Queue()))
+        await asyncio.sleep(.01)
+        controller.wake()
+        await controller.request()
+        await asyncio.wait_for(listener,.2)
+        self.assertTrue(controller.engaged)
+        controller.wake()
+
+    async def test_toggle_sets_and_clears_standby_without_polling(self):
+        controller=StandbyController(detector=SimpleNamespace(reset=lambda:None))
+        self.assertTrue((await controller.toggle())['standby'])
+        self.assertFalse((await controller.toggle())['standby'])
+        self.assertFalse(controller.engaged)

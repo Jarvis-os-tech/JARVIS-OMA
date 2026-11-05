@@ -52,7 +52,7 @@ def _ipc_command(args):
         action = args.action or 'toggle'
         cmd = f'listen {action}'
     elif args.command == 'standby':
-        cmd = 'standby'
+        cmd = 'wake' if args.action == 'off' else 'standby toggle' if args.action == 'toggle' else 'standby'
     elif args.command == 'wake':
         cmd = 'wake'
     elif args.command in ('send', 'tell', 'prompt'):

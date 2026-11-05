@@ -118,7 +118,7 @@ class Config:
     autostart_listening: bool = True
     greet_on_start: bool = True
     # Allow breathing/thinking pauses before handing the turn to the provider.
-    turn_silence_frames: int = 20  # 400 ms; explicit longer pause settings remain supported
+    turn_silence_frames: int = 60  # 1.2 s; leaves room for thinking pauses
     language: str = 'en-US'
     language_codes: list = field(default_factory=lambda: ['en-US', 'en-IN', 'en-GB'])
     api_key_env: str = 'GEMINI_API_KEY'
@@ -183,7 +183,10 @@ def load() -> Config:
         if unknown:
             raise ValueError('Unsupported jarvis-voice setting: ' + ', '.join(sorted(unknown)))
         standby_data = data.pop('standby', {})
-        local_speech = LocalSpeechConfig(**data.pop('local_speech', {}))
+        speech_data = data.pop('local_speech', {})
+        needle_root = Path(os.environ.get('JARVIS_NEEDLE_HOME', Path.home() / '.local/share/jarvis-runtime/needle'))
+        speech_data.setdefault('needle_enabled', (needle_root / 'enabled').is_file())
+        local_speech = LocalSpeechConfig(**speech_data)
         standby_cfg = StandbyConfig(**standby_data) if isinstance(standby_data, dict) else StandbyConfig()
         data.pop('memory', None)
         return Config(**data, standby=standby_cfg, fillers=fillers_cfg, local_speech=local_speech, memory=load_memory_config(path).memory).validate()

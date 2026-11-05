@@ -305,5 +305,73 @@ def test_phonetic_misspellings_power_and_confirmation():
     assert "confirmation" in NLUEngine.normalize_text("with conformation")
 
 
+from jarvis_control.nlu import ConfirmationDecision
+
+
+@pytest.mark.parametrize("phrase", [
+    "yes", "confirm", "proceed", "do it", "yep", "yeah", "sure",
+    "go ahead", "sounds good", "please do", "do that", "make it happen",
+    "go for it", "approved", "affirmative", "run it", "execute",
+    "sure thing", "absolutely", "definitely", "of course", "yes please",
+    "haan", "haan kar do", "kar do", "theek hai", "bilkul", "chalega", "sahi hai",
+    "yeah go ahead please", "bhai kar do now", "sounds good to me", "please proceed jarvis",
+])
+def test_evaluate_confirmation_assents(phrase):
+    decision = NLUEngine.evaluate_confirmation(phrase)
+    assert decision == ConfirmationDecision.AFFIRMED, f"Expected {phrase} to be AFFIRMED, got {decision}"
+
+
+@pytest.mark.parametrize("phrase", [
+    "no", "cancel", "stop", "abort", "never mind", "nevermind",
+    "don't", "don't do it", "don't do that", "nah", "mat karo",
+    "nahi", "ruko", "rehne do", "forget it", "leave it",
+    "no thanks", "please don't", "ruk jao",
+])
+def test_evaluate_confirmation_declines(phrase):
+    decision = NLUEngine.evaluate_confirmation(phrase)
+    assert decision == ConfirmationDecision.DECLINED, f"Expected {phrase} to be DECLINED, got {decision}"
+
+
+@pytest.mark.parametrize("phrase", [
+    "yeah no", "yes but don't do it", "haan mat karo", "sure wait no",
+    "reboot no wait", "go ahead but wait stop", "sounds good but nevermind",
+    "kar do nahi ruko", "do it... wait no don't",
+])
+def test_evaluate_confirmation_negation_precedence(phrase):
+    decision = NLUEngine.evaluate_confirmation(phrase)
+    assert decision == ConfirmationDecision.DECLINED, f"Negation precedence failed for '{phrase}': got {decision}"
+
+
+@pytest.mark.parametrize("phrase", [
+    "what time is it?", "what will reboot do?", "why would I do that?",
+    "how does this work?", "kya hoga?", "are you sure?",
+])
+def test_evaluate_confirmation_interrogatives(phrase):
+    decision = NLUEngine.evaluate_confirmation(phrase, held_action="reboot the system")
+    assert decision == ConfirmationDecision.AMBIGUOUS, f"Expected '{phrase}' to be AMBIGUOUS, got {decision}"
+
+
+def test_evaluate_confirmation_contextual():
+    decision_affirmed = NLUEngine.evaluate_confirmation("reboot now", held_action="reboot the system")
+    assert decision_affirmed == ConfirmationDecision.AFFIRMED
+
+    decision_shutdown = NLUEngine.evaluate_confirmation("shutdown please", held_action="shutdown computer")
+    assert decision_shutdown == ConfirmationDecision.AFFIRMED
+
+    decision_declined = NLUEngine.evaluate_confirmation("no don't reboot", held_action="reboot the system")
+    assert decision_declined == ConfirmationDecision.DECLINED
+
+
+@pytest.mark.parametrize("text", [
+    "Zara open terminal",
+    "Kya aap please open browser",
+    "Ek baar play next song",
+    "Bhai please increase volume",
+])
+def test_polite_hinglish_action_requests(text):
+    assert NLUEngine._is_action_request(text)
+
+
+
 
 

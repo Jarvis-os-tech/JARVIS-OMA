@@ -261,7 +261,7 @@ async def test_first_audio_latency_stays_fixed_across_response_chunks(monkeypatc
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 250
 
 
-def test_default_turn_wait_closes_after_400ms():
+def test_default_turn_wait_preserves_thinking_pauses_and_closes_after_1_2s():
     from jarvis_voice.daemon import LiveVoice
     from jarvis_voice.playback import Playback
     import struct
@@ -272,9 +272,12 @@ def test_default_turn_wait_closes_after_400ms():
     # A sub-threshold frame remains quiet regardless of detector probability.
     voice.gate.detector = lambda pcm: 0.0
     quiet = struct.pack('<320h', *([1] * 320))
-    for i in range(19):
+    for i in range(50):
         assert not voice.gate.process(quiet, now=i * .02).closed
-    assert voice.gate.process(quiet, now=.38).closed
+    assert voice.gate.quiet_seconds == 1.0
+    for i in range(50, 59):
+        assert not voice.gate.process(quiet, now=i * .02).closed
+    assert voice.gate.process(quiet, now=1.18).closed
 
 
 @pytest.mark.asyncio
@@ -294,9 +297,9 @@ async def test_provider_latency_measured_from_actual_activity_end(monkeypatch):
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 500
 
 
-def test_live_voice_uses_verified_low_latency_thinking_setting():
+def test_standard_live_model_uses_its_native_reasoning_profile():
     from jarvis_voice.daemon import live_config
-    assert live_config()['thinking_config'] == {'thinking_budget': 0}
+    assert 'thinking_config' not in live_config()
 
 
 @pytest.mark.asyncio
@@ -368,7 +371,12 @@ async def test_production_setup_attaches_memory_and_drains_on_exit(tmp_path, mon
     with pytest.raises(StopSetup):
         await daemon.run(SimpleNamespace(config_obj=config), 'not-sent')
     assert seen['skills']._closed
-    assert seen['config'] is config
+    # The daemon uses dataclasses.replace() to resolve the model, so config is a new object.
+    # Check that the passed config has the same key attributes as the original.
+    passed_config = seen['config']
+    assert passed_config.model == config.model or passed_config.model == 'gemini-3.8-live'
+    assert passed_config.voice == config.voice
+    assert passed_config.barge_in == config.barge_in
     assert seen['tools'][0]['function_declarations']
     tool_names = {t['name'] for t in seen['tools'][0]['function_declarations']}
     registered = {tool['name'] for tool in seen['skills'].declarations}

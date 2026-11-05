@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /home/g0pi/.local/bin/jarvis-voice standby toggle

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JARVIS task presentation event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "stream_id", "sequence", "task_id", "widget_id", "source", "revision", "generation", "state", "terminal", "title", "message", "evidence", "progress", "updated_at"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "stream_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "task_id": {"type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[A-Za-z0-9_:-]+$"},
+    "widget_id": {"type": "string", "pattern": "^jtask_[a-f0-9]{24}$"},
+    "source": {"type": "string", "enum": ["file_task", "model", "hermes", "agent", "team"]},
+    "revision": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "generation": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "state": {"type": "string", "enum": ["queued", "running", "waiting_confirmation", "cancelling", "completed", "response_received", "failed", "cancelled", "timed_out", "interrupted"]},
+    "terminal": {"type": "boolean"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 160},
+    "message": {"type": "string", "maxLength": 800},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verified", "scope"],
+      "properties": {
+        "verified": {"type": "boolean"},
+        "scope": {"type": "string", "enum": ["none", "file_step_checks", "response_only", "workspace_checks", "execution_unknown"]}
+      }
+    },
+    "progress": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "object", "additionalProperties": false, "required": ["completed", "total"],
+         "properties": {"completed": {"type": "integer", "minimum": 0, "maximum": 30}, "total": {"type": "integer", "minimum": 1, "maximum": 30}}}
+      ]
+    },
+    "updated_at": {"type": "string", "maxLength": 64}
+  },
+  "x-terminal-states": ["completed", "response_received", "failed", "cancelled", "timed_out", "interrupted"],
+  "x-verified-state": "completed",
+  "x-verified-scopes": ["file_step_checks", "workspace_checks"],
+  "x-state-labels": {"queued":"Queued", "running":"Working", "waiting_confirmation":"Needs your response", "cancelling":"Stopping", "completed":"Completed", "response_received":"Result ready", "failed":"Failed", "cancelled":"Cancelled", "timed_out":"Timed out", "interrupted":"Needs review"},
+  "x-evidence-labels": {"none":"Completion is not verified.", "file_step_checks":"File-step checks passed.", "response_only":"Response received; actions are not verified.", "workspace_checks":"Workspace checks passed; functional behavior remains unverified.", "execution_unknown":"Execution is unknown. Inspect before retrying."}
+}

@@ -63,10 +63,12 @@ class Playback:
         self.queued_bytes = 0
         self._queued_filler_frames = 0
         self.generation = 0
+        self._epoch = 0
         self.process = None
         self.playback_until = 0.0
         self._writing = False
         self._writing_generation = 0
+        self._writing_epoch = 0
         self.reference = PlaybackReference()
         self._spawn_lock = asyncio.Lock()
         self.first_write_at = None
@@ -76,7 +78,8 @@ class Playback:
         self.reply_complete = False
 
     def is_playing(self, tail: float = 0.0) -> bool:
-        return ((self._writing and self._writing_generation == self.generation)
+        return ((self._writing and self._writing_generation == self.generation
+                 and self._writing_epoch == self._epoch)
                 or not self.queue.empty() or time.monotonic() < self.playback_until + tail)
 
     @property
@@ -129,9 +132,11 @@ class Playback:
             data = bytes(mixed)
         self.enqueue(data)
 
-    def cancel_pending(self):
-        """Advance generation fence, flush queue, return old playback process."""
-        self.generation += 1
+    def cancel_pending(self, *, preserve_generation=False):
+        """Flush queued audio and fence in-flight writes, returning the old process."""
+        self._epoch += 1
+        if not preserve_generation:
+            self.generation += 1
         self.playback_until = 0.0
         self.begin_reply()
         while not self.queue.empty():
@@ -150,10 +155,10 @@ class Playback:
         self.reply_complete = True
         self._arrival.set()
 
-    async def _prime(self, generation, first_bytes):
+    async def _prime(self, generation, epoch, first_bytes):
         """Absorb short provider gaps without waiting for an entire response."""
         deadline = time.monotonic() + PRIME_WAIT_SECONDS
-        while (generation == self.generation and not self.reply_complete
+        while (generation == self.generation and epoch == self._epoch and not self.reply_complete
                and first_bytes + self.queued_bytes < PRIME_BYTES):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -163,46 +168,51 @@ class Playback:
                 await asyncio.wait_for(self._arrival.wait(), remaining)
             except TimeoutError:
                 break
-        return generation == self.generation
+        return generation == self.generation and epoch == self._epoch
 
     async def interrupt(self):
         process = self.cancel_pending()
         await stop_process(process)
 
-    async def prepare(self):
+    async def prepare(self, generation=None, epoch=None):
         """Open playback subprocess before first chunk to avoid startup latency."""
-        generation = self.generation
+        generation = self.generation if generation is None else generation
+        epoch = self._epoch if epoch is None else epoch
         async with self._spawn_lock:
+            if generation != self.generation or epoch != self._epoch:
+                return False
             if self.process is None:
                 process = await asyncio.create_subprocess_exec(
                     'pw-play', '--rate', '24000', '--channels', '1', '--format', 's16',
                     '--latency', PLAYBACK_LATENCY, '--target', self.sink, '-a', '-',
                     stdin=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                     env=audio_environment())
-                if generation != self.generation:
+                if generation != self.generation or epoch != self._epoch:
                     await stop_process(process)
                     return False
                 self.process = process
-            return generation == self.generation
+            return generation == self.generation and epoch == self._epoch
 
     async def run(self):
         """Main playback loop — Fix 6: stale generations silently discarded."""
         while True:
             generation, data = await self.queue.get()
+            epoch = self._epoch
             self.queued_bytes -= len(data)
             if self._queued_filler_frames:
                 self._queued_filler_frames -= 1
 
             # Fix 6: silently discard chunks from cancelled generations
-            if generation != self.generation:
+            if generation != self.generation or epoch != self._epoch:
                 continue
 
             self._writing = True
             self._writing_generation = generation
+            self._writing_epoch = epoch
             try:
-                if self.first_write_at is None and not await self._prime(generation, len(data)):
+                if self.first_write_at is None and not await self._prime(generation, epoch, len(data)):
                     continue
-                if not await self.prepare() or generation != self.generation:
+                if not await self.prepare(generation, epoch) or generation != self.generation or epoch != self._epoch:
                     continue
                 process = self.process
                 if process.returncode is not None:
@@ -213,14 +223,14 @@ class Playback:
                     await asyncio.wait_for(process.stdin.drain(), 2)
                 except TimeoutError as error:
                     # Fix 6: check generation before raising
-                    if generation != self.generation:
+                    if generation != self.generation or epoch != self._epoch:
                         continue
                     raise PlaybackBacklogError('PipeWire playback stopped accepting PCM') from error
                 except (BrokenPipeError, ConnectionResetError):
-                    if generation != self.generation:
+                    if generation != self.generation or epoch != self._epoch:
                         continue
                     raise
-                if generation != self.generation:
+                if generation != self.generation or epoch != self._epoch:
                     continue
                 now = time.monotonic()
                 if self.first_write_at is None and self.first_enqueued_at is not None:

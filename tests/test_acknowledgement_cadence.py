@@ -1,7 +1,8 @@
 import asyncio
+from types import SimpleNamespace as NS
+from unittest.mock import AsyncMock
 
 import pytest
-
 from jarvis_voice.daemon import LiveVoice, build_instruction
 from jarvis_voice.playback import Playback
 
@@ -16,13 +17,11 @@ def voice():
 
 async def tick(instance, monkeypatch, now):
     cycles = 0
-
     async def cycle(_):
         nonlocal cycles
         cycles += 1
         if cycles > 1:
             raise asyncio.CancelledError
-
     monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: now)
     monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
@@ -30,85 +29,80 @@ async def tick(instance, monkeypatch, now):
 
 
 @pytest.mark.asyncio
-async def test_fast_conversation_does_not_need_filler(monkeypatch):
+@pytest.mark.parametrize('delay', [.1, .2, .34, .36, .8, 3])
+async def test_wait_acknowledgement_has_a_short_direct_answer_grace(monkeypatch, delay):
     instance = voice()
     instance._reply_wait_started_at = instance._last_progress = 10
-    await tick(instance, monkeypatch, 10.1)
-    assert instance.player.queue.empty()
+    await tick(instance, monkeypatch, 10+delay)
+    assert instance.player.queue.empty() == (delay < .35)
+
+
+@pytest.mark.parametrize('context', ['generic_deep_thought', 'filesystem_grep', 'system_mutation', 'sub_agent_spawn'])
+def test_acknowledgement_plays_only_once(context):
+    instance = voice()
+    assert instance._play_filler_reflex(context)
+    assert not instance._play_filler_reflex(context)
+    assert instance.player.queue.qsize() == 1
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('tool,clip', [
-    ('web_search', 'filler_on_it'), ('browser_task', 'filler_on_it'),
-    ('start_task_agent', 'filler_sure'), ('search_files', 'filler_hmm'),
-    ('start_hermes_goal', 'filler_sure'),
-])
-async def test_running_task_gets_early_contextual_ack(monkeypatch, tool, clip):
+@pytest.mark.parametrize('tool', ['web_search', 'browser_task', 'start_task_agent', 'search_files'])
+async def test_running_tool_gets_a_short_acknowledgement(monkeypatch, tool):
     instance = voice()
     instance._reply_wait_started_at = instance._last_progress = 10
     instance._tools_in_flight = 1
     instance._active_tool = tool
     await tick(instance, monkeypatch, 10.8)
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices[clip]
-
-
-@pytest.mark.asyncio
-async def test_tool_progress_cannot_postpone_spoken_update_forever(monkeypatch):
-    instance = voice()
-    instance._reply_wait_started_at = 10
-    instance._last_reply_sound_at = 11
-    instance._filler_played = True
-    instance._last_progress = 16.5  # A task just reported progress, silently.
-    instance._tools_in_flight = 1
-    await tick(instance, monkeypatch, 17)
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['reply_waiting']
-    assert instance._last_progress == 16.5
-
-
-@pytest.mark.asyncio
-async def test_recent_speech_keeps_update_from_playing_too_soon(monkeypatch):
-    instance = voice()
-    instance._reply_wait_started_at = instance._last_progress = 10
-    instance._last_reply_sound_at = 15
-    instance._filler_played = True
-    instance._reply_started = True
-    await tick(instance, monkeypatch, 16)
-    assert instance.player.queue.empty()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('disabled', [True, False])
-async def test_missing_or_disabled_filler_cannot_starve_wait_notice(monkeypatch, disabled):
-    from types import SimpleNamespace
-    instance = voice()
-    instance._reply_wait_started_at = instance._last_progress = 10
-    if disabled:
-        instance.config = SimpleNamespace(fillers=SimpleNamespace(enable_local_fillers=False))
-    else:
-        instance._reply_notices = {'reply_waiting': bytes(960)}
-    await tick(instance, monkeypatch, 16)
-    assert instance._waiting_notice_played
-    assert not instance._filler_played
     assert instance.player.queue.qsize() == 1
 
 
-def test_model_is_not_forced_to_call_filler_before_work():
-    instruction = build_instruction([{'function_declarations': [{'name': 'play_local_filler'}]}])
-    assert 'very first token output must' not in instruction
-    assert 'Fast answers should go straight to the answer' in instruction
-
-
-def test_spoken_answer_or_preamble_is_already_an_acknowledgement():
+@pytest.mark.asyncio
+async def test_long_silence_never_injects_another_conversation_turn(monkeypatch):
     instance = voice()
-    instance._reply_started = True
-    assert not instance._play_filler_reflex('system_mutation')
+    instance._reply_wait_started_at = instance._last_progress = 10
+    instance._request_contextual_update = AsyncMock(return_value=True)
+    await tick(instance, monkeypatch, 16)
+    await tick(instance, monkeypatch, 17)
+    instance._request_contextual_update.assert_not_awaited()
+    assert instance.player.queue.qsize() == 1  # One ack, never repeated progress turns.
+
+
+@pytest.mark.asyncio
+async def test_legacy_progress_hook_does_not_send_synthetic_user_messages():
+    instance = voice()
+    instance._user_text = 'Compare the two local projects'
+    instance._session = NS(send_client_content=AsyncMock())
+    assert not await instance._request_contextual_update()
+    instance._session.send_client_content.assert_not_awaited()
     assert instance.player.queue.empty()
 
 
-# Ensure conversational acknowledgements use affirmative words like 'Sure' rather than vocal hesitations like 'Ah'
-@pytest.mark.parametrize('serial', [1, 2])
-def test_generic_acknowledgement_never_uses_ah(serial):
+@pytest.mark.asyncio
+@pytest.mark.parametrize('condition', ['muted', 'speaking', 'standby', 'already_answered', 'offline'])
+async def test_contextual_update_respects_privacy_and_turn_state(condition):
     instance = voice()
-    instance._reply_serial = serial
-    assert instance._play_filler_reflex('generic_deep_thought')
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_sure']
+    instance._session = NS(send_client_content=AsyncMock())
+    if condition == 'muted': instance.muted = True
+    elif condition == 'speaking': instance.gate.active = True
+    elif condition == 'standby': instance.standby._requested.set()
+    elif condition == 'already_answered': instance._reply_started = True
+    elif condition == 'offline': instance.connected = False
+    assert not await instance._request_contextual_update()
+    instance._session.send_client_content.assert_not_awaited()
+
+
+def test_instruction_requires_natural_updates_without_phrase_list():
+    instruction = build_instruction([{'function_declarations': [{'name': 'play_local_filler'}]}])
+    assert 'Fast answers should go straight to the answer' in instruction
+    assert 'Do not call play_local_filler' in instruction
+    assert 'not a fixed phrase list' in instruction or 'not use canned examples as a phrase list' in instruction
+    assert "context_type='generic_deep_thought' ('Sure')" not in instruction
+
+
+@pytest.mark.asyncio
+async def test_progress_update_does_not_interrupt_an_outstanding_tool_call():
+    instance = voice()
+    instance._session = NS(send_client_content=AsyncMock())
+    instance._tools_in_flight = 1
+    assert not await instance._request_contextual_update()
+    instance._session.send_client_content.assert_not_awaited()

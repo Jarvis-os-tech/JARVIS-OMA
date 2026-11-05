@@ -6,6 +6,8 @@ import logging
 import shutil
 import subprocess
 
+from .progress import ProgressUpdates, announce_progress
+
 log = logging.getLogger('jarvis_voice')
 
 
@@ -45,10 +47,12 @@ async def deliver_once(voice, control, notify=desktop_notification) -> None:
 async def monitor(voice, control, interval=2.0) -> None:
     if control is None:
         return
+    progress = ProgressUpdates()
     while True:
         await asyncio.sleep(interval)
         try:
             await deliver_once(voice, control)
+            await announce_progress(voice, control, progress)
         except Exception:
             # A missing supervisor/notification bus must not disconnect audio.
             log.warning('Background result delivery failed', exc_info=True)

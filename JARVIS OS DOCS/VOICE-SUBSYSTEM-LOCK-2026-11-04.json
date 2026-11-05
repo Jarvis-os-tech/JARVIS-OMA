@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-04",
+  "locked": true,
+  "scope": "PC voice subsystem",
+  "files_and_links": 122,
+  "read_only_files": 121,
+  "read_only_directories": 5,
+  "manifest_sha256": "eb19e17f8e18b8575d70d298c39f1def09b6dcbc59648144821a5bcdef911e7f",
+  "integrity_verified": true,
+  "required_behavior_checks": 214,
+  "agent_policy": "AGENTS.md and canonical CLAUDE.md",
+  "ci_guard": "python scripts/verify_voice_lock.py",
+  "runtime_restarted": false,
+  "microphone_settings_changed": false,
+  "limits": "Owner-reversible change-control guard. Git clones do not preserve read-only permission bits. Android and shared application/UI source are outside this PC-engine boundary."
+}

@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import asyncio
 from importlib.resources import files
+import json
 import logging
+import math
+import os
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -13,6 +17,93 @@ log = logging.getLogger('jarvis_voice')
 
 class WakeWordUnavailable(RuntimeError):
     """The configured local wake-word runtime could not be loaded."""
+
+
+class LocalPhraseDetector:
+    """Recognize both greetings locally using the bundled English speech model."""
+
+    phrases = ('hey jarvis', 'hello jarvis')
+
+    def __init__(self, *, recognizer=None, model_path=None):
+        if recognizer is None:
+            try:
+                from vosk import Model, KaldiRecognizer
+                path = Path(model_path or os.environ.get('JARVIS_WAKE_MODEL',
+                    str(Path(__file__).with_name('assets') / 'wake-model'))).expanduser()
+                # An explicit local path prevents Vosk from downloading a model.
+                self._model = Model(str(path))
+                grammar = [*self.phrases, 'hey', 'hello', 'jarvis', 'hey there',
+                           'hello there', 'hello world', 'goodbye jarvis', '[unk]']
+                recognizer = KaldiRecognizer(self._model, 16000, json.dumps(grammar))
+                recognizer.SetWords(True)
+                recognizer.SetPartialWords(True)
+            except Exception as error:
+                raise WakeWordUnavailable('local Hello/Hey Jarvis model is unavailable') from error
+        self._recognizer = recognizer
+        self.reset()
+
+    def reset(self):
+        self._recognizer.Reset()
+        self.last_phrase = ''
+        self.last_score = self.peak_score = 0.0
+
+    def process(self, frame):
+        final = self._recognizer.AcceptWaveform(frame)
+        result = json.loads(self._recognizer.Result() if final else self._recognizer.PartialResult())
+        phrase = ' '.join(result.get('text' if final else 'partial', '').casefold().split())
+        if phrase not in self.phrases:
+            return False
+        words = result.get('result' if final else 'partial_result') or []
+        if [word.get('word') for word in words] != phrase.split():
+            return False
+        scores = [word.get('conf') for word in words]
+        if any(type(score) not in (float, int) or not math.isfinite(score) for score in scores):
+            return False
+        self.last_score = min(scores)
+        self.peak_score = max(self.peak_score, self.last_score)
+        if self.last_score < .80:
+            return False
+        self.last_phrase = phrase
+        log.info('Local wake phrase matched: %s (confidence %.3f)', phrase, self.last_score)
+        return True
+
+
+class JarvisWakeDetector:
+    """Keep the fast Hey model alongside explicit local Hello/Hey recognition."""
+
+    def __init__(self, *, threshold=.50, vad_threshold=.50):
+        self.detectors = []
+        errors = []
+        for factory in (lambda: LocalPhraseDetector(),
+                        lambda: OpenWakeWordDetector(threshold=threshold, vad_threshold=vad_threshold)):
+            try:
+                self.detectors.append(factory())
+            except WakeWordUnavailable as error:
+                errors.append(str(error))
+        if not self.detectors:
+            raise WakeWordUnavailable('; '.join(errors))
+        for error in errors:
+            log.warning('Wake recognition degraded: %s', error)
+        self.reset()
+
+    @property
+    def phrases(self):
+        return ['Hey Jarvis', 'Hello Jarvis'] if any(isinstance(d, LocalPhraseDetector)
+            for d in self.detectors) else ['Hey Jarvis']
+
+    def reset(self):
+        for detector in self.detectors:
+            detector.reset()
+        self.last_score = self.peak_score = 0.0
+
+    def process(self, frame):
+        for detector in self.detectors:
+            detected = detector.process(frame)
+            self.last_score = detector.last_score
+            self.peak_score = max(self.peak_score, detector.peak_score)
+            if detected:
+                return True
+        return False
 
 
 class OpenWakeWordDetector:
@@ -96,6 +187,7 @@ class StandbyController:
         self.active = False
         self._requested = asyncio.Event()
         self._wake_event = asyncio.Event()
+        self.generation = 0
 
     @property
     def engaged(self) -> bool:
@@ -105,11 +197,13 @@ class StandbyController:
     def wake(self) -> None:
         """Trigger immediate wake from standby mode."""
         if self.engaged:
+            self.generation += 1
+            self._requested.clear()
             self._wake_event.set()
 
     async def prepare(self) -> None:
         if self.enabled and self.detector is None:
-            self.detector = OpenWakeWordDetector(
+            self.detector = JarvisWakeDetector(
                 threshold=self.threshold,
                 vad_threshold=self.vad_threshold,
             )
@@ -117,19 +211,55 @@ class StandbyController:
     async def request(self) -> dict:
         if not self.enabled:
             raise WakeWordUnavailable('standby mode is disabled')
+        if not self._requested.is_set():
+            self.generation += 1
+            self._wake_event.clear()
         self._requested.set()
         try:
             await self.prepare()
         except BaseException:
             self._requested.clear()
             raise
-        return {'status': 'standby_requested', 'wake_phrase': 'Hey Jarvis'}
+        return {'status': 'standby_requested', 'wake_phrase': 'Hey Jarvis',
+                'wake_phrases': getattr(self.detector, 'phrases', ['Hey Jarvis'])}
 
     async def wait_until_requested(self) -> None:
         await self._requested.wait()
 
     def cancel_request(self) -> None:
         self._requested.clear()
+
+    async def toggle(self) -> dict:
+        if self.engaged and not self._wake_event.is_set():
+            self.wake()
+            return {'status': 'awake', 'standby': False}
+        result = await self.request()
+        return {**result, 'standby': True}
+
+    async def _read_or_wake(self, stream):
+        if isinstance(stream, asyncio.StreamReader):
+            read = stream.readexactly(640)
+        elif hasattr(stream, 'async_input_queue'):
+            read = stream.async_input_queue.get()
+        elif hasattr(stream, 'get'):
+            read = stream.get()
+        elif hasattr(stream, 'read'):
+            read = stream.read(640)
+        else:
+            raise TypeError(f'Unsupported stream type: {type(stream)}')
+        tasks = [asyncio.create_task(read), asyncio.create_task(self._wake_event.wait())]
+        try:
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            if tasks[1] in done:
+                return None
+            return tasks[0].result()
+        except asyncio.IncompleteReadError:
+            return b''
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def listen_for_wake_word(self, stream: Any) -> None:
         if self._wake_event.is_set():
@@ -140,6 +270,7 @@ class StandbyController:
             await self.prepare()
         if self.detector is None:
             raise WakeWordUnavailable('wake-word detector is not ready')
+        generation = self.generation
         self.active = True
         try:
             if self.arming_delay:
@@ -148,77 +279,20 @@ class StandbyController:
                     return
                 except TimeoutError:
                     pass
-            # Drain residual frames queued before standby armed
             if hasattr(stream, 'async_input_queue'):
                 while not stream.async_input_queue.empty():
                     stream.async_input_queue.get_nowait()
             elif isinstance(stream, asyncio.Queue):
                 while not stream.empty():
                     stream.get_nowait()
-            # The daemon creates a fresh StreamReader after the standby cue.
-            # Its buffered samples can already contain the user's wake phrase.
             self.detector.reset()
             windows = 0
-            while True:
-                if self._wake_event.is_set():
-                    log.info('Wake requested via external control signal')
+            while not self._wake_event.is_set():
+                frame = await self._read_or_wake(stream)
+                if frame is None:
                     return
-
-                if isinstance(stream, asyncio.StreamReader):
-                    try:
-                        read_task = asyncio.create_task(stream.readexactly(640))
-                        wake_task = asyncio.create_task(self._wake_event.wait())
-                        done, pending = await asyncio.wait(
-                            [read_task, wake_task],
-                            return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for task in pending:
-                            task.cancel()
-                        if wake_task in done:
-                            log.info('Wake requested via external control signal')
-                            return
-                        frame = read_task.result()
-                    except asyncio.IncompleteReadError:
-                        break
-                elif hasattr(stream, 'async_input_queue'):
-                    try:
-                        get_task = asyncio.create_task(stream.async_input_queue.get())
-                        wake_task = asyncio.create_task(self._wake_event.wait())
-                        done, pending = await asyncio.wait(
-                            [get_task, wake_task],
-                            return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for task in pending:
-                            task.cancel()
-                        if wake_task in done:
-                            log.info('Wake requested via external control signal')
-                            return
-                        frame = get_task.result()
-                    except Exception:
-                        break
-                elif hasattr(stream, 'get'):
-                    try:
-                        get_task = asyncio.create_task(stream.get())
-                        wake_task = asyncio.create_task(self._wake_event.wait())
-                        done, pending = await asyncio.wait(
-                            [get_task, wake_task],
-                            return_when=asyncio.FIRST_COMPLETED
-                        )
-                        for task in pending:
-                            task.cancel()
-                        if wake_task in done:
-                            log.info('Wake requested via external control signal')
-                            return
-                        frame = get_task.result()
-                    except Exception:
-                        break
-                elif hasattr(stream, 'read'):
-                    frame = await stream.read(640)
-                else:
-                    raise TypeError(f"Unsupported stream type: {type(stream)}")
-
                 if not frame:
-                    break
+                    raise WakeWordUnavailable('wake microphone stream ended before a wake request')
                 if self.detector.process(frame):
                     return
                 windows += 1
@@ -228,5 +302,7 @@ class StandbyController:
                     self.detector.peak_score = 0.0
         finally:
             self.active = False
-            self._requested.clear()
-            self._wake_event.clear()
+            # An old listener must not erase a newer standby request.
+            if generation == self.generation or not self._requested.is_set():
+                self._requested.clear()
+                self._wake_event.clear()

@@ -359,12 +359,12 @@ def test_live_voice_initializes_calibrated_barge_gate_from_config():
 
 
 @pytest.mark.asyncio
-async def test_capture_holds_off_barge_in_during_playback_startup():
+async def test_capture_allows_barge_in_during_playback_startup():
     pcm = struct.pack('<320h', *([2000] * 320))
     gate = SpeechTurnGate(detector=lambda _: 0.0, silence_frames=2)
     player = Playback('default')
     player.enqueue(b'\x01\x00' * 480)
-    player.first_write_at = time.monotonic()  # 0ms elapsed, within 250ms startup window
+    player.first_write_at = time.monotonic()  # Playback just started.
     voice = LiveVoice(player, speech_gate=gate, barge_in=True)
     voice._reply_authorized = voice._reply_started = voice._model_active = True
     barge_calls = []
@@ -379,8 +379,8 @@ async def test_capture_holds_off_barge_in_during_playback_startup():
     with pytest.raises(EOFError, match='Microphone stream ended'):
         await voice._capture_audio(reader, queue)
 
-    assert len(barge_calls) == 0
-    assert voice.local_interruptions == 0
+    assert len(barge_calls) == 1
+    assert voice.local_interruptions == 1
 
 
 @pytest.mark.asyncio

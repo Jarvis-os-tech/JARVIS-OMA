@@ -298,3 +298,15 @@ async def test_sync_memory_command(socket_path):
         assert recorded[0] == ('Hello from phone', 'Hello back on mobile')
     finally:
         await server.close()
+
+
+@pytest.mark.asyncio
+async def test_standby_toggle_uses_controller_atomically():
+    from jarvis_voice.ipc import ControlServer
+    from jarvis_voice.standby import StandbyController
+    controller=StandbyController(detector=object())
+    server=ControlServer(standby_toggle_cb=controller.toggle)
+    first=json.loads(await server._handle_json_command({'command':'standby_toggle'}))
+    second=json.loads(await server._dispatch('standby toggle'))
+    assert first['standby'] is True and second['standby'] is False
+    assert not controller.engaged

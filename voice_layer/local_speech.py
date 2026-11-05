@@ -10,6 +10,7 @@ import asyncio
 import base64
 from dataclasses import dataclass
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -23,8 +24,19 @@ class LocalSpeechConfig:
     max_command_seconds: float = 2.5
     decode_timeout: float = .5
     minimum_word_probability: float = .5
+    offline_decode_timeout: float = 5.0
+    needle_enabled: bool = False
+    needle_timeout: float = 10.0
+    needle_minimum_confidence: float = .8
 
     def validate(self):
+        if type(self.needle_enabled) is not bool:
+            raise ValueError('local_speech.needle_enabled must be a boolean')
+        for name, low, high in (('needle_timeout', .1, 10), ('offline_decode_timeout', .1, 10), ('needle_minimum_confidence', .5, 1)):
+            value = getattr(self, name)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not low <= value <= high):
+                raise ValueError('Invalid Needle timeout or confidence threshold')
         if type(self.enabled) is not bool:
             raise ValueError('local_speech.enabled must be a boolean')
         for name, low, high in (('max_command_seconds', 1, 5),
@@ -50,6 +62,12 @@ def app_names(rows):
 
 
 def command_for(text, apps):
+    from jarvis_control.command_values import parse_control_command, protected_ranges
+    if not isinstance(text, str) or protected_ranges(text):
+        return None
+    parsed = parse_control_command(text)
+    if parsed:
+        return parsed
     text = normalize(text)
     text = re.sub(r'^(?:(?:hey |okay |ok )?jarvis )', '', text)
     text = re.sub(r'^please ', '', text)
@@ -67,14 +85,6 @@ def command_for(text, apps):
             return ('system_control', {'action': noun + '_adjust', 'value': 5})
         if text in (f'{noun} down', f'decrease {noun}', f'turn down the {noun}'):
             return ('system_control', {'action': noun + '_adjust', 'value': -5})
-        match = re.fullmatch(rf'(?:set )?(?:the )?{noun}(?: to)? (\d{{1,3}})(?:%| percent)?', text)
-        if match and (1 if noun == 'brightness' else 0) <= int(match[1]) <= 100:
-            return ('system_control', {'action': noun + '_set', 'value': int(match[1])})
-    numbers = {'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
-               'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10'}
-    match = re.fullmatch(r'(?:switch to |go to )?workspace ([1-9]|10|one|two|three|four|five|six|seven|eight|nine|ten)', text)
-    if match:
-        return ('system_control', {'action': 'workspace_switch', 'workspace': numbers.get(match[1], match[1])})
     match = re.fullmatch(r'(?:open|launch|start) (.+)', text)
     if match and match[1] in apps:
         return ('launch_app', {'app': apps[match[1]]})
@@ -139,7 +149,10 @@ class WhistleClient:
             if self.config.enabled and not self.ready:
                 await self.start()
 
-    async def transcribe(self, pcm):
+    async def transcribe_offline(self, pcm):
+        return await self.transcribe(pcm, timeout=self.config.offline_decode_timeout)
+
+    async def transcribe(self, pcm, *, timeout=None):
         if not self.ready or not pcm or len(pcm) > 32000 * self.config.max_command_seconds:
             return None
         async with self._lock:
@@ -148,7 +161,7 @@ class WhistleClient:
                 # Transmit bounded PCM audio and vocabulary hints to the local speech worker
                 request = json.dumps({'pcm': base64.b64encode(pcm).decode(),
                                       'keywords': self.keywords[:128]}).encode() + b'\n'
-                async with asyncio.timeout(self.config.decode_timeout):
+                async with asyncio.timeout(self.config.decode_timeout if timeout is None else timeout):
                     self.process.stdin.write(request)
                     await self.process.stdin.drain()
                     result = json.loads(await self.process.stdout.readline())

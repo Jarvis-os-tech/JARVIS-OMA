@@ -1,0 +1,14 @@
+# Copy to ~/.config/universal-voice/config.toml; choose a Live model available to your API account.
+model = "gemini-3.8-live"
+voice = "Aoede"
+barge_in = true
+turn_silence_frames = 60
+# Device names from: pactl list short sources / pactl list short sinks
+# Empty strings follow the desktop defaults.
+device = ""
+output_device = ""
+autostart_listening = true
+greet_on_start = true
+
+[standby]
+enabled = true

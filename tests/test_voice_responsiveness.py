@@ -20,6 +20,8 @@ async def test_local_filler_does_not_complete_real_tool_answer(tmp_path):
     config = NS(fillers=NS(enable_local_fillers=True, filler_audio_dir=str(tmp_path),
                            phrases=[{'context': 'test', 'file': 'thinking.pcm'}]))
     voice = LiveVoice(Playback('test'), config=config)
+    # Legacy custom files must not replace the matching short voice cache.
+    voice._reply_notices['ack_short_sure'] = pcm
     voice._reply_authorized = voice._waiting = True
     voice._play_filler_reflex('test')
     assert voice.player.queued_bytes == len(pcm)

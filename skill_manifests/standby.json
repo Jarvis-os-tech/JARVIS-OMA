@@ -3,7 +3,7 @@
   "skills": [
     {
       "name": "enter_standby",
-      "description": "Enter private standby after confirming; 'Hey Jarvis' resumes. Use when the user says standby mode, mute, mute yourself, mute Jarvis, go to sleep, keep silent, be quiet, don't speak until recalled, or don't disturb me. A bare 'mute' means mute Jarvis via standby, never the system speaker or microphone. Do not use for an explicit request to mute system audio, mute the system microphone, pause media, or stop only the current response.",
+      "description": "Enter private standby when the user clearly wants conversation paused until recalled; Hey Jarvis or Hello Jarvis resumes. Use for explicit standby, sleep, mute yourself, directed goodbye, or don't speak until I call you. A bare mute means Jarvis standby, never system audio or microphone mute. Interpret keep quiet from context; clarify unclear scope. Do not use for stopping only the current reply, corrections, brief pauses, quoted phrases, or questions about standby. Background tasks continue.",
       "adapter": "standby.enter",
       "parameters_json_schema": {
         "type": "object",

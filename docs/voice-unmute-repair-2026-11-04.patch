@@ -1,0 +1,100 @@
+--- before/voice_layer/daemon.py
++++ after/voice_layer/daemon.py
+@@ -1823,10 +1823,12 @@
+                 self.broadcast(self.status())
+             await asyncio.sleep(0.1)
+ 
+-    async def monitor_microphone(self):
+-        """Report the actual capture route without changing a user's mute setting."""
++    async def monitor_microphone(self, echo=None):
++        """Follow physical mute transitions on our AEC, then report capture health."""
+         while True:
+             previous = self.microphone_state
++            if echo is not None:
++                await echo.sync_microphone_mute()
+             self.microphone_state = await read_microphone_state()
+             if self.microphone_state['issue'] != previous['issue']:
+                 if self.microphone_state['issue']:
+@@ -2007,7 +2009,7 @@
+             env=audio_environment())
+         try:
+             await supervise(voice.send_audio(None, microphone.stdout), player.run(),
+-                            voice.publish_status(), voice.monitor_microphone())
++                            voice.publish_status(), voice.monitor_microphone(echo))
+         finally:
+             await stop_process(microphone)
+             voice.gate.reset()
+@@ -2082,7 +2084,7 @@
+                             voice.stream_vision(session),
+                             player.run(),
+                             voice.publish_status(),
+-                            voice.monitor_microphone(),
++                            voice.monitor_microphone(echo),
+                             voice.monitor_response(),
+                             voice.monitor_standby(),
+                         )
+--- before/voice_layer/echo.py
++++ after/voice_layer/echo.py
+@@ -54,6 +54,8 @@
+         self.name = f'jarvis_aec_{uuid.uuid4().hex[:8]}'
+         self.source = self.name
+         self.sink = ''
++        self.microphone = ''
++        self._physical_muted = None
+         self.process: Optional[asyncio.subprocess.Process] = None
+         self.active = False
+ 
+@@ -62,6 +64,7 @@
+             source = str(microphone) if microphone else await pactl('get-default-source')
+             sink = str(speaker) if speaker else await pactl('get-default-sink')
+             self.sink = sink
++            self.microphone = source
+             if source.endswith('.monitor'):
+                 raise RuntimeError('Echo cancellation requires a microphone, not a monitor source')
+ 
+@@ -81,11 +84,12 @@
+                 if any(line.split()[1:2] == [self.source] for line in available.splitlines()):
+                     # A new private AEC node can inherit an unrelated restored
+                     # mute. Initialize it from its actual physical microphone
+-                    # once; never undo subsequent user mute changes.
++                    # initially; later physical mute transitions are mirrored.
+                     sources = json.loads(await pactl('--format=json', 'list', 'sources'))
+                     physical = next((item for item in sources if item.get('name') == source), None)
+                     if physical is not None and type(physical.get('mute')) is bool:
+                         await pactl('set-source-mute', self.source, '1' if physical['mute'] else '0')
++                        self._physical_muted = physical['mute']
+                     self.active = True
+                     try:
+                         await pactl('set-source-volume', self.source, '100%')
+@@ -103,8 +107,31 @@
+             await self.close()
+             return False
+ 
++    async def sync_microphone_mute(self):
++        """Mirror physical mute transitions, leaving independent AEC mutes intact."""
++        if not self.active or not self.microphone:
++            return
++        try:
++            sources = json.loads(await pactl('--format=json', 'list', 'sources'))
++            if not isinstance(sources, list) or any(not isinstance(item, dict) for item in sources):
++                return
++            physical = [item for item in sources if item.get('name') == self.microphone]
++            owned = [item for item in sources if item.get('name') == self.source]
++            if len(physical) != 1 or len(owned) != 1 or type(physical[0].get('mute')) is not bool:
++                return
++            muted = physical[0]['mute']
++            if muted is self._physical_muted:
++                return
++            if self._physical_muted is not None:
++                await pactl('set-source-mute', self.source, '1' if muted else '0')
++            self._physical_muted = muted
++        except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
++            log.warning('Could not synchronize the private microphone mute', exc_info=True)
++
+     async def close(self):
+         self.active = False
++        self.microphone = ''
++        self._physical_muted = None
+         process, self.process = self.process, None
+         if process is not None:
+             await stop_process(process)

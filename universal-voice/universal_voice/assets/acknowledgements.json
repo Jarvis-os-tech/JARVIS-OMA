@@ -1,0 +1,116 @@
+{
+  "ack_file": {
+    "text": "I'll read through that file.",
+    "voice": "gemini-Aoede",
+    "sha256": "6f380300cbd635180f30fd02eafbb4569b9d10b96274ac3011b3d5bc0dcc9c26",
+    "seconds": 1.2909583333333334
+  },
+  "ack_files": {
+    "text": "I'll look through your files.",
+    "voice": "gemini-Aoede",
+    "sha256": "575a6184119a6a870436d218f6fb94463d03ed442636827c61301f1b8d1702a5",
+    "seconds": 1.8109583333333332
+  },
+  "ack_analysis": {
+    "text": "I'll work through the details.",
+    "voice": "gemini-Aoede",
+    "sha256": "9ba156c8d8d4d62dbd9cddfaa4fe3500642b94aa12840cdcb4d6bc96964181cc",
+    "seconds": 1.6909583333333333
+  },
+  "ack_search": {
+    "text": "I'll look that up.",
+    "voice": "gemini-Aoede",
+    "sha256": "de7cdc6933ba786b8daf078765634c60c0b2bb35d1f5a73b78bc5f802e2f7f59",
+    "seconds": 1.1309583333333333
+  },
+  "ack_screen": {
+    "text": "I'll check what's on your screen.",
+    "voice": "gemini-Aoede",
+    "sha256": "a9334ed7cf4369eca94625e5113d300f94de77e7239cbc1648c03be97e0867c0",
+    "seconds": 1.6509583333333333
+  },
+  "ack_browser": {
+    "text": "I'll check that in the browser.",
+    "voice": "gemini-Aoede",
+    "sha256": "9ba64acdfadeaa7f0d3fa692d6c51cf49c771b7eea8347cb4951abefca0c3a0b",
+    "seconds": 1.5709583333333332
+  },
+  "ack_terminal": {
+    "text": "I'll run that and check the result.",
+    "voice": "gemini-Aoede",
+    "sha256": "0bd5a74e3cc28a76debe1df3e1fab28e7d0f059e1b51c677cb735a2b3d1f713e",
+    "seconds": 2.4109583333333333
+  },
+  "ack_agent": {
+    "text": "I'll get started on that task.",
+    "voice": "gemini-Aoede",
+    "sha256": "9125f92d7655914cf0ea8c80e6ec544e9e48ae7fe7590b43babab2eada49f48f",
+    "seconds": 1.9709583333333334
+  },
+  "ack_app": {
+    "text": "I'll open that application.",
+    "voice": "gemini-Aoede",
+    "sha256": "d8900d3638f81666db647e867f6c7fb0ca62f2a9883281c37ac6511239d2f241",
+    "seconds": 1.6509583333333333
+  },
+  "ack_volume": {
+    "text": "I'll adjust the volume.",
+    "voice": "gemini-Aoede",
+    "sha256": "b31562bae4c00421d5b5a17ac0d54f8ccac28699a858863d618d0cc694a23196",
+    "seconds": 1.5309583333333334
+  },
+  "ack_brightness": {
+    "text": "I'll adjust the screen brightness.",
+    "voice": "gemini-Aoede",
+    "sha256": "6cb81a8fb50ef0b89793509af4935ab78443f9562af2fa7cbdf7341942f76057",
+    "seconds": 2.0909583333333335
+  },
+  "ack_workspace": {
+    "text": "I'll switch to that workspace.",
+    "voice": "gemini-Aoede",
+    "sha256": "306c975af325e52905bcee51ef45ae5545cd52791af9034f80a3b5dc27b7c187",
+    "seconds": 2.0109583333333334
+  },
+  "ack_general_0": {
+    "text": "Let me take a look.",
+    "voice": "gemini-Aoede",
+    "sha256": "0f61ab161b357f457fdb03f5a98ccc91d95050407460dd96bf9343493191fa95",
+    "seconds": 1.0909583333333333
+  },
+  "ack_general_1": {
+    "text": "I'll work through that.",
+    "voice": "gemini-Aoede",
+    "sha256": "93249e145256a59685d0b01e362d36056aa0a7971ebb109a1692144942cb37e6",
+    "seconds": 1.4509583333333333
+  },
+  "ack_general_2": {
+    "text": "Let me check that.",
+    "voice": "gemini-Aoede",
+    "sha256": "b079bcfc9c580afd017ac69f6ec60b1b7b360cb033e7d84b6c0e4e5c516ef912",
+    "seconds": 1.3709583333333333
+  },
+  "ack_short_sure": {
+    "text": "Sure.",
+    "voice": "gemini-Aoede",
+    "sha256": "0cb3441c6c83f40ef3d3fe1244bec55df408bbf288d00cec1d0d61ded3945a68",
+    "seconds": 0.9
+  },
+  "ack_short_on_it": {
+    "text": "On it.",
+    "voice": "gemini-Aoede",
+    "sha256": "2a7b0e60c4fef0496d58b4c14b30ec78b268ecc1b635c99d7e6f110bbda8e5c7",
+    "seconds": 0.7300416666666667
+  },
+  "ack_short_hmm": {
+    "text": "Hmm.",
+    "voice": "gemini-Aoede",
+    "sha256": "0d11da4839ba41d6435c86adc0b549bb062b045309704eeb24a34c0aba98d7f2",
+    "seconds": 0.46
+  },
+  "ack_short_okay": {
+    "text": "Okay.",
+    "voice": "gemini-Aoede",
+    "sha256": "8f57a9e859e175318eea7d44dfba38d5ad3bce32b550ed3245427887e65b50e5",
+    "seconds": 0.82
+  }
+}

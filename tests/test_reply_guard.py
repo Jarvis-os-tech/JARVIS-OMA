@@ -34,7 +34,7 @@ def test_bundled_feedback_contains_bounded_non_silent_pcm():
 
 
 @pytest.mark.asyncio
-async def test_empty_answer_requests_speech_once_then_gives_local_failure():
+async def test_empty_answer_requests_speech_once_then_records_silent_failure():
     instance = voice()
     session = NS(send_client_content=AsyncMock())
     await instance.handle(completed(), session)
@@ -44,7 +44,7 @@ async def test_empty_answer_requests_speech_once_then_gives_local_failure():
     await instance.handle(completed(), session)
     session.send_client_content.assert_awaited_once()
     assert not instance._reply_authorized
-    assert instance.player.queued_bytes == 1920
+    assert instance.player.queued_bytes == 0
     assert instance.last_error == 'No spoken answer was received.'
 
 
@@ -68,10 +68,10 @@ async def test_recovered_audio_plays_and_recovery_cannot_repeat_an_action():
 
 
 @pytest.mark.asyncio
-async def test_recovery_send_failure_still_produces_local_reply():
+async def test_recovery_send_failure_records_failure_without_second_voice():
     instance = voice()
     await instance.handle(completed(), NS(send_client_content=AsyncMock(side_effect=OSError)))
-    assert instance.player.queued_bytes == 1920
+    assert instance.player.queued_bytes == 0
     assert not instance._reply_authorized
 
 
@@ -111,6 +111,7 @@ async def test_new_speech_wins_over_an_old_recovery_waiting_for_send_lock():
 @pytest.mark.asyncio
 async def test_wait_feedback_is_once_per_turn_and_does_not_reset_watchdog(monkeypatch):
     instance = voice()
+    instance._request_contextual_update = AsyncMock(return_value=True)
     instance._last_progress = 10
     cycles = 0
 
@@ -124,7 +125,8 @@ async def test_wait_feedback_is_once_per_turn_and_does_not_reset_watchdog(monkey
     monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 26)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
-    assert instance.player.queued_bytes == 960
+    assert instance.player.queued_bytes == 0
+    instance._request_contextual_update.assert_not_awaited()
     assert instance._last_progress == 10
     assert instance.response_delayed
     assert not instance._reply_started
@@ -244,5 +246,5 @@ async def test_rejected_tool_suppresses_reply_waiting(monkeypatch):
 
     # "reply_waiting" audio clip MUST NOT be queued!
     assert instance.player.queue.empty()
-    assert instance._waiting_notice_played
+    assert not instance._waiting_notice_played
 

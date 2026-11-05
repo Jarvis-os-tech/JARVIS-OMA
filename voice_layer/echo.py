@@ -54,6 +54,8 @@ class MonitorEchoCancellation:
         self.name = f'jarvis_aec_{uuid.uuid4().hex[:8]}'
         self.source = self.name
         self.sink = ''
+        self.microphone = ''
+        self._physical_muted = None
         self.process: Optional[asyncio.subprocess.Process] = None
         self.active = False
 
@@ -62,6 +64,7 @@ class MonitorEchoCancellation:
             source = str(microphone) if microphone else await pactl('get-default-source')
             sink = str(speaker) if speaker else await pactl('get-default-sink')
             self.sink = sink
+            self.microphone = source
             if source.endswith('.monitor'):
                 raise RuntimeError('Echo cancellation requires a microphone, not a monitor source')
 
@@ -81,11 +84,12 @@ class MonitorEchoCancellation:
                 if any(line.split()[1:2] == [self.source] for line in available.splitlines()):
                     # A new private AEC node can inherit an unrelated restored
                     # mute. Initialize it from its actual physical microphone
-                    # once; never undo subsequent user mute changes.
+                    # initially; later physical mute transitions are mirrored.
                     sources = json.loads(await pactl('--format=json', 'list', 'sources'))
                     physical = next((item for item in sources if item.get('name') == source), None)
                     if physical is not None and type(physical.get('mute')) is bool:
                         await pactl('set-source-mute', self.source, '1' if physical['mute'] else '0')
+                        self._physical_muted = physical['mute']
                     self.active = True
                     try:
                         await pactl('set-source-volume', self.source, '100%')
@@ -103,8 +107,31 @@ class MonitorEchoCancellation:
             await self.close()
             return False
 
+    async def sync_microphone_mute(self):
+        """Mirror physical mute transitions, leaving independent AEC mutes intact."""
+        if not self.active or not self.microphone:
+            return
+        try:
+            sources = json.loads(await pactl('--format=json', 'list', 'sources'))
+            if not isinstance(sources, list) or any(not isinstance(item, dict) for item in sources):
+                return
+            physical = [item for item in sources if item.get('name') == self.microphone]
+            owned = [item for item in sources if item.get('name') == self.source]
+            if len(physical) != 1 or len(owned) != 1 or type(physical[0].get('mute')) is not bool:
+                return
+            muted = physical[0]['mute']
+            if muted is self._physical_muted:
+                return
+            if self._physical_muted is not None:
+                await pactl('set-source-mute', self.source, '1' if muted else '0')
+            self._physical_muted = muted
+        except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
+            log.warning('Could not synchronize the private microphone mute', exc_info=True)
+
     async def close(self):
         self.active = False
+        self.microphone = ''
+        self._physical_muted = None
         process, self.process = self.process, None
         if process is not None:
             await stop_process(process)

@@ -31,7 +31,7 @@ def voice():
 
 
 @pytest.mark.parametrize('context,clip', [
-    ('generic_deep_thought', 'filler_sure'),
+    ('generic_deep_thought', 'filler_hmm'),
     ('system_mutation', 'filler_on_it'),
     ('filesystem_grep', 'filler_hmm'),
     ('sub_agent_spawn', 'filler_sure'),
@@ -48,7 +48,7 @@ def test_missing_external_recordings_use_bundled_speech(context, clip):
 
 def test_new_turn_resets_filler_budget():
     instance = voice()
-    for clip in ('filler_sure', 'filler_sure'):
+    for clip in ('filler_hmm', 'filler_on_it', 'filler_sure'):
         instance._start_reply_watch()
         assert instance._play_filler_reflex()
         assert instance.player.queue.get_nowait()[1] == instance._reply_notices[clip]
@@ -70,10 +70,11 @@ def test_fillers_respect_input_privacy_and_preferences(state):
 
 
 @pytest.mark.asyncio
-async def test_long_wait_gets_one_clear_status_notice(monkeypatch):
+async def test_long_wait_gets_one_ack_and_no_processing_notice(monkeypatch):
     instance = voice()
     instance._start_reply_watch()
     instance._last_progress = 10
+    instance._reply_wait_started_at = 10
     cycles = 0
 
     async def cycle(_):
@@ -87,7 +88,7 @@ async def test_long_wait_gets_one_clear_status_notice(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['reply_waiting']
+    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
     assert instance._last_progress == 10
 
 
@@ -110,7 +111,7 @@ async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypa
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_sure']
+    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
     assert not instance._reply_started
 
 

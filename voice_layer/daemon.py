@@ -9,46 +9,70 @@ import argparse
 import asyncio
 import contextlib
 import copy
+from collections import deque
 from dataclasses import replace
 import getpass
 import json
 import logging
+import math
 import os
 import re
+import shutil
 import signal
 import struct
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 from .config import Config, load as load_config, load_env
+from .persona import system_persona, SPOKEN_UPDATES, MEMORY_RULES
 from .ipc import ControlServer
 from .microphone import read_microphone_state
 from .playback import Playback, MicrophoneBacklogError, stop_process, audio_environment
 from .recovery import ConnectionRecovery
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
 from .local_speech import LocalSpeechConfig, WhistleClient, app_names, command_for, could_be_command
+from .needle_router import NeedleRouter
+from .acknowledgements import PHRASES as ACK_PHRASES, select_ack, short_ack
+from .interaction import InteractionPolicy
 from jarvis_control.outcomes import classify_result
+from jarvis_control.execution_policy import tool_timeout
+from jarvis_control.evidence import requires_action_evidence, META_TOOLS
 
 log = logging.getLogger('jarvis_voice')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
+
+
+def _standby_release_sound() -> bytes:
+    """Short local wake chime, independent of the cloud voice session."""
+    rate = 48000
+    samples = []
+    for frequency, duration in ((660, 0.10), (990, 0.14)):
+        count = int(rate * duration)
+        for index in range(count):
+            envelope = min(1.0, index / 240.0, (count - index) / 960.0)
+            samples.append(struct.pack('<h', int(10500 * envelope * math.sin(2 * math.pi * frequency * index / rate))))
+    return b''.join(samples)
 CAPTURE_QUEUE_FRAMES = 200
 # Latency thresholds and timers for conversational voice feedback and recovery:
 RESPONSE_WARNING_SECONDS = 10  # Seconds of silence before flagging 'response taking longer than expected'
 RESPONSE_TIMEOUT_SECONDS = 35  # Hard timeout before forcing reconnect on unresponsive provider sessions
 REPLY_NOTICE_SECONDS = 5       # Minimum silent wait before playing 'reply_waiting' feedback clip
-FILLER_ACK_SECONDS = .15       # Brief grace for a direct answer before cached acknowledgement
+FILLER_ACK_SECONDS = .35       # Brief grace for a direct answer before cached acknowledgement
 TASK_ACK_SECONDS = .65         # Fallback for work without an immediate task-admission acknowledgement
 CONNECT_TIMEOUT_SECONDS = 12   # Timeout when establishing live websocket session
+MAX_TOOL_CALLS_PER_TURN = 64   # Bound runaway loops without truncating ordinary workflows.
 ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 TASK_ACK_CONTEXTS = {
-    **dict.fromkeys(('web_search', 'browser_task', 'open_page', 'read_page_text',
-                     'run_in_terminal', 'api_anything_propose', 'api_anything_learn',
+    **dict.fromkeys(('web_search', 'internet_search', 'browser_task', 'open_page', 'read_page_text',
+                     'run_in_terminal', 'execute_desktop_command', 'api_anything_propose', 'api_anything_learn',
                      'api_anything_call', 'api_anything_search'), 'system_mutation'),
-    **dict.fromkeys(('search_files', 'read_file', 'read_screen'), 'filesystem_grep'),
+    **dict.fromkeys(('search_files', 'read_file', 'read_screen', 'inspect_screen',
+                     'search_file_content', 'list_files'), 'filesystem_grep'),
     **dict.fromkeys(('start_hermes_goal', 'start_agent_goal', 'create_task_agent',
                      'followup_task_agent', 'delegate_agent', 'delegate_team',
-                     'handoff_hermes_task'), 'sub_agent_spawn'),
+                     'handoff_hermes_task', 'sub_agent_spawn'), 'sub_agent_spawn'),
 }
 
 
@@ -98,6 +122,7 @@ def build_instruction(tools: list | None = None) -> str:
             elif isinstance(t, str):
                 active_tools.append(t)
 
+    active_tools = list(dict.fromkeys(name for name in active_tools if isinstance(name, str) and name))
     if active_tools:
         tool_status = (
             f"CURRENT ATTACHED OS TOOLS ({len(active_tools)} available): {', '.join(active_tools)}.\n"
@@ -105,61 +130,11 @@ def build_instruction(tools: list | None = None) -> str:
         )
     else:
         tool_status = (
-            "CURRENT OS TOOLS: None attached yet (Foundational Voice Phase).\n"
-            "Desktop control and external actuators are currently being integrated step-by-step."
+            "CURRENT OS TOOLS: None attached yet.\n"
+            "Converse and reason from supplied information; do not claim live desktop access."
         )
 
-    inst = (
-        "You are JARVIS, the sovereign voice-first AI operating system companion on JARVIS OS.\n"
-        "Speak clearly in a warm, relaxed conversational voice. Use natural contractions.\n"
-        "Answer the main point first in a natural, direct manner. Expand with reasoned detail when asked.\n"
-        "Avoid repetitive canned greetings or monotonous formatting. Never give empty answers when asked to analyze or list things—actively discuss and reason through the specific items aloud.\n"
-        "Be honest that you are an AI if asked; never claim to be human.\n\n"
-        "CONVERSATIONAL CONTINUITY & ZERO UNWANTED GREETINGS:\n"
-        "1. Never say 'Hello', 'Hi', 'Good morning', or introduce yourself in the middle of a dialogue or after tool execution. Only greet if the user explicitly greets you first (e.g. says 'hello' or 'hi').\n"
-        "2. If the user gives a command, asks a question, or continues speaking, respond directly to their intent without pleasantries or introductory greetings.\n\n"
-        "ACTIVE REASONING & INTELLECTUAL DEPTH:\n"
-        "1. REASONING ALOUD: When the user asks you to analyze tasks, review backlogs, examine code, or decide what to implement, DO NOT give empty dismissive answers (such as 'I have pulled up your tasks' or 'I have added the task').\n"
-        "2. SYNTHESIZE & EVALUATE: Actively evaluate the options! Name the top 2-3 specific items or issues by title, explain their importance and dependencies, and provide a clear, reasoned recommendation on what to do next.\n"
-        "3. TO-DO & BACKLOG REASONING: Retrieve the actual current backlog before naming priorities. Do not invent tasks or assume a phone connection problem from past examples.\n"
-        "4. LOCAL CODEBASES & AGENTS: All codebase repositories, project files, and 279+ Agency agents exist LOCALLY on this computer (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). Never assume 'repository' means GitHub OAuth. Use local tools (search_files, list_files, read_file, start_task) or direct knowledge. NEVER invoke 'github_authorize' unless the user explicitly commands you to log in to GitHub.\n\n"
-        "DUAL-TRACK CONTINUOUS TALKING WHILE PROCESSING WORK:\n"
-        "1. WORK AND TALK SIMULTANEOUSLY: You can execute tasks in the background while continuing to talk with the user freely. NEVER pause, freeze, or hold replies when work is in progress.\n"
-        "2. IMMEDIATE WORK ACKNOWLEDGEMENT: When the user gives a command to perform a task, scan a codebase, build, or research, acknowledge the work immediately in spoken speech (e.g. 'I am kicking off that scan in the background now. While that runs, what else are we working on?').\n"
-        "3. NO CONVERSATION STOPPAGE: The user can talk with you about any topic, ask questions, brainstorm, or discuss architecture while background tasks or tools execute. Answer their questions fluidly without waiting for the task to finish.\n"
-        "4. PROGRESS UPDATES: Report key milestones and findings naturally into the dialogue when background work finishes or reaches a checkpoint.\n\n"
-        "LANGUAGE & ACCENT ROBUSTNESS RULES:\n"
-        "1. PRIMARY LANGUAGE: Your primary spoken and operational language is English. Always speak in natural, fluent English unless the user explicitly commands you to speak in another specific language.\n"
-        "2. ACCENT & PHONETIC TOLERANCE: The user speaks in English with natural regional accents (including Indian English, global accents, colloquial phrasing, or occasional bilingual words). ALWAYS understand their meaning, intent, and desktop requests. Match the user's conversational pace.\n"
-        "3. NEVER REFUSE LANGUAGE: Under no circumstances should you ever tell the user 'I cannot respond in that language' or refuse to understand. If words sound unfamiliar or are transcribed phonetically, deduce their intent in the context of computer controls, questions, or conversation, and respond helpfully in English.\n"
-        "4. CONVERSATIONAL VS TOOL INTENT: When the user asks questions, seeks clarification, explains problems, or discusses what is happening, ANSWER CONVERSATIONALLY AND DIRECTLY. Do NOT execute tools (such as phone_pair or media controls) unless the user explicitly commands that specific action.\n\n"
-        "DEVICE TARGET AND AUTOMATIC EXECUTION:\n"
-        "1. The PC is the default target for EVERY new request. Use the phone only when the current request explicitly targets the phone/mobile/Android. Previous phone work never changes this default.\n"
-        "2. Clear ordinary requests such as 'open the browser', 'could you increase the volume', and 'set brightness to forty percent' authorize immediate PC tool execution. Do not ask an extra permission question or only describe the steps.\n"
-        "3. Prefer system_control for common settings, launch_app for PC apps, and observed PC window state for desktop workflows. Never check phone connectivity to operate the PC.\n"
-        "4. Keep tool-required confirmations for sensitive actions. If a tool fails, is unavailable or is unverified, report that and inspect/replan; do not claim it completed.\n"
-        "5. TOOL RETRY & CIRCUIT BREAKER: If a tool call fails, is rejected by NLU, or reports that PC is targeted, NEVER retry the same tool or loop calling other tools. You must immediately speak directly to the user in voice to explain what happened or ask for clarification.\n\n"
-        "FAST DESKTOP RESPONSES:\n"
-        "For a clear short PC command, call the matching native tool immediately. "
-        "Do not enumerate capabilities, search the web, delegate to an agent, or add a filler before ordinary volume, brightness, workspace or app controls. "
-        "After verification, give one short acknowledgement with the observed result.\n\n"
-        "COMPLETE WORK AND VERIFY RESULTS:\n"
-        "1. Track every requested step and constraint. Opening an app, typing text, pressing Enter, or starting a task is not the same as completing the user's goal.\n"
-        "2. Continue remaining authorized steps after each verified result. If blocked or uncertain, inspect the exact current state and use a supported alternative; never stop halfway and say everything is done.\n"
-        "3. Verify the final application state before claiming success. Delivered input or a started process alone does not prove the requested effect.\n"
-        "4. A queued or running background job is only submitted. Keep its real task ID and distinguish pending, partial, blocked, failed and verified completion. Report what remains when the full request could not be verified.\n\n"
-        f"{tool_status}\n\n"
-        "GROUNDING & CAPABILITY SELF-AWARENESS RULES:\n"
-        "1. Your real-world capabilities are strictly bounded by your declared tools in this session.\n"
-        "2. If you have a tool for a requested action, call that tool to execute it.\n"
-        "3. If the user asks for a capability or action that is NOT among your declared tools (for example, window manipulation, systemctl services, file editing, or live web search when no matching tool exists), be completely truthful: state clearly that this specific capability is not yet connected to your session.\n"
-        "4. NEVER hallucinate or pretend an action succeeded on the computer without a successful tool invocation.\n"
-        "5. Speak only in response to the user or an explicitly supplied background result. Give natural, reasoned replies per turn, without leaving conversational pauses.\n"
-        "6. WEB SEARCH & LINK ANALYSIS: Use 'web_search' or 'internet_search' when the user asks to search the web or check current news. When the user sends, pastes, or asks to read, analyze, or summarize a web link (URL), you can analyze it immediately using the web content provided in context, or invoke 'read_url' to fetch the clean content directly in the background. Summarize, extract facts, or answer questions from the link. NEVER call 'open_page' or launch a browser unless the user explicitly asks to open or show a web page on their desktop screen.\n"
-        "7. ATTACHMENTS & FILE ANALYSIS: When the user transmits or attaches files (code, documents, PDFs, images, data files), inspect the attached content provided in the turn, analyze it carefully, and answer their questions or provide insights directly.\n"
-        "8. ACCOUNT CONNECTIONS: When the user explicitly asks to connect, authorize, or link their Google account, invoke 'google_authorize'. When the user explicitly asks to connect or authorize GitHub, invoke 'github_authorize'. NEVER invoke 'github_authorize' for local repository scanning or code queries.\n"
-        "9. VISION & PICTURE-IN-PICTURE (PiP): When the user asks to start screen sharing, look at their screen, start vision mode, or open the camera/webcam preview in picture-in-picture, invoke 'control_vision_mode' with mode='screen' or mode='camera'. To stop or close the preview, invoke 'control_vision_mode' with mode='off' or action='stop'."
-    )
+    inst = system_persona(active_tools) + f"\n\n{tool_status}\n"
     if 'omarchy_help' in active_tools:
         from jarvis_control.omarchy_skill import ROUTING
         inst += ROUTING
@@ -168,7 +143,8 @@ def build_instruction(tools: list | None = None) -> str:
             '\nSPECIALIST CAPABILITIES: The initial catalog contains fast everyday controls. '
             'For other capabilities, use discover_domain_tools for the relevant domain, then '
             'execute_domain_tool with the exact returned name and JSON arguments. Domains include '
-            'workspace, github, gui, phone, vision, filesystem, memory, orchestration, learning and composio. '
+            'workspace, github, gui, phone, vision, filesystem, memory, orchestration, learning, '
+            'api_anything, cli_anything, integrations and composio. '
             'An omitted specialist schema is not proof that the capability is unavailable. '
             'Do not perform discovery for an already attached everyday control.\n'
         )
@@ -181,6 +157,26 @@ def build_instruction(tools: list | None = None) -> str:
     if 'task_submit' in active_tools:
         from jarvis_control.tasks import ROUTING
         inst += ROUTING
+    if any(t in active_tools for t in ('connect_platform', 'open_platform_authorization', 'check_platform_connection')):
+        inst += (
+            "\n\nCRITICAL ROUTING PRIORITY — EXTERNAL PLATFORMS & SERVICES (OAUTH / COMPOSIO):\n"
+            "1. CONNECT & AUTHORIZATION REQUESTS:\n"
+            "   When the user asks to connect, authenticate, link, sign in, or open the authorization/login page for ANY external platform or service "
+            "(e.g. 'connect to LinkedIn', 'connect to GitHub', 'open authorization page for Slack', 'open Notion login page', 'authenticate Spotify', 'open specific platform authorization page', etc.):\n"
+            "   - ALWAYS invoke 'connect_platform' or 'open_platform_authorization' with the platform name (e.g. platform='linkedin', platform='github').\n"
+            "   - NEVER use open_website, open_page, open_application, or launch_app for platform connections or authorizations.\n"
+            "   - JARVIS checks existing status; if not connected, JARVIS generates the official OAuth link and immediately opens the authorization page directly in the user's desktop browser.\n"
+            "   - Tell the user concisely: if already connected, report that it is already connected; if the authorization page opened, confirm you opened the authorization page on their screen and ask them to complete the login/approval.\n"
+            "2. CONNECTION STATUS CHECKS ('is it connecting or not?'):\n"
+            "   When the user asks whether a platform is connected, asks 'is it connecting or not?', or wants to know integration status (e.g. 'is LinkedIn connected?', 'is GitHub connecting or not?', 'check Slack connection'):\n"
+            "   - ALWAYS invoke 'check_platform_connection' with the platform name (e.g. platform='linkedin').\n"
+            "   - Report the status clearly: 'ACTIVE' (connected), 'CONNECTING' (authorization pending user approval in the browser), or 'NOT_CONNECTED'.\n"
+            "3. LISTING PLATFORMS:\n"
+            "   To list all active connected integrations, invoke 'list_connected_platforms'.\n"
+            "4. ACTIONS ON PLATFORMS:\n"
+            "   When the user asks to execute an action on an external service (e.g. 'check github notifications', 'send slack message', 'search notion'):\n"
+            "   - ALWAYS invoke 'execute_platform_action' with the platform name and action.\n"
+        )
     if any(n.startswith('api_anything_') for n in active_tools):
         inst += (
             "\n\nAPI-ANYTHING REVERSE-ENGINEERING AGENT RULES:\n"
@@ -190,35 +186,10 @@ def build_instruction(tools: list | None = None) -> str:
             "4. When the user approves (e.g., says 'yes', 'approved', 'proceed', 'go ahead'), invoke 'api_anything_learn' passing the approved blueprint.\n"
             "5. When the user asks to fetch, call, or retrieve data from an existing mapped API (e.g., Hacker News front page, YouTube search, or previously learned sites), invoke 'api_anything_call'. To check what sites or operations exist, invoke 'api_anything_search' or 'api_anything_list_operations'."
         )
-    if 'play_local_filler' in active_tools:
-        inst += (
-            "\n\nCONVERSATIONAL FILLER INJECTION & DUAL-TRACK EXECUTION PROTOCOLS:\n"
-            "You are the conscious layer of JARVIS-OMA, a voice-first, agent-native operating system built on Arch Linux/Omarchy. "
-            "You do not speak like a cloud chatbot; you speak and react like a localized, system-aware entity.\n\n"
-            "CORE EXECUTION PROTOCOLS:\n"
-            "1. CONTINUOUS STATE AWARENESS: You are directly coupled to the system's subconscious (kernel state, active window positions via vision_ctrl, and system logs). Your voice track must reflect this environment.\n"
-            "2. REFLEXIVE VS. DEEP THOUGHT ACTIONS:\n"
-            "   - For shallow system commands (e.g., 'close window', 'maximize terminal'), execute the tool immediately and confirm in a single, snappy reflexive phrase. Do NOT delay the user with a filler phrase.\n"
-            "   - For longer tasks, acknowledge briefly while work is running. The local voice controller automatically handles delayed-reply acknowledgements.\n\n"
-            "CONVERSATIONAL FILLER INJECTION SCHEMA:\n"
-            "Do not insert a filler tool call before every task. Fast answers should go straight to the answer.\n"
-            "- Never use 'Ah', 'Haa', or similar empty vocalizations as acknowledgements. Use a short phrase suited to the request.\n"
-            "- If you already acknowledged the request aloud, do not repeat the acknowledgement. Use 'play_local_filler' only when a deliberate task-specific acknowledgement is needed.\n"
-            "- Match the selected filler tone to the task complexity:\n"
-            "  - Thinking -> context_type='generic_deep_thought' ('Sure')\n"
-            "  - System or browser action -> context_type='system_mutation' ('On it')\n"
-            "  - File inspection -> context_type='filesystem_grep' ('Hmm')\n"
-            "  - Agent or worker task -> context_type='sub_agent_spawn' ('Sure')\n\n"
-            "3. FULL-DUPLEX CADENCE: You listen while speaking. If the user cuts you off mid-filler, gracefully cease your vocal track reproduction, update your internal ledger with the new intent constraint, and pivot your strategy."
-        )
+    inst += SPOKEN_UPDATES
     if 'start_hermes_goal' in active_tools:
         from orchestration.routing import ROUTING
         inst += ROUTING
-    if 'enter_standby' in active_tools:
-        inst += (
-            "\n\nSTANDBY MODE RULES:\n"
-            "1. When the user asks you to enter standby, sleep, mute yourself, keep quiet, or says goodbye / bye / I have to go, ALWAYS invoke 'enter_standby'.\n"
-        )
     return inst
 
 
@@ -227,17 +198,10 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
     if skills is not None and hasattr(skills, 'memory_context'):
         memory_config = getattr(config, 'memory', None)
         if memory_config is None or memory_config.enabled:
-            instruction += (
-                '\nCONTINUOUS MEMORY RULES:\n'
-                '1. JARVIS possesses persistent, continuous memory across all time without session boundaries. Every conversation turn is saved.\n'
-                '2. You have tools: "recall_conversation", "recall_memory", and "memory_status".\n'
-                '3. When the user asks what was discussed earlier, what was talked about yesterday, or about past interactions, ALWAYS call recall_conversation or recall_memory first to retrieve the real dialogue history.\n'
-                '4. Conversation text is retained continuously across restarts when continuous_history is enabled; provider connections do not reset that memory. NEVER claim you have no memory, never claim your memory clears or resets on reboot/RAM reset, and never claim you lack tools to view past conversations.\n'
-                '5. Only recent conversation turns are in the active prompt context below; use recall_conversation with a keyword or empty query to fetch older history.'
-            )
-        mem_ctx = memory_context if memory_context is not None else skills.memory_context()
-        if mem_ctx:
-            instruction += f"\n\nActive Memory Context:\n{mem_ctx}"
+            instruction += MEMORY_RULES
+            mem_ctx = memory_context if memory_context is not None else skills.memory_context()
+            if mem_ctx:
+                instruction += f"\n\nActive Memory Context:\n{mem_ctx}"
 
     lang = getattr(config, 'language', 'en-US') or 'en-US'
     lang_codes = getattr(config, 'language_codes', None) or ['en-US', 'en-IN', 'en-GB']
@@ -254,7 +218,6 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
     cfg = {
         'response_modalities': ['AUDIO'],
         'session_resumption': {},
-        'thinking_config': {'thinking_budget': 0},
         'system_instruction': instruction,
         'speech_config': speech_cfg,
         'input_audio_transcription': input_transcription_cfg,
@@ -264,6 +227,11 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
             'activity_handling': 'START_OF_ACTIVITY_INTERRUPTS' if barge_in else 'NO_INTERRUPTION',
         },
     }
+    # Standard Gemini 3.8 Live has its own fixed reasoning profile and does not
+    # accept thinking configuration. Keep the legacy setting only for older models.
+    model = getattr(config, 'model', 'gemini-3.8-live') or 'gemini-3.8-live'
+    if model.removeprefix('models/') != 'gemini-3.8-live':
+        cfg['thinking_config'] = {'thinking_budget': 0}
     if resume_handle:
         cfg['session_resumption'] = {'handle': resume_handle}
     if tools:
@@ -285,6 +253,7 @@ class LiveVoice:
         self.skills = skills
         self.config = config
         self.local_speech = WhistleClient(getattr(config, 'local_speech', LocalSpeechConfig()))
+        self.local_router = NeedleRouter(self.local_speech.config)
         self._local_apps = {}
         self.local_commands_executed = 0
         self.last_local_outcome = None
@@ -317,12 +286,19 @@ class LiveVoice:
         self._pending_task_ack = None
         self._reply_wait_started_at = None    # Monotonic timestamp when user input upload/dispatch completed
         self._last_reply_sound_at = None      # Monotonic timestamp when local audio (filler/notice/chunk) last played
+        self.interaction = InteractionPolicy()
+        self._listening_backchannel = False
+        self._backchannel_microphone = deque(maxlen=240)
+        self._backchannel_frames = []
+        self.echo_cancellation_active = False
+        self.backchannels_played = 0
         self.local_fillers_played = 0         # Cumulative count of local fillers triggered (for verification/telemetry)
         self.last_filler_context = ''         # Context label ('system_mutation', 'sub_agent_spawn', etc.) of last filler
+        self.last_acknowledgement = ''
         self._reply_serial = 0                # Monotonically increasing turn ID, used to vary alternating thinking sounds
         self._reply_notices = {}              # Preloaded raw 24kHz 16-bit mono PCM audio assets
         for notice in ('reply_waiting', 'reply_unavailable', 'filler_hmm',
-                       'filler_ah', 'filler_sure', 'filler_on_it'):
+                       'filler_ah', 'filler_sure', 'filler_on_it', *ACK_PHRASES):
             try:
                 pcm = (Path(__file__).with_name('assets') / (notice + '.pcm')).read_bytes()
                 if pcm and len(pcm) % 2 == 0 and len(pcm) <= 480000:
@@ -418,6 +394,11 @@ class LiveVoice:
             'spoken_reply_recovery': self._reply_recovery_active,
             'local_fillers_played': self.local_fillers_played,
             'last_filler_context': self.last_filler_context,
+            'last_acknowledgement': self.last_acknowledgement,
+            'backchannels_played': self.backchannels_played,
+            'echo_cancellation_active': self.echo_cancellation_active,
+            'needle': {'ready': self.local_router.ready, 'error': self.local_router.error,
+                       'last_inference_ms': self.local_router.last_inference_ms},
             'local_speech': {'ready': self.local_speech.ready,
                              'error': self.local_speech.error,
                              'last_decode_ms': self.local_speech.last_decode_ms,
@@ -451,6 +432,7 @@ class LiveVoice:
         return self.muted
 
     def interrupt(self):
+        self._listening_backchannel = False
         self._greeting_active = False
         self._background_active = False
         self.response_delayed = False
@@ -473,6 +455,13 @@ class LiveVoice:
         clean_mode = str(mode).lower().strip()
         if clean_mode not in ('screen', 'camera', 'off'):
             clean_mode = 'off'
+        if clean_mode == 'camera':
+            if not os.path.exists(self._camera_device):
+                raise RuntimeError(f'Camera vision is unavailable: {self._camera_device} is missing. Connect a webcam first.')
+            if not shutil.which('ffmpeg'):
+                raise RuntimeError('Camera vision is unavailable: ffmpeg is not installed.')
+        elif clean_mode == 'screen' and not shutil.which('grim'):
+            raise RuntimeError('Screen vision is unavailable: grim is not installed.')
         prev_mode = self.vision_mode
         if prev_mode == clean_mode:
             return clean_mode
@@ -595,6 +584,10 @@ class LiveVoice:
     def _start_reply_watch(self):
         """Give each new user turn its own bounded feedback/recovery budget."""
         self._reply_serial += 1
+        self._action_evidence_verified = False
+        self._action_evidence_status = 'not_run'
+        self._action_tool_attempted = False
+        self._unverified_action_audio = False
         self._reply_recovery_attempted = self._reply_recovery_active = False
         self._tool_answer_pending = False
         self._reply_generation_done = False
@@ -609,6 +602,11 @@ class LiveVoice:
 
     def _play_reply_notice(self, name):
         """Queue cached speech without pretending the provider has answered."""
+        if name in {'reply_waiting', 'reply_unavailable'}:
+            # Provider failures are already exposed through last_error, status,
+            # and the journal.  A second prerecorded voice is disruptive and
+            # can overlap the live provider when a reconnect succeeds.
+            return 0.0
         if self.muted or self.gate.active or self.standby.engaged or self._drop_response:
             return 0.0
         pcm = self._reply_notices.get(name)
@@ -641,6 +639,7 @@ class LiveVoice:
                             'answer using only the existing conversation and tool results. Do not call '
                             'tools or repeat any action. Do not claim an action succeeded without its '
                             'result. If no answer is available, briefly say so.'
+                            ' Do not say you are still working or processing. Give the result or failure.'
                         ))])], turn_complete=True)
             if serial != self._reply_serial:
                 return True
@@ -672,78 +671,101 @@ class LiveVoice:
         except Exception as error:
             log.warning('Offline voice feedback failed: %s', type(error).__name__)
 
-    def _acknowledge_task_start(self, name):
-        """Queue cached speech at authorized work admission, without a timer."""
-        context = TASK_ACK_CONTEXTS.get(name)
-        if context is None:
+    def _acknowledge_task_start(self, name, arguments=None):
+        """Acknowledge admitted work once, without waiting for the provider."""
+        if name not in TASK_ACK_CONTEXTS and name not in {
+            'system_control', 'launch_app', 'open_application',
+            'set_volume', 'set_brightness', 'switch_workspace', 'move_window_to_workspace'
+        }:
             return False
         if self.gate.active:
-            self._pending_task_ack = (self._reply_serial, context)
+            self._pending_task_ack = (self._reply_serial, name, dict(arguments or {}))
             return False
-        return self._play_filler_reflex(context)
+        return self._play_filler_reflex(name, arguments, admitted=True)
 
-    def _play_filler_reflex(self, context_type: str = 'generic_deep_thought'):
-        """Triggers local conversational filler playback (e.g. 'Sure', 'On it').
-
-        Fillers mask cloud latency and tool execution time without blocking provider audio.
-        Guarantees:
-        - Never plays if muted, standby is engaged, user is speaking, or response was dropped.
-        - Enforces a strict one-filler-per-turn limit via self._filler_played.
-        - Immediately aborted if the provider answer has already arrived (self._reply_started).
-        - Does NOT mark self._reply_started=True so subsequent tool boundaries don't revoke speech.
-        """
-        if (self.muted or self._drop_response or not self._reply_authorized
-                or self.gate.active or self.standby.engaged or self._filler_played or self._reply_started):
+    def _play_filler_reflex(self, context_type='generic_deep_thought', arguments=None, *, admitted=False):
+        """Play one cached acknowledgement without claiming an answer started."""
+        if (self.muted or self.standby.engaged or self.gate.active
+                or self._drop_response or not self._reply_authorized
+                or self._reply_started or self._filler_played):
             return False
-        try:
-            # Check user configuration for custom filler directory or disabled preference
-            filler_cfg = getattr(self.config, 'fillers', None)
-            if filler_cfg and not getattr(filler_cfg, 'enable_local_fillers', True):
-                return False
-            audio_dir = Path(getattr(filler_cfg, 'filler_audio_dir', '~/.local/share/jarvis-oma/audio/fillers/')).expanduser() if filler_cfg else None
-            filename = None
-            if filler_cfg and getattr(filler_cfg, 'phrases', None):
-                for p in filler_cfg.phrases:
-                    if isinstance(p, dict) and p.get('context') == context_type:
-                        filename = p.get('file')
-                        break
-            if not filename:
-                mapping = {
-                    'generic_deep_thought': 'humm_thoughtful.pcm',
-                    'system_mutation': 'wait_sec_system.pcm',
-                    'filesystem_grep': 'lets_see_code.pcm',
-                    'sub_agent_spawn': 'moment_agent.pcm',
-                }
-                filename = mapping.get(context_type, 'humm_thoughtful.pcm')
-
-            # Look for configured external PCM file first; fall back to preloaded bundled assets
-            pcm_path = audio_dir / filename if audio_dir else None
-            pcm_data = None
-            if pcm_path and pcm_path.is_file():
-                pcm_data = pcm_path.read_bytes()
+        settings = getattr(self.config, 'fillers', None)
+        if settings and not getattr(settings, 'enable_local_fillers', True):
+            return False
+        general = ('filler_sure', 'filler_hmm', 'filler_on_it')[self._reply_serial % 3]
+        clip = {'system_mutation': 'filler_on_it', 'filesystem_grep': 'filler_hmm',
+                'sub_agent_spawn': 'filler_sure'}.get(context_type, general)
+        pcm = self._reply_notices.get(clip)
+        selected = select_ack(context_type if admitted else 'generic_deep_thought',
+                              self._user_text if admitted else '', self._reply_serial, arguments)
+        if not admitted:
+            from .acknowledgements import is_conversational_inquiry
+            if is_conversational_inquiry(self._user_text):
+                # Informational questions ("what time is it", "why...", etc.) must NEVER trigger action assents ("Sure", "Okay").
+                # They should only receive reflective thinking sounds ("Hmm") or nothing.
+                selected = 'ack_short_hmm'
             else:
-                # Use a spoken acknowledgement instead of the old 'Ah' vocal filler.
-                builtins = {
-                    'generic_deep_thought': 'filler_sure',
-                    'system_mutation': 'filler_on_it',
-                    'filesystem_grep': 'filler_hmm',
-                    'sub_agent_spawn': 'filler_sure',
-                }
-                pcm_data = self._reply_notices.get(builtins.get(context_type, 'filler_hmm'))
+                selected = short_ack(selected, getattr(self, '_previous_ack_clip', ''))
+        phrase = ''
+        if selected in self._reply_notices:
+            clip, pcm, phrase = selected, self._reply_notices[selected], ACK_PHRASES[selected]
+        if not pcm:
+            return False
+        self.player.begin_reply()
+        getattr(self.player, 'enqueue_filler', self.player.enqueue)(pcm)
+        self._filler_played = True
+        self._previous_ack_clip = clip
+        self._last_reply_sound_at = time.monotonic()
+        self.local_fillers_played += 1
+        self.last_filler_context = context_type
+        self.last_acknowledgement = phrase
+        log.info('Local acknowledgement: %s', clip)
+        return True
 
-            if pcm_data and len(pcm_data) >= 960 and self.player is not None and hasattr(self.player, 'enqueue'):
-                self.player.begin_reply()
-                # A local thinking sound is not the provider's answer. Marking
-                # it as one lets a tool boundary revoke the real reply.
-                getattr(self.player, 'enqueue_filler', self.player.enqueue)(pcm_data)
-                self._filler_played = True
-                self._last_reply_sound_at = time.monotonic()
-                self.local_fillers_played += 1
-                self.last_filler_context = context_type
-                log.info('Local filler reflex played: %s (%d bytes)', context_type, len(pcm_data))
-                return True
-        except Exception as error:
-            log.warning('Could not play local filler reflex: %s', error)
+    def _stop_backchannel(self):
+        if not self._listening_backchannel:
+            return
+        self._listening_backchannel = False
+        # Listening audio must not invalidate the user's queued microphone frames.
+        process = self.player.cancel_pending(preserve_generation=True)
+        if process is not None:
+            asyncio.create_task(stop_process(process))
+
+    def _maybe_backchannel(self, now):
+        settings = getattr(self.config, 'fillers', None)
+        if (not self.connected or not self.echo_cancellation_active
+                or self.muted or self.standby.engaged or self.standby_active
+                or not self.gate.active or self.player.is_playing(ECHO_TAIL_SECONDS)
+                or self._listening_backchannel or self._filler_played or self._pending_task_ack
+                or self._reply_started or self._model_active
+                or self._tools_in_flight or self._barge_pending or self._drop_response
+                or self._greeting_active or self._background_active
+                or self._wake_confirmation_pending or self._wake_confirmation_in_flight
+                or (settings and not settings.enable_local_fillers)):
+            return False
+        pcm = self._reply_notices.get('ack_short_hmm')
+        quiet = self.gate.quiet_seconds
+        remaining = self.gate.silence_frames * .02 - quiet
+        if not pcm or remaining < len(pcm) / 48000 + .1:
+            return False
+        if self._speech_opened_at is None:
+            return False
+        clip = self.interaction.candidate(self.gate.accepted_turns, self._user_text,
+                                          self._speech_opened_at, now, quiet, remaining)
+        if clip is None:
+            return False
+        self.player.begin_reply()
+        self.player.enqueue_filler(pcm)
+        self.player.finish_reply()
+        self._backchannel_microphone.clear()
+        self._backchannel_frames.clear()
+        self._listening_backchannel = True
+        self.backchannels_played += 1
+        self.interaction.mark_played(self.gate.accepted_turns, now)
+        return True
+
+    async def _request_contextual_update(self):
+        """Compatibility hook: silence must never create another user/model turn."""
         return False
 
     def _accept_interruption(self):
@@ -839,11 +861,20 @@ class LiveVoice:
         except Exception as exc:
             log.warning('Failed to send startup greeting: %s', exc)
 
-    async def announce_background(self, text: str) -> bool:
+    async def announce_background(self, text: str, *, task_event=None) -> bool:
         """Authorize an idle summary turn, without authorizing tool execution."""
         from google.genai import types
 
         async with self.send_lock:
+            if task_event is not None:
+                desktop = getattr(self.skills, 'desktop', None)
+                presenter = getattr(desktop, '_task_presentation', None)
+                if presenter is None:
+                    return False
+                current = await asyncio.to_thread(presenter.store.lookup, task_event['task_id'])
+                # A task may finish or advance while this announcement waits for the transport.
+                if not current or any(current.get(key) != value for key, value in task_event.items()):
+                    return False
             if (self._session is None or not self.connected or self.muted
                     or self.standby_active or self.standby.engaged
                     or self.gate.active or self.player.is_playing(ECHO_TAIL_SECONDS)
@@ -972,6 +1003,13 @@ class LiveVoice:
                         parts.insert(0, types.Part.from_text(
                             text=f"[User attached image: {filename}. Please inspect and analyze this image or answer questions about it.]"
                         ))
+                elif content_mime.startswith('audio/') or ext in ('wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac'):
+                    audio_mime = content_mime if content_mime.startswith('audio/') else {
+                        'wav': 'audio/wav', 'mp3': 'audio/mpeg', 'ogg': 'audio/ogg',
+                        'flac': 'audio/flac', 'm4a': 'audio/mp4', 'aac': 'audio/aac',
+                    }[ext]
+                    parts.append(types.Part.from_text(text=f'[User attached audio: {filename}]'))
+                    parts.append(types.Part.from_bytes(data=data, mime_type=audio_mime))
                 elif ext == 'pdf' or content_mime == 'application/pdf' or data[:4] == b'%PDF':
                     pdf_text = ""
                     try:
@@ -1039,32 +1077,36 @@ class LiveVoice:
         """Announce entering standby mode, wait for speech to complete, then raise EnterStandby."""
         if self.standby is None:
             return
-        await self.standby.wait_until_requested()
-        log.info('Standby requested — announcing "I am entering standby mode" before entering offline wake-word listener.')
+        while True:
+            await self.standby.wait_until_requested()
+            generation = self.standby.generation
+            log.info('Standby requested — announcing "I am entering standby mode" before entering offline wake-word listener.')
 
-        pcm_path = Path(__file__).parent / 'assets' / 'standby_entered.pcm'
-        if pcm_path.is_file() and self.player is not None and not self.muted and self.connected:
-            try:
-                pcm_data = pcm_path.read_bytes()
-                if pcm_data:
-                    self.player.enqueue(pcm_data)
-                    deadline = time.monotonic() + (len(pcm_data) / 48000.0) + 0.5
-                    await asyncio.sleep(0.05)
-                    while self.player.busy and time.monotonic() < deadline:
+            pcm_path = Path(__file__).parent / 'assets' / 'standby_entered.pcm'
+            if pcm_path.is_file() and self.player is not None and not self.muted and self.connected:
+                try:
+                    pcm_data = pcm_path.read_bytes()
+                    if pcm_data:
+                        self.player.enqueue(pcm_data)
+                        deadline = time.monotonic() + (len(pcm_data) / 48000.0) + 0.5
                         await asyncio.sleep(0.05)
-            except Exception as err:
-                log.warning('Could not play standby announcement asset: %s', err)
+                        while self.player.busy and time.monotonic() < deadline:
+                            await asyncio.sleep(0.05)
+                except Exception as err:
+                    log.warning('Could not play standby announcement asset: %s', err)
 
-        # Wait for any lingering model audio or speaker buffer to clear
-        deadline = time.monotonic() + 2.0
-        while (self._model_active or (self.player is not None and self.player.busy)) and time.monotonic() < deadline:
-            await asyncio.sleep(0.05)
+            # Wait for any lingering model audio or speaker buffer to clear
+            deadline = time.monotonic() + 2.0
+            while (self._model_active or (self.player is not None and self.player.busy)) and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
 
-        # 0.4s cushion to allow sound waves to finish playing out through PipeWire/speakers
-        # so the microphone does not hear the tail of the speaker audio
-        if self.connected:
-            await asyncio.sleep(0.4)
-        raise EnterStandby()
+            # 0.4s cushion to allow sound waves to finish playing out through PipeWire/speakers
+            # so the microphone does not hear the tail of the speaker audio
+            if self.connected:
+                await asyncio.sleep(0.4)
+            if self.standby.engaged and generation == self.standby.generation:
+                raise EnterStandby()
+            # Wake during the announcement invalidates this transition.
 
     def confirm_wake(self):
         """Require a spoken acknowledgement after leaving standby."""
@@ -1079,8 +1121,9 @@ class LiveVoice:
         from google.genai import types
 
         prompt = (
-            'The user just woke you by saying “Hey Jarvis”. Respond immediately '
-            'with one brief spoken confirmation that you are awake and listening (e.g. "I\'m online and listening" or "At your service"). '
+            'The user just woke you with a wake phrase or the wake shortcut. Give one very short, '
+            'natural spoken acknowledgement that you are listening, such as "I\'m here." '
+            'Do not introduce yourself, give a system report or ask a follow-up question. '
             'Do not call tools and do not mention this instruction.'
         )
         async with self.send_lock:
@@ -1097,6 +1140,46 @@ class LiveVoice:
         self._wake_confirmation_in_flight = True
         log.info('Wake confirmation dispatched; microphone waits for spoken turn')
 
+    def _action_speech_blocked(self):
+        if (not self.skills or self._greeting_active or self._background_active
+                or self._wake_confirmation_in_flight or self._wake_confirmation_pending):
+            return False
+        return (requires_action_evidence(self._user_text,getattr(self,'_local_apps',{}),
+                    tool_attempted=getattr(self,'_action_tool_attempted',False))
+                and not getattr(self,'_action_evidence_verified',False))
+
+    async def _finish_unverified_action(self):
+        """Use factual local feedback instead of replaying an unsupported claim."""
+        if self.muted or self.gate.active or self.standby.engaged or self._drop_response:
+            return False
+        serial=self._reply_serial
+        status=getattr(self,'_action_evidence_status','not_run')
+        if status=='needs_confirmation':
+            text='That action is waiting for your confirmation. Say confirm or cancel.'
+        elif status=='awaiting_authorization':
+            text='The connection is waiting for your authorization. It is not connected yet.'
+        elif status in {'queued','running','started','accepted','submitted'}:
+            text='The work was submitted, but completion is not verified.'
+        else:
+            text='I could not verify that action, so I have not marked it complete.'
+        # Never use a separate offline voice (espeak-ng) when an action fails or is unverified.
+        pcm=b''
+        if (serial!=self._reply_serial or self.muted or self.gate.active
+                or self.standby.engaged or self._drop_response):
+            return False
+        if pcm:
+            self.player.begin_reply()
+            getattr(self.player,'enqueue_response',self.player.enqueue)(pcm)
+        else:
+            self._play_reply_notice('reply_unavailable')
+        self._memory_assistant=text
+        self._assistant_text=text
+        self._reply_started=True
+        self._tool_answer_pending=False
+        self._reply_generation_done=True
+        self._unverified_action_audio=False
+        return True
+
     async def handle(self, event, session=None):
         update = getattr(event, 'session_resumption_update', None)
         if update is not None:
@@ -1111,8 +1194,7 @@ class LiveVoice:
             # arrive while the previous answer's interruption boundary drains.
             incoming = getattr(content, 'input_transcription', None)
             if incoming is not None and getattr(incoming, 'text', None):
-                from jarvis_control.nlu import NLUEngine
-                normalized_incoming = NLUEngine.normalize_text(incoming.text)
+                normalized_incoming = incoming.text  # Keep verbatim evidence; NLU normalizes its own view.
                 self.recognized_input_events += 1
                 self._memory_user = (self._memory_user + normalized_incoming)[-16000:]
                 if self._reply_authorized:
@@ -1143,7 +1225,7 @@ class LiveVoice:
                 return
 
             outgoing = getattr(content, 'output_transcription', None)
-            if outgoing is not None and getattr(outgoing, 'text', None):
+            if outgoing is not None and getattr(outgoing, 'text', None) and not self._action_speech_blocked():
                 if not self._background_active:
                     self._memory_assistant = (self._memory_assistant + outgoing.text)[-16000:]
                 if self._reply_authorized and not self._barge_turn:
@@ -1164,8 +1246,12 @@ class LiveVoice:
                     blob = getattr(part, 'inline_data', None)
                     if blob is not None and getattr(blob, 'data', None):
                         self.provider_audio_bytes += len(blob.data)
+                        if self._reply_authorized and self._action_speech_blocked():
+                            self._unverified_action_audio=True
+                            continue
                         self._waiting = False
                         if not self.muted and not self._drop_response and self._reply_authorized:
+                            self._stop_backchannel()
                             self._reply_generation_done = False
                             self._tool_answer_pending = False
                             self._barge_turn = False
@@ -1208,6 +1294,9 @@ class LiveVoice:
                 if self._tool_response_pending and not self._tool_intermediate_received:
                     self._tool_intermediate_received = True
                     return
+                if (getattr(self,'_unverified_action_audio',False) and self._action_speech_blocked()
+                        and not self.gate.active):
+                    if not await self._finish_unverified_action():return
                 empty_reply = (self._reply_authorized and not self.gate.active
                                and (not self._reply_started or self._tool_answer_pending))
                 if empty_reply and await self._recover_empty_reply(session or self._session):
@@ -1261,14 +1350,14 @@ class LiveVoice:
             if stop_batch or batch_token != (self.gate.accepted_turns, self.player.generation):
                 response = {'ok': False, 'status': 'not_run',
                             'error': 'Earlier action failed, needs confirmation, or its speech turn ended. Inspect state before continuing.'}
-            elif self._turn_rejected_tools >= 2 or self._turn_tool_invocations >= 6:
+            elif self._turn_rejected_tools >= 2 or self._turn_tool_invocations > MAX_TOOL_CALLS_PER_TURN:
                 log.warning('Tool loop circuit breaker triggered in turn %d for tool %s',
                             self.gate.accepted_turns, name)
                 response = {
-                    'ok': False, 'status': 'stopped',
+                    'ok': False, 'status': 'stopped', 'completed': False,
                     'error': (
                         f"Action limit reached for this turn. Do NOT call tool '{name}' or any other tools. "
-                        "You must immediately respond directly to the user in spoken words."
+                        "Report the verified steps and what remains unfinished; do not claim the whole request completed."
                     )
                 }
                 stop_batch = True
@@ -1299,8 +1388,9 @@ class LiveVoice:
                         self._turn_rejected_tools += 1
                         self._turn_blocked_tools.add(name)
                         guidance_msg = (
-                            f"{nlu_guidance} Do NOT retry '{name}' or call further tools for this request. "
-                            "Respond directly to the user with spoken words."
+                            f"{nlu_guidance} Do not retry this rejected action. "
+                            "Use an authorized matching alternative if available, otherwise explain the blocker. "
+                            "Do not claim the rejected action completed."
                         )
                         response = {'ok': False, 'status': 'conversational_intent_required',
                                     'error': guidance_msg, 'guidance': guidance_msg}
@@ -1326,17 +1416,12 @@ class LiveVoice:
                                     raise ValueError('Confirmation requires a matching user transcript from a new spoken turn.')
                             elif name == 'play_local_filler':
                                 self._play_filler_reflex(arguments.get('context_type', 'generic_deep_thought'))
-                            timeout = (90 if name in {'web_search', 'open_page', 'read_page_text', 'read_screen',
-                                                      'browser_task', 'compose_windows', 'run_in_terminal',
-                                                      'api_anything_propose', 'api_anything_learn',
-                                                      'api_anything_call', 'api_anything_search',
-                                                      'api_anything_list_operations'}
-                                       else 30 if name == 'system_control' else 15)
+                            timeout = tool_timeout(name, arguments)
                             self._tools_in_flight += 1
                             self._active_tool = name
                             log.info('Executing tool %s', name)
                             try:
-                                self._acknowledge_task_start(name)
+                                self._acknowledge_task_start(name, arguments)
                                 result = await asyncio.wait_for(self.skills.execute(name, arguments), timeout=timeout)
                             finally:
                                 self._tools_in_flight -= 1
@@ -1363,6 +1448,14 @@ class LiveVoice:
                                    'duration_ms': max(0, round((time.monotonic() - started) * 1000))}
             if not response['ok'] or response.get('completed') is False:
                 stop_batch = True
+            effective_name = name
+            if name=='execute_domain_tool' and isinstance(getattr(call,'args',None),dict):
+                nested=call.args.get('tool_name',name)
+                effective_name=nested if isinstance(nested,str) else name
+            if effective_name not in META_TOOLS:
+                self._action_tool_attempted = True
+                self._action_evidence_verified = response.get('completed') is True and response.get('ok') is True
+                self._action_evidence_status = response.get('status','unknown')
             responses.append(types.FunctionResponse(id=call_id, name=name, response=response))
         if responses:
             current_turn = batch_token == (self.gate.accepted_turns, self.player.generation)
@@ -1387,7 +1480,10 @@ class LiveVoice:
                 samples = struct.unpack('<320h', chunk)
                 now = time.monotonic()
                 playing = self.player.is_playing(ECHO_TAIL_SECONDS)
-                assistant_active = (
+                if self._listening_backchannel and not playing:
+                    self._listening_backchannel = False
+                listening = self._listening_backchannel
+                assistant_active = not listening and (
                     playing
                     or (self._model_active and self._reply_started and not getattr(self.player, 'reply_complete', False))
                 )
@@ -1407,11 +1503,9 @@ class LiveVoice:
                     held_frames = 0
 
                 self.microphone_rms = 0.0 if self.muted else (sum(x * x for x in samples) / 320) ** 0.5 / 32768
-                occupied = playing
+                occupied = playing and not listening
                 frame = None
-                playback_starting = (playing and getattr(self.player, 'first_write_at', None) is not None
-                                     and now - self.player.first_write_at < 0.35)
-                if (self.barge_in_enabled and self.barge_gate is not None and occupied and not playback_starting
+                if (self.barge_in_enabled and self.barge_gate is not None and occupied
                         and not self.muted and not self._drop_response and not self._barge_pending):
                     frame = self.barge_gate.process(chunk, now)
                     if frame is not None:
@@ -1419,7 +1513,36 @@ class LiveVoice:
                 elif self.barge_gate is not None:
                     self.barge_gate.reset()
                 if frame is None:
-                    frame = self.gate.process(chunk, now=now, blocked=self.muted or occupied)
+                    correlation = None
+                    if listening:
+                        self._backchannel_microphone.extend(
+                            sum(samples[i:i + 8]) / 8 for i in range(0, 320, 8))
+                        self._backchannel_frames.append(chunk)
+                        # Collect the 80 ms correlation window without dropping resumed words.
+                        if len(self._backchannel_microphone) < 160:
+                            continue
+                        correlation = self.player.reference.correlation(self._backchannel_microphone, now)
+                    elif self._backchannel_frames:
+                        self._backchannel_frames.append(chunk)
+                    chunks = self._backchannel_frames or [chunk]
+                    threshold = getattr(self.config, 'barge_in_echo_threshold', .45)
+                    filtered = []
+                    opened = closed = False
+                    resumed = False
+                    for pending in chunks:
+                        if correlation is not None and correlation >= threshold:
+                            pending = bytes(INPUT_BYTES)
+                        frame = self.gate.process(pending, now=now, blocked=self.muted or occupied)
+                        filtered.append(frame.pcm)
+                        opened = opened or frame.opened
+                        closed = closed or frame.closed
+                        resumed = resumed or (listening and self.gate.last_probability >= .5)
+                    frame = replace(frame, pcm=b''.join(filtered), opened=opened, closed=closed)
+                    self._backchannel_frames.clear()
+                else:
+                    resumed = False
+                if listening and (resumed or frame.closed):
+                    self._stop_backchannel()
                 if frame.opened:
                     self._start_reply_watch()
                     if not getattr(frame, 'barge_in', False):
@@ -1458,6 +1581,8 @@ class LiveVoice:
                         'Active microphone backlog exceeded four seconds') from None
                 if frame.closed:
                     activity_open = False
+                else:
+                    self._maybe_backchannel(now)
         except asyncio.CancelledError:
             raise
 
@@ -1467,14 +1592,21 @@ class LiveVoice:
         try:
             await supervise(self._capture_audio(reader, queue), self._send_frames(session, queue))
         finally:
+            self._stop_backchannel()
             self._capture_queue = None
 
     async def _try_local_command(self, pcm, token):
         # Never transcribe or execute local audio while assistant is muted or in standby
         if self.muted or self.standby.engaged:
             return True
-        text = await self.local_speech.transcribe(pcm)
+        if not self.connected and hasattr(self.local_speech, 'transcribe_offline'):
+            text = await self.local_speech.transcribe_offline(pcm)
+        else:
+            text = await self.local_speech.transcribe(pcm)
         command = command_for(text, self._local_apps) if text else None
+        # Exact commands remain instant; Needle broadens offline phrasing only.
+        if command is None and text and not self.connected and getattr(self.local_router.config, 'needle_enabled', False):
+            command = await self.local_router.route(text)
         # Discard stale transcription if turn or generation changed during processing
         if token != (self.gate.accepted_turns, self.player.generation):
             return True
@@ -1495,7 +1627,7 @@ class LiveVoice:
         self._reply_authorized = True
         self._waiting = False
         self._reply_wait_started_at = None
-        self._play_filler_reflex('system_mutation')
+        self._play_filler_reflex(name, arguments, admitted=True)
         self._reply_authorized = False  # The cloud does not own this local turn.
         self._barge_pending = False
         self._tools_in_flight += 1
@@ -1511,7 +1643,17 @@ class LiveVoice:
                 raise
             outcome = classify_result(result)
             self.last_local_outcome = outcome.status
-            if not outcome.completed and token == (self.gate.accepted_turns, self.player.generation):
+            if (self.local_router.ready and token == (self.gate.accepted_turns, self.player.generation)
+                    and not self.muted and not self.standby.engaged and not self.gate.active):
+                from .offline_speech import result_text
+                pcm = await self.local_router.synthesize(result_text(name, arguments, outcome))
+                if (pcm and token == (self.gate.accepted_turns, self.player.generation)
+                        and not self.muted and not self.standby.engaged and not self.gate.active):
+                    self.player.begin_reply()
+                    self.player.enqueue_response(pcm)
+                    self.player.finish_reply()
+            if (not outcome.completed and not self.local_router.ready
+                    and token == (self.gate.accepted_turns, self.player.generation)):
                 self._play_reply_notice('reply_unavailable')
         except asyncio.CancelledError:
             raise
@@ -1605,7 +1747,7 @@ class LiveVoice:
                         blocked = True
                     else:
                         self._wake_confirmation_in_flight = False
-                if not self.barge_in_enabled:
+                if not self.barge_in_enabled and not self._listening_backchannel:
                     blocked = blocked or self.player.is_playing(ECHO_TAIL_SECONDS)
                 if blocked:
                     chunk = bytes(len(chunk))
@@ -1626,7 +1768,7 @@ class LiveVoice:
                     pending_ack, self._pending_task_ack = self._pending_task_ack, None
                     if (pending_ack and pending_ack[0] == self._reply_serial
                             and self._tools_in_flight):
-                        self._play_filler_reflex(pending_ack[1])
+                        self._play_filler_reflex(pending_ack[1], pending_ack[2], admitted=True)
                     log.info('Speech uploaded; waiting for provider audio')
                     activity_open = False
                     self._barge_pending = False
@@ -1688,10 +1830,12 @@ class LiveVoice:
                 self.broadcast(self.status())
             await asyncio.sleep(0.1)
 
-    async def monitor_microphone(self):
-        """Report the actual capture route without changing a user's mute setting."""
+    async def monitor_microphone(self, echo=None):
+        """Follow physical mute transitions on our AEC, then report capture health."""
         while True:
             previous = self.microphone_state
+            if echo is not None:
+                await echo.sync_microphone_mute()
             self.microphone_state = await read_microphone_state()
             if self.microphone_state['issue'] != previous['issue']:
                 if self.microphone_state['issue']:
@@ -1705,7 +1849,7 @@ class LiveVoice:
 
         This periodic loop (running every 50ms) manages:
         1. Fallback conversational fillers when task admission did not already acknowledge work.
-        2. Progress notices ('reply_waiting') after 5s of sustained silence.
+        2. Waiting stays visual; silence does not inject new conversation turns.
         3. Barge-in interruption handshake watchdog.
         4. Warning states (10s) and connection hard-timeouts (35s) for frozen provider sessions.
         """
@@ -1713,49 +1857,19 @@ class LiveVoice:
             await asyncio.sleep(0.05)
             playing = self.player.busy
 
-            # 1. Infer conversational context from active tools to pick the most natural filler:
-            context = ('sub_agent_spawn' if 'agent' in self._active_tool or self._active_tool in {
-                           'start_hermes_goal', 'handoff_hermes_task', 'delegate_team'} else
-                       'filesystem_grep' if self._active_tool in {'search_files', 'read_file'} else
-                       'system_mutation' if self._active_tool in {
-                           'system_control', 'web_search', 'browser_task', 'open_page',
-                           'read_page_text', 'run_in_terminal'} else
-                       'generic_deep_thought')
-
-            # Task admission acknowledges immediately; these are fallback timers.
-            ack_delay = TASK_ACK_SECONDS if self._tools_in_flight or self._pending_tool_batches else FILLER_ACK_SECONDS
-
-            # 3. Track time since the last audible sound to prevent playing notices too close to fillers
-            feedback_since = (self._last_reply_sound_at if self._last_reply_sound_at is not None else
-                              self._reply_wait_started_at if self._reply_wait_started_at is not None else
-                              self._last_progress)
-
-            # 4. Trigger early conversational filler if response has not started and delay has elapsed:
-            if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
-                    and not self.standby.engaged and not playing and not self._barge_pending
+            if (self.connected and self._reply_authorized and not self.muted
+                    and not self.gate.active and not self.standby.engaged
+                    and not playing and not self._barge_pending
                     and not self._greeting_active and not self._background_active
                     and not self._wake_confirmation_in_flight and not self._wake_confirmation_pending
                     and not self._reply_started and not self._filler_played
                     and self._reply_wait_started_at is not None
-                    and time.monotonic() - self._reply_wait_started_at >= ack_delay):
+                    and time.monotonic() - self._reply_wait_started_at >= FILLER_ACK_SECONDS):
+                context = self._active_tool or 'generic_deep_thought'
                 self._play_filler_reflex(context)
 
-            # 5. Play longer 'reply_waiting' progress notice if 5 seconds have elapsed without provider audio:
-            if (self.connected and self._reply_authorized and not self.muted and not self.gate.active
-                    and not self.standby.engaged and not playing
-                    and not self.player.busy and not self._barge_pending
-                    and not self._greeting_active and not self._background_active
-                    and not self._wake_confirmation_in_flight and not self._wake_confirmation_pending
-                    and not self._waiting_notice_played
-                    and not self._reply_started
-                    and time.monotonic() - feedback_since > REPLY_NOTICE_SECONDS):
-                self._waiting_notice_played = True
-                if self._turn_rejected_tools > 0:
-                    # Do not play "still working on your request" if actions were blocked or rejected.
-                    # Prompt the provider to respond verbally instead.
-                    asyncio.create_task(self._recover_empty_reply(self._session))
-                else:
-                    self._play_reply_notice('reply_waiting')
+            # Waiting is UI state. Sending synthetic user turns here can replace
+            # the original request with an endless progress/recovery conversation.
 
             # 6. Safety timeout if barge-in acknowledgement was not answered within 5 seconds:
             if self._barge_pending and self.gate.active:
@@ -1826,7 +1940,12 @@ async def _run_voice(args, key: str, config, skills):
         # Feed installed application names to local speech engine as decoding hints
         voice.local_speech.keywords.extend(sorted(voice._local_apps))
         log.info('Whistle ready: short local commands and offline fallback enabled')
-    elif voice.local_speech.config.enabled:
+    await voice.local_router.start(voice._local_apps)
+    if voice.local_router.ready:
+        log.info('Needle ready: offline natural-language commands enabled')
+    elif voice.local_router.config.needle_enabled:
+        log.warning('Needle unavailable: %s; exact local commands remain available', voice.local_router.error)
+    if not voice.local_speech.ready and voice.local_speech.config.enabled:
         log.warning('Local speech unavailable: %s; retaining direct cloud streaming', voice.local_speech.error)
 
     if skills is not None:
@@ -1848,6 +1967,7 @@ async def _run_voice(args, key: str, config, skills):
         cancel_cb=skills.control.cancel_local if skills.control else None,
         send_text_cb=voice.send_text,
         wake_cb=voice.standby.wake,
+        standby_toggle_cb=voice.standby.toggle,
         get_vision_mode_cb=lambda: voice.vision_mode,
         set_vision_mode_cb=voice.set_vision_mode,
         tools_provider=shared_execution.declarations,
@@ -1873,12 +1993,14 @@ async def _run_voice(args, key: str, config, skills):
 
     echo = MonitorEchoCancellation()
     await echo.start(microphone=device, speaker=config.output_device)
+    voice.echo_cancellation_active = echo.active
     mic_target = echo.source if echo.active else device
 
     recovery = ConnectionRecovery(retry_budget=getattr(args, 'retries', 5))
     from .background import monitor as monitor_background
     background_worker = asyncio.create_task(monitor_background(voice, skills))
     local_speech_worker = asyncio.create_task(voice.local_speech.maintain())
+    needle_worker = asyncio.create_task(voice.local_router.maintain())
     offline_worker = None
 
     async def offline_listener():
@@ -1894,7 +2016,7 @@ async def _run_voice(args, key: str, config, skills):
             env=audio_environment())
         try:
             await supervise(voice.send_audio(None, microphone.stdout), player.run(),
-                            voice.publish_status(), voice.monitor_microphone())
+                            voice.publish_status(), voice.monitor_microphone(echo))
         finally:
             await stop_process(microphone)
             voice.gate.reset()
@@ -1932,7 +2054,7 @@ async def _run_voice(args, key: str, config, skills):
                 tools = [{'function_declarations': declarations}] if declarations else None
                 session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle,
                                           barge_in=voice.barge_in_enabled, tools=tools,
-                                          skills=skills, config=config, memory_context=context)
+                                          skills=skills, config=replace(config, model=model), memory_context=context)
                 async with genai.Client(api_key=key).aio as client:
                     async with connect_session(client, model=model, config=session_cfg) as session:
                         await stop_offline()
@@ -1969,7 +2091,7 @@ async def _run_voice(args, key: str, config, skills):
                             voice.stream_vision(session),
                             player.run(),
                             voice.publish_status(),
-                            voice.monitor_microphone(),
+                            voice.monitor_microphone(echo),
                             voice.monitor_response(),
                             voice.monitor_standby(),
                         )
@@ -1982,13 +2104,7 @@ async def _run_voice(args, key: str, config, skills):
                 voice.player.cancel_pending()
                 if callable(voice.broadcast):
                     voice.broadcast(voice.status())
-                log.info('STANDBY — cloud voice stopped; say “Hey Jarvis” to resume.')
-
-                try:
-                    await asyncio.create_subprocess_exec('pactl', 'set-source-mute', '@DEFAULT_SOURCE@', '0',
-                                                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-                except Exception:
-                    pass
+                log.info('STANDBY — cloud voice stopped; say “Hey Jarvis” or “Hello Jarvis” to resume.')
 
                 mic_args = ['pw-record', '--rate', '16000', '--channels', '1',
                             '--format', 's16', '--latency', '20ms',
@@ -2007,6 +2123,10 @@ async def _run_voice(args, key: str, config, skills):
 
                 log.info('Wake phrase matched! Resuming live conversation')
                 voice.standby_active = False
+                try:
+                    voice.player.enqueue(_standby_release_sound())
+                except Exception as err:
+                    log.debug('Could not play standby release sound: %s', err)
                 voice.confirm_wake()
                 if callable(voice.broadcast):
                     voice.broadcast(voice.status())
@@ -2061,6 +2181,9 @@ async def _run_voice(args, key: str, config, skills):
         local_speech_worker.cancel()
         await asyncio.gather(local_speech_worker, return_exceptions=True)
         await voice.local_speech.close()
+        needle_worker.cancel()
+        await asyncio.gather(needle_worker, return_exceptions=True)
+        await voice.local_router.close()
         background_worker.cancel()
         await asyncio.gather(background_worker, return_exceptions=True)
         await echo.close()

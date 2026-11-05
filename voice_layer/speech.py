@@ -69,6 +69,10 @@ class SpeechTurnGate:
         self._needs_reset = True
         self.last_probability = self.peak_unadmitted_probability = 0.0
 
+    @property
+    def quiet_seconds(self):
+        return self._quiet * .02
+
     def reset(self, hold_until=0.0):
         self.active = False
         self._voiced = self._quiet = 0

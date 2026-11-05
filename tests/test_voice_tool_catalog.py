@@ -16,7 +16,8 @@ async def test_voice_catalog_keeps_native_controls_and_specialist_discovery():
     try:
         names = {tool['name'] for tool in skills.live_declarations}
         assert {'system_control', 'launch_app', 'hypr_query', 'send_shortcut',
-                'enter_standby', 'discover_domain_tools', 'execute_domain_tool'} <= names
+                'enter_standby', 'open_input_bar', 'control_vision_mode', 'parse_command_values',
+                'discover_domain_tools', 'execute_domain_tool'} <= names
         assert len(skills.live_declarations) < len(skills.declarations)
         assert len(json.dumps(skills.live_declarations)) < len(json.dumps(skills.declarations)) * .65
         assert 'github_connection_status' in {tool['name'] for tool in skills.declarations}

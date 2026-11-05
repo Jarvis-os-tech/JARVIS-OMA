@@ -1,0 +1,36 @@
+{
+  "certified_source_sha256": "c9da5af9244b592df2db29ce9634017cf77944174f34a55993c5c6f97e0f8f81",
+  "required_checks": 209,
+  "source_backup": "/tmp/jarvis-voice-polish-0cmebqta",
+  "config_backup": "/tmp/jarvis-listening-cue-36pg6w6m/config.toml",
+  "before_pause_seconds": 0.4,
+  "after_pause_seconds": 1.2,
+  "code_changed": true,
+  "deployed": true,
+  "connected": false,
+  "microphone_muted": null,
+  "standby": true,
+  "aec_active": true,
+  "live_cues": 0,
+  "focused_checks": 120,
+  "cue_seconds": 0.46,
+  "previous_cue_seconds": 0.67,
+  "generic_ack_grace_seconds": 0.35,
+  "refinements": [
+    "Corrected live pause override from400ms to1200ms",
+    "Removed low-level trailing cue audio with a20ms fade; retained original voiced prefix",
+    "Generic waiting words no longer include On it",
+    "Fast answers get350ms before fallback acknowledgement",
+    "Native delivery guidance handles interruption directly and avoids stretched thinking sounds"
+  ],
+  "post_verification": {
+    "connected": true,
+    "listening": true,
+    "microphone_muted": false,
+    "physical_privacy_unchanged": true,
+    "pause_seconds": 1.2,
+    "autostart_listening": true,
+    "greet_on_start": true
+  },
+  "manual_cue_audibility": "not yet verified after this repair"
+}

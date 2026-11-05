@@ -21,6 +21,7 @@ class ControlServer:
         set_mute_cb: Optional[Callable] = None,
         interrupt_cb: Optional[Callable] = None,
         standby_cb: Optional[Callable] = None,
+        standby_toggle_cb: Optional[Callable] = None,
         confirm_cb: Optional[Callable] = None,
         cancel_cb: Optional[Callable] = None,
         send_text_cb: Optional[Callable] = None,
@@ -38,6 +39,7 @@ class ControlServer:
         self.set_mute_cb = set_mute_cb
         self.interrupt_cb = interrupt_cb
         self.standby_cb = standby_cb
+        self.standby_toggle_cb = standby_toggle_cb
         self.confirm_cb = confirm_cb
         self.cancel_cb = cancel_cb
         self.send_text_cb = send_text_cb
@@ -198,9 +200,17 @@ class ControlServer:
             mode = str(req.get('mode', 'off')).strip().lower()
             res = {}
             if self.set_vision_mode_cb:
-                res = self.set_vision_mode_cb(mode)
-                if asyncio.iscoroutine(res):
-                    res = await res
+                try:
+                    res = self.set_vision_mode_cb(mode)
+                    if asyncio.iscoroutine(res):
+                        res = await res
+                except (RuntimeError, ValueError) as error:
+                    current = (self.get_vision_mode_cb() if self.get_vision_mode_cb
+                               else self.status_provider().get('vision_mode', 'off'))
+                    if asyncio.iscoroutine(current):
+                        current = await current
+                    return json.dumps({'status': 'error', 'message': str(error),
+                                       'vision_mode': current}) + '\n'
             if not isinstance(res, dict):
                 res = {'vision_mode': mode}
             self.broadcast_state({'vision_mode': res.get('vision_mode', mode)})
@@ -227,6 +237,19 @@ class ControlServer:
             if self.interrupt_cb:
                 self.interrupt_cb()
             return json.dumps({'status': 'ok', 'interrupted': True}) + '\n'
+        if cmd == 'standby_toggle':
+            if self.status_provider().get('muted'):
+                return await self._handle_json_command({'command': 'wake'})
+            if not self.standby_toggle_cb:
+                return json.dumps({'error': 'standby toggle unavailable'}) + '\n'
+            result = self.standby_toggle_cb()
+            if asyncio.iscoroutine(result):
+                result = await result
+            if not result.get('standby', True) and self.set_mute_cb:
+                muted = self.set_mute_cb(False)
+                if asyncio.iscoroutine(muted):
+                    await muted
+            return json.dumps(result) + '\n'
         if cmd == 'standby':
             if self.standby_cb:
                 res = self.standby_cb()
@@ -235,6 +258,10 @@ class ControlServer:
                 return json.dumps({'status': 'ok', 'standby': True}) + '\n'
             return json.dumps({'error': 'standby not available'}) + '\n'
         if cmd == 'wake':
+            if self.set_mute_cb:
+                muted = self.set_mute_cb(False)
+                if asyncio.iscoroutine(muted):
+                    await muted
             if self.wake_cb:
                 res = self.wake_cb()
                 if asyncio.iscoroutine(res):
@@ -272,7 +299,9 @@ class ControlServer:
             issue = status.get('microphone', {}).get('issue')
             detail = f' — {issue}' if issue else ''
             return f'jarvis-voice: {state} (model={model}){detail}\n'
-        if command in ('standby', 'standby enter', 'listen standby'):
+        if command == 'standby toggle':
+            return self._handle_json_command({'command': 'standby_toggle'})
+        if command in ('standby', 'standby on', 'standby enter', 'listen standby'):
             if self.standby_cb:
                 res = self.standby_cb()
                 if asyncio.iscoroutine(res):
@@ -280,6 +309,8 @@ class ControlServer:
                 return json.dumps({'standby': True, 'status': 'standby_requested'}) + '\n'
             return json.dumps({'error': 'standby not available'}) + '\n'
         if command in ('wake', 'standby off', 'resume'):
+            if self.set_mute_cb:
+                self.set_mute_cb(False)
             if self.wake_cb:
                 res = self.wake_cb()
                 if asyncio.iscoroutine(res):
@@ -287,6 +318,13 @@ class ControlServer:
                 return json.dumps({'standby': False, 'status': 'awake'}) + '\n'
             return json.dumps({'error': 'wake not available'}) + '\n'
         if command == 'listen toggle':
+            status = self.status_provider()
+            if status.get('standby'):
+                if self.set_mute_cb:
+                    self.set_mute_cb(False)
+                if self.wake_cb:
+                    self.wake_cb()
+                return json.dumps({'muted': False, 'standby': False, 'status': 'awake'}) + '\n'
             if self.wake_cb:
                 self.wake_cb()
             if self.toggle_mute_cb:

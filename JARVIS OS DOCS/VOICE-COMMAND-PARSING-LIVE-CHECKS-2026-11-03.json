@@ -1,0 +1,58 @@
+[
+  {
+    "text": "set volume to forty five percent",
+    "status": "ok",
+    "requires_clarification": false,
+    "values": [
+      {
+        "kind": "number",
+        "start": 14,
+        "end": 24,
+        "surface": "forty five",
+        "value": 45
+      }
+    ]
+  },
+  {
+    "text": "tomorrow at five pm",
+    "status": "ok",
+    "requires_clarification": false,
+    "values": [
+      {
+        "kind": "number",
+        "start": 12,
+        "end": 16,
+        "surface": "five",
+        "value": 5
+      },
+      {
+        "kind": "datetime",
+        "start": 0,
+        "end": 19,
+        "surface": "tomorrow at five pm",
+        "value": "2026-11-04T17:00:00+05:30"
+      }
+    ]
+  },
+  {
+    "text": "at five",
+    "status": "ok",
+    "requires_clarification": true,
+    "values": [
+      {
+        "kind": "number",
+        "start": 3,
+        "end": 7,
+        "surface": "five",
+        "value": 5
+      },
+      {
+        "kind": "datetime",
+        "start": 0,
+        "end": 7,
+        "surface": "at five",
+        "value": "2026-11-04T05:00:00+05:30"
+      }
+    ]
+  }
+]
