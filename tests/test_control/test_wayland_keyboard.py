@@ -1,6 +1,6 @@
 import pytest
 
-from jarvis_control.wayland_keyboard import keymap_for_shortcut
+from jarvis_control.wayland_keyboard import keymap_for_shortcut, literal_plan
 
 
 @pytest.mark.parametrize('key,code', [('Return', 28), ('Escape', 1), ('Tab', 15), ('BackSpace', 14)])
@@ -21,3 +21,15 @@ def test_unknown_keys_or_modifiers_are_rejected_before_connecting():
         keymap_for_shortcut('ARBITRARY', 'Return')
     with pytest.raises(ValueError):
         keymap_for_shortcut('', 'not-a-key')
+
+
+def test_literal_typing_keeps_case_and_uses_printable_physical_codes():
+    _, plan=literal_plan('Aa!')
+    assert plan==[(30,1),(30,0),(2,1)]
+    _, plan=literal_plan('JARVIS proof - Replacement 0123456789')
+    assert all(code not in (1,14,15,28) for code,_ in plan)
+
+
+def test_multiline_text_requires_paste_instead_of_submitting_enter():
+    with pytest.raises(ValueError,match='Unsupported literal text'):
+        literal_plan('first\nsecond')

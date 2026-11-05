@@ -190,7 +190,7 @@ def _desktop_env() -> dict[str, str]:
     return env
 
 
-async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]:
+async def _run_command(*args: str, timeout: float = 3.0, strip_output: bool = True) -> tuple[int, str, str]:
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -200,7 +200,8 @@ async def _run_command(*args: str, timeout: float = 3.0) -> tuple[int, str, str]
             env=_desktop_env(),
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return proc.returncode, stdout.decode("utf-8", errors="replace").strip(), stderr.decode("utf-8", errors="replace").strip()
+        out = stdout.decode("utf-8", errors="replace")
+        return proc.returncode, out.strip() if strip_output else out, stderr.decode("utf-8", errors="replace").strip()
     except BaseException as exc:
         if proc is not None:
             if proc.returncode is None:
@@ -283,18 +284,28 @@ async def verify_process_state(
         is_running = False
         if isinstance(process_name_or_pid, int) or (isinstance(process_name_or_pid, str) and process_name_or_pid.isdigit()):
             pid = int(process_name_or_pid)
+            if pid <= 0:
+                return {'verified': False, 'target_type': 'process', 'reason': 'a positive process ID is required', 'details': {}}
             try:
                 os.kill(pid, 0)
                 is_running = True
                 found_info = {"pid": pid, "running": True}
-            except OSError:
+            except PermissionError:
+                return {'verified': False, 'target_type': 'process', 'reason': 'process exists but permission prevents inspection', 'details': {'pid': pid}}
+            except ProcessLookupError:
                 is_running = False
                 found_info = {"pid": pid, "running": False}
+            except OSError:
+                return {'verified': False, 'target_type': 'process', 'reason': 'process inspection failed', 'details': {'pid': pid}}
         else:
             proc_name = str(process_name_or_pid).strip().casefold()
+            if not proc_name or proc_name.startswith('-'):
+                return {'verified': False, 'target_type': 'process', 'reason': 'a nonempty process name is required', 'details': {}}
             pgrep = shutil.which("pgrep")
             if pgrep:
                 code, stdout, _ = await _run_command(pgrep, "-f", proc_name, timeout=1.5)
+                if code not in (0, 1):
+                    return {'verified': False, 'target_type': 'process', 'reason': 'process query failed; stopped state is unknown', 'details': {}}
                 if code == 0 and stdout:
                     pids = [int(p) for p in stdout.split() if p.isdigit()]
                     if pids:
@@ -349,6 +360,8 @@ async def verify_window_state(
     """Verify that a window matching query is open and/or active via Hyprland IPC."""
     from skills import system_control
 
+    if not isinstance(query, str) or not query.strip():
+        return {'verified': False, 'target_type': 'window', 'reason': 'window query required', 'details': {}}
     cleaned = system_control._clean_window_target(query)
     target = cleaned if cleaned else query.strip().casefold()
 
@@ -360,25 +373,19 @@ async def verify_window_state(
     last_details: dict[str, Any] = {}
 
     while time.monotonic() <= deadline:
-        windows = await system_control._query_open_windows()
+        # A failed IPC read is not an empty desktop and cannot prove closure.
+        code, raw, _ = await _run_command(hyprctl, '-j', 'clients')
+        try:
+            windows = json.loads(raw) if code == 0 else None
+        except (ValueError, RecursionError):
+            windows = None
+        if not isinstance(windows, list) or any(window_identity(w) is None for w in windows):
+            return {'verified': False, 'target_type': 'window', 'reason': 'window inventory unavailable or unreadable', 'details': {}}
         active = await system_control._query_active_window()
-
-        match = None
-        for w in windows:
-            if w.get("address", "").casefold() == target or w.get("class", "").casefold() == target:
-                match = w
-                break
-        if not match:
-            for w in windows:
-                w_class = w.get("class", "").casefold()
-                if target in w_class or (len(w_class) >= 3 and w_class in target):
-                    match = w
-                    break
-        if not match:
-            for w in windows:
-                if target in w.get("title", "").casefold():
-                    match = w
-                    break
+        try:
+            match = resolve_window_target(windows, query)
+        except ValueError as error:
+            return {'verified': False, 'target_type': 'window', 'reason': str(error), 'details': {}}
 
         is_open = match is not None
         is_active = same_window(match, active)
@@ -415,6 +422,7 @@ async def verify_clipboard_state(
     expected_snippet: str | None = None,
     min_length: int = 1,
     timeout: float = 2.0,
+    expected_content: str | None = None,
 ) -> dict[str, Any]:
     """Verify that the Wayland clipboard contains valid text and optionally matches expected text."""
     wl_paste = shutil.which("wl-paste")
@@ -425,11 +433,12 @@ async def verify_clipboard_state(
     last_content = ""
 
     while time.monotonic() <= deadline:
-        code, stdout, _ = await _run_command(wl_paste, "--no-newline", timeout=1.5)
+        code, stdout, _ = await _run_command(wl_paste, "--no-newline", timeout=1.5, strip_output=False)
         if code == 0:
             last_content = stdout
-            if len(stdout) >= min_length:
-                if expected_snippet is None or expected_snippet in stdout:
+            if len(stdout) >= (0 if expected_content == '' else min_length):
+                if ((expected_content is None or stdout == expected_content)
+                        and (expected_snippet is None or expected_snippet in stdout)):
                     return {
                         "verified": True,
                         "target_type": "clipboard",
@@ -437,13 +446,17 @@ async def verify_clipboard_state(
                             "length": len(stdout),
                             "preview": stdout[:100],
                             "snippet_matched": expected_snippet is not None,
+                            "exact_match": expected_content is not None,
+                            "sha256": hashlib.sha256(stdout.encode('utf-8')).hexdigest(),
                         },
                         "reason": None,
                     }
         await asyncio.sleep(0.06)
 
     reason = "clipboard is empty or shorter than minimum length"
-    if expected_snippet is not None and last_content:
+    if expected_content is not None:
+        reason = 'clipboard does not exactly match the requested content'
+    elif expected_snippet is not None and last_content:
         reason = f"clipboard content does not contain expected snippet: '{expected_snippet[:50]}'"
 
     return {
@@ -491,7 +504,8 @@ async def verify_ground_truth(target_type: str, criteria: dict[str, Any]) -> dic
         expected_snippet = criteria.get("expected_snippet") or criteria.get("text")
         min_length = criteria.get("min_length", 1)
         timeout = criteria.get("timeout", 2.0)
-        return await verify_clipboard_state(expected_snippet=expected_snippet, min_length=min_length, timeout=timeout)
+        return await verify_clipboard_state(expected_snippet=expected_snippet, min_length=min_length,
+                                            timeout=timeout, expected_content=criteria.get('expected_content'))
 
     else:
         return {

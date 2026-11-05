@@ -112,19 +112,26 @@ class ControlSkills:
         if not self.executor.pending:
             return "ERROR: nothing is waiting for confirmation. Do not call this again."
         held = self.executor.describe(*self.executor.pending)
-        confirm_words = getattr(
-            self.config,
-            "confirm_words",
-            ["yes", "confirm", "proceed", "do it", "yep", "yeah", "sure"],
+        confirm_words = getattr(self.config, "confirm_words", None)
+        cancel_words = getattr(self.config, "cancel_words", None)
+        from .nlu import NLUEngine, ConfirmationDecision
+        decision = NLUEngine.evaluate_confirmation(
+            heard_phrase,
+            confirm_words=confirm_words,
+            cancel_words=cancel_words,
+            held_action=held,
         )
-        if not _matches(heard_phrase, confirm_words, allow_negation=False):
-            phrases = ", ".join(f'"{w}"' for w in confirm_words)
+        if decision == ConfirmationDecision.DECLINED:
+            cancel_msg = await self._run(self.cancel)
+            return cancel_msg
+        elif decision == ConfirmationDecision.AFFIRMED:
+            result = await self._run(self.executor.run_pending)
+            return result.as_tool_result()
+        else:
             return (
-                f"ERROR: '{heard_phrase}' is not a confirmation phrase, so {held} is still held. "
-                f"Ask the user to say one of: {phrases}."
+                f"ERROR: '{heard_phrase}' did not clearly confirm or cancel {held}, so it is still held. "
+                f"Ask the user conversationally if they want to proceed with {held}."
             )
-        result = await self._run(self.executor.run_pending)
-        return result.as_tool_result()
 
     async def confirm_local(self) -> str:
         """Explicit confirmation from the private local CLI/socket."""
@@ -187,7 +194,7 @@ class UnifiedSkills:
             self._live_declarations = self.declarations
         else:
             live_names = {tool['name'] for tool in desktop_live}
-            live_names.update({'start_hermes_goal', 'get_hermes_status'})
+            live_names.update({'call_hermes_api', 'start_hermes_goal', 'get_hermes_status'})
             self._live_declarations = [tool for tool in self.declarations
                                       if tool['name'] not in self._desktop_names or tool['name'] in live_names]
         self.on_standby_request = None
@@ -291,6 +298,10 @@ class UnifiedSkills:
 
     async def background_events(self) -> list[dict]:
         events = await self.control.background_events() if self.control else []
+        presented = self.desktop is not None and hasattr(self.desktop, 'refresh_task_presentation')
+        if not presented:
+            from orchestration.model_notices import pending_model_notices
+            events.extend(pending_model_notices(self.desktop))
         agents = getattr(self.desktop, '_task_agents', None)
         if agents is None and self.desktop and hasattr(self.desktop, '_personal_agents'):
             # Discover persisted native goals after a voice restart, before any
@@ -309,16 +320,25 @@ class UnifiedSkills:
                         detail = prompt.get('description') or prompt.get('question') or prompt.get('command') or 'A concrete response is needed.'
                         events.append({'id': 'hermes-approval:' + job['id'] + ':' + prompt['prompt_id'],
                                        'text': f"{name}: Hermes needs your response. {detail}"})
-                if job['state'] in {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'} and not job.get('notice_acknowledged'):
+                if not presented and job['state'] in {'completed', 'failed', 'cancelled', 'timed_out', 'interrupted'} and not job.get('notice_acknowledged'):
                     from orchestration.task_names import task_name
                     name = job.get('name') or task_name(job.get('task'))
                     suffix = ':' + str(job.get('event_sequence', 0)) if job.get('native_authority') else ''
                     events.append({'id': 'hermes:' + job['id'] + suffix,
                                    'text': f"{name}: {job['summary']}"})
+        if presented:
+            events.extend(await self.desktop.refresh_task_presentation())
         return events[:10]
 
     async def acknowledge_event(self, identity: str) -> None:
-        if identity.startswith('hermes-approval:'):
+        if identity.startswith('task-event:'):
+            presenter = getattr(self.desktop, '_task_presentation', None)
+            if presenter is not None:
+                await asyncio.to_thread(presenter.acknowledge, identity)
+        elif identity.startswith('model:'):
+            from orchestration.model_notices import acknowledge_model_notice
+            acknowledge_model_notice(self.desktop, identity)
+        elif identity.startswith('hermes-approval:'):
             agents = getattr(self.desktop, '_task_agents', None)
             if agents is not None:
                 _, job_id, prompt_id = identity.split(':', 2)

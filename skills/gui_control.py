@@ -8,8 +8,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
+import sys
 import tempfile
 import time
+from core.secret_env import sanitized_subprocess_env
 
 
 class GuiControlError(ValueError):
@@ -33,15 +36,17 @@ class GuiControl:
             proc = await asyncio.create_subprocess_exec(
                 self.executable, 'call', name, json.dumps(arguments),
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                env=sanitized_subprocess_env(),
             )
         except OSError as exc:
             detail = exc.strerror or 'could not start GUI driver'
             raise GuiControlError(detail[:500]) from None
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
-        except TimeoutError:
-            proc.kill()
+        except (TimeoutError,asyncio.CancelledError) as error:
+            if proc.returncode is None:proc.kill()
             await proc.communicate()
+            if isinstance(error,asyncio.CancelledError):raise
             raise GuiControlError('GUI driver timed out') from None
         if proc.returncode:
             detail = stderr.decode(errors='replace').strip() or stdout.decode(errors='replace').strip()
@@ -75,7 +80,7 @@ class GuiControl:
                 except GuiControlError as retry_error:
                     if 'daemon is not running' not in str(retry_error).lower():
                         raise
-                env = os.environ.copy()
+                env = sanitized_subprocess_env()
                 if env.get('XDG_CURRENT_DESKTOP', '').lower() == 'hyprland':
                     env['CUA_DRIVER_RS_ENABLE_WAYLAND'] = '1'
                 await asyncio.create_subprocess_exec(
@@ -97,6 +102,26 @@ class GuiControl:
         windows = result.get('windows', [])
         if not isinstance(windows, list):
             raise GuiControlError('GUI driver returned an invalid window list')
+        if any(isinstance(w,dict) and not self._window_address(w.get('address')) for w in windows):
+            from skills import system_control, ground_truth
+            clients = await system_control._query_open_windows()
+            for window in windows:
+                if not isinstance(window,dict) or self._window_address(window.get('address')):
+                    continue
+                candidates = [client for client in clients if ground_truth.window_identity(client)
+                              and type(window.get('pid')) is int and client.get('pid') == window['pid']]
+                exact = [client for client in candidates if int(client['address'],16) == window.get('window_id')]
+                # Native Wayland IDs can equal the compositor address, but X11
+                # IDs need not. Only accept a unique PID + exact rectangle when
+                # the native IDs differ; never bind by PID or title alone.
+                if not exact:
+                    bounds = window.get('bounds')
+                    rectangle = ([bounds.get(k) for k in ('x','y','width','height')]
+                                 if isinstance(bounds,dict) else bounds)
+                    exact = [client for client in candidates if isinstance(rectangle,(list,tuple))
+                             and list(rectangle) == [*client.get('at',[]), *client.get('size',[])]]
+                if len(exact) == 1:
+                    window['address'] = exact[0]['address']
         return {'windows': [{k: w.get(k) for k in ('pid', 'window_id', 'address', 'app_name', 'title', 'bounds', 'is_on_screen')}
                             for w in windows[:50] if isinstance(w, dict)]}
 
@@ -159,26 +184,51 @@ class GuiControl:
                             verify_active: bool = False) -> dict:
         verification = await self._verify_action_point(
             x, y, target_window_id=target_window_id, verify_active=verify_active)
-        target = {'kind': 'desktop', 'display_id': 'primary'}
-        action = 'click'
-        if target_window_id is not None:
-            target = {'kind': 'window', 'window_id': target_window_id}
-        if verify_active:
-            # This distinct driver action is an atomic verify-and-click contract;
-            # a generic coordinate click cannot safely close the focus-change race.
-            action = 'click_window'
-            target['address'] = verification['window_address']
-            target['require_active'] = True
-        result = await self._call(action, {
-            'x': x, 'y': y, 'target': target, 'button': 'left',
-            'delivery_mode': 'foreground', 'session': self.session,
-        })
+        global_x, global_y = x, y
+        target, x, y = self._input_target(verification, x, y)
+        # The installed driver supports click with an exact PID/window target;
+        # it has no click_window action or atomic focus-acknowledgement API.
+        try:
+            result = await self._call('click', {
+                'x': x, 'y': y, 'target': target, 'button': 'left',
+                'delivery_mode': 'foreground', 'session': self.session,
+            })
+        except GuiControlError as error:
+            # Only an explicit admission refusal permits an alternative. Never
+            # replay a timed-out or otherwise uncertain driver operation.
+            if not str(error).startswith('foreground_unavailable:') or target.get('kind')!='window':
+                raise
+            address=verification.get('window_address')
+            if not address:
+                windows=(await self.list_windows())['windows']
+                observed=next((w for w in windows if w.get('window_id')==target_window_id and w.get('pid')==target['pid']),{})
+                address=observed.get('address')
+            if not self._window_address(address):raise
+            process=await asyncio.create_subprocess_exec(sys.executable,
+                str(Path(__file__).resolve().parents[1]/'jarvis_control/wayland_pointer.py'),
+                '--click',address,str(target['pid']),str(global_x),str(global_y),
+                stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=sanitized_subprocess_env())
+            try:
+                stdout,stderr=await asyncio.wait_for(process.communicate(),5)
+            except (TimeoutError,asyncio.CancelledError):
+                if process.returncode is None:process.kill()
+                await process.communicate()
+                raise
+            if process.returncode:
+                raise GuiControlError('Native click could not be verified; inspect before retrying: '+stderr.decode(errors='replace')[:250])
+            result=json.loads(stdout)
         if verify_active:
             acknowledged = self._window_address(result.get('target_address'))
-            if result.get('target_verified') is not True or acknowledged != verification['window_address']:
-                raise GuiControlError('GUI driver did not atomically verify the target window')
+            if result.get('target_verified') is False or (acknowledged and acknowledged != verification['window_address']):
+                raise GuiControlError('GUI driver reported a different or unverified target; inspect effects before retrying')
+            after = await self._query_active_window()
+            if (self._window_address((after or {}).get('address')) != verification['window_address']
+                    or (after or {}).get('pid') != verification['target_pid']):
+                self._desktop = None
+                return {'status':'unverified_effect','verified':False,'reobserve_required':True,
+                        'reason':'Focus changed during targeted click; inspect effects before retrying'}
         self._desktop = None
-        return {'status': 'dispatched', 'effect': result.get('effect', 'unverified'),
+        return {'status': 'dispatched', 'verified': False, 'effect': result.get('effect', 'unverified'),
                 'route': result.get('route'), 'reobserve_required': True,
                 **verification,
                 'target_verified': verification['bounds_verified'] and
@@ -218,6 +268,7 @@ class GuiControl:
         target = None
         bounds_verified = False
         focus_verified = False
+        target_bounds = None
         if target_window_id is not None:
             windows = (await self.list_windows()).get('windows', [])
             target = next((w for w in windows if w.get('window_id') == target_window_id), None)
@@ -225,6 +276,8 @@ class GuiControl:
                 raise GuiControlError(f'Target window {target_window_id} not found in window list')
             if not target.get('is_on_screen', True):
                 raise GuiControlError(f'Target window {target_window_id} is not visible or on screen')
+            if type(target.get('pid')) is not int or target['pid'] <= 0:
+                raise GuiControlError('Target window has no verifiable process identity')
             bounds = target.get('bounds')
             if isinstance(bounds, dict):
                 bx = bounds.get('x', 0)
@@ -236,6 +289,7 @@ class GuiControl:
                         f'Coordinates ({x}, {y}) are outside the bounds of target window {target_window_id} [x={bx}, y={by}, w={bw}, h={bh}]'
                     )
                 bounds_verified = True
+                target_bounds = (bx, by, bw, bh)
             elif isinstance(bounds, (list, tuple)) and len(bounds) == 4:
                 bx, by, bw, bh = bounds
                 if not (bx <= x < bx + bw and by <= y < by + bh):
@@ -243,6 +297,7 @@ class GuiControl:
                         f'Coordinates ({x}, {y}) are outside the bounds of target window {target_window_id} [x={bx}, y={by}, w={bw}, h={bh}]'
                     )
                 bounds_verified = True
+                target_bounds = (bx, by, bw, bh)
             else:
                 raise GuiControlError(
                     f'Target window {target_window_id} has no verifiable bounds')
@@ -258,9 +313,21 @@ class GuiControl:
             if requested_identity != active_identity:
                 raise GuiControlError(
                     f'Target window {target_window_id} is not the active window {active_identity}')
+            if active.get('pid') != target['pid']:
+                raise GuiControlError('Active window process identity could not be verified')
             focus_verified = True
         return {'bounds_verified': bounds_verified, 'focus_verified': focus_verified,
-                'window_address': requested_identity if verify_active else None}
+                'window_address': requested_identity if verify_active else None,
+                'target_pid': target['pid'] if target else None,
+                'target_window_id': target_window_id, 'target_bounds': target_bounds}
+
+    @staticmethod
+    def _input_target(verification, x, y):
+        if verification.get('target_window_id') is None:
+            return {'kind':'desktop','display_id':'primary'}, x, y
+        bx, by, _, _ = verification['target_bounds']
+        return {'kind':'window','pid':verification['target_pid'],
+                'window_id':verification['target_window_id']}, x-bx, y-by
 
     @staticmethod
     def _window_address(value) -> str | None:
@@ -281,9 +348,10 @@ class GuiControl:
         if direction not in ('up', 'down', 'left', 'right') or not 1 <= amount <= 10:
             raise GuiControlError('Invalid scroll direction or amount')
         verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
+        target, x, y = self._input_target(verification, x, y)
         result = await self._call('scroll', {
             'direction': direction, 'amount': amount, 'by': 'line', 'x': x, 'y': y,
-            'target': {'kind': 'desktop', 'display_id': 'primary'},
+            'target': target,
             'delivery_mode': 'foreground', 'session': self.session,
         })
         self._desktop = None
@@ -296,9 +364,10 @@ class GuiControl:
         verification = await self._verify_action_point(x, y, target_window_id=target_window_id)
         if not text or len(text) > 4000:
             raise GuiControlError('Text must contain 1 to 4000 characters')
+        target, x, y = self._input_target(verification, x, y)
         result = await self._call('type_text', {
             'text': text, 'x': x, 'y': y,
-            'target': {'kind': 'desktop', 'display_id': 'primary'},
+            'target': target,
             'delivery_mode': 'foreground', 'session': self.session,
         })
         self._desktop = None
@@ -315,8 +384,9 @@ class GuiControl:
         modifiers = modifiers or []
         if any(item not in ('ctrl', 'shift', 'alt', 'super') for item in modifiers):
             raise GuiControlError('Invalid key modifier')
+        target, x, y = self._input_target(verification, x, y)
         arguments = {'x': x, 'y': y,
-                     'target': {'kind': 'desktop', 'display_id': 'primary'},
+                     'target': target,
                      'delivery_mode': 'foreground', 'session': self.session}
         if modifiers:
             arguments['keys'] = [*modifiers, key]

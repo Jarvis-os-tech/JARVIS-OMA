@@ -110,6 +110,19 @@ DEFAULT_DENY = [
 ]
 
 
+DEFAULT_CONFIRM_WORDS = [
+    "yes", "confirm", "proceed", "do it", "yep", "yeah", "sure",
+    "go ahead", "sounds good", "please do", "do that", "make it happen",
+    "go for it", "approved", "affirmative", "run it", "execute",
+    "sure thing", "absolutely", "definitely", "of course", "yes please",
+    "haan", "haan kar do", "kar do", "theek hai", "bilkul", "chalega", "sahi hai"
+]
+DEFAULT_CANCEL_WORDS = [
+    "no", "cancel", "stop", "abort", "never mind", "nevermind",
+    "don't", "don't do it", "nah", "mat karo", "nahi", "ruko", "rehne do"
+]
+
+
 # Keys that used to mean something. Kept out of `unknown_keys` so an existing
 # config does not get reported as full of typos, and named in `doctor` so the
 # user learns why the setting stopped having an effect rather than wondering.
@@ -127,6 +140,8 @@ PREFIXED_SECTIONS = {"realtime", "live", "tasks", "network", "vision", "gemini"}
 LIST_UNION_KEYS = {
     "confirm_patterns": DEFAULT_CONFIRM,
     "deny_patterns": DEFAULT_DENY,
+    "confirm_words": DEFAULT_CONFIRM_WORDS,
+    "cancel_words": DEFAULT_CANCEL_WORDS,
 }
 
 
@@ -251,8 +266,10 @@ class Config:
     deny_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_DENY))
     confirm_patterns_replace: bool = False
     deny_patterns_replace: bool = False
-    confirm_words: list[str] = field(default_factory=lambda: ["confirm", "yes do it", "go ahead"])
-    cancel_words: list[str] = field(default_factory=lambda: ["cancel", "never mind", "nevermind"])
+    confirm_words: list[str] = field(default_factory=lambda: list(DEFAULT_CONFIRM_WORDS))
+    cancel_words: list[str] = field(default_factory=lambda: list(DEFAULT_CANCEL_WORDS))
+    confirm_words_replace: bool = False
+    cancel_words_replace: bool = False
 
     # --- mouth -------------------------------------------------------------
     notify: bool = True

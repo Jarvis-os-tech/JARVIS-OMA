@@ -241,9 +241,9 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
 
         control._call.assert_not_awaited()
 
-    async def test_active_click_requires_bounds_canonical_addresses_and_atomic_driver_ack(self):
+    async def test_active_click_uses_supported_exact_target_and_never_claims_effect(self):
         control = GuiControl('/usr/bin/cua-driver')
-        control._query_active_window = AsyncMock(return_value={'address': '0x64'})
+        control._query_active_window = AsyncMock(return_value={'address': '0x64', 'pid':555})
 
         for window in (
             {'window_id': 100, 'address': '0x64', 'is_on_screen': True},
@@ -259,24 +259,30 @@ class GuiControlTests(unittest.IsolatedAsyncioTestCase):
                                                 verify_active=True)
 
         control.list_windows = AsyncMock(return_value={'windows': [{
-            'window_id': 100, 'address': '0x64', 'is_on_screen': True,
+            'window_id': 100, 'pid':555, 'address': '0x64', 'is_on_screen': True,
             'bounds': {'x': 0, 'y': 0, 'width': 500, 'height': 500},
         }]})
         for reply in (
             {'target_verified': False, 'target_address': '0x64'},
             {'target_verified': True, 'target_address': '0xc8'},
-            {},
         ):
             with self.subTest(reply=reply):
                 control._desktop = (time.monotonic(), 1920, 1080)
                 control._call = AsyncMock(return_value=reply)
-                with self.assertRaisesRegex(GuiControlError, 'atomically verify'):
+                with self.assertRaisesRegex(GuiControlError, 'unverified target'):
                     await control.click_desktop(100, 100, target_window_id=100,
                                                 verify_active=True)
-                self.assertEqual(control._call.await_args.args[0], 'click_window')
+                self.assertEqual(control._call.await_args.args[0], 'click')
                 payload = control._call.await_args.args[1]
-                self.assertEqual(payload['target']['address'], '0x64')
-                self.assertTrue(payload['target']['require_active'])
+                self.assertEqual(payload['target'], {'kind':'window','pid':555,'window_id':100})
+
+        # The real driver has no atomic click_window API or required ack fields.
+        # Its supported window-targeted click still needs effect readback.
+        control._desktop = (time.monotonic(), 1920, 1080)
+        control._call = AsyncMock(return_value={})
+        receipt = await control.click_desktop(100, 100, target_window_id=100, verify_active=True)
+        self.assertFalse(receipt['verified'])
+        self.assertTrue(receipt['reobserve_required'])
 
 
 if __name__ == '__main__':

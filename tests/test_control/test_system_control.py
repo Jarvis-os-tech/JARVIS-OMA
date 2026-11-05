@@ -274,3 +274,103 @@ def test_microphone_mute_get_set_toggle():
     assert res.ok and 'Microphone unmuted (verified)' in res.output
     assert executor._shell.call_args_list[1].args[0] == ['wpctl', 'set-mute', '@DEFAULT_AUDIO_SOURCE@', '0']
 
+
+
+def test_media_controls_play_pause_and_status():
+    executor = Mock()
+    # media_status with no player
+    executor._shell.return_value = Result(False, 'No players found')
+    res = execute(executor, 'media_status')
+    assert res.ok and 'No media player is currently active' in res.output
+
+    # media_status with playing track
+    executor._shell.side_effect = [Result(True, 'Playing'), Result(True, 'Queen - Bohemian Rhapsody')]
+    res = execute(executor, 'media_status')
+    assert res.ok and 'Playing: Queen - Bohemian Rhapsody' in res.output
+
+    # media_play
+    executor._shell.side_effect = [Result(True, ''), Result(True, 'Queen - Bohemian Rhapsody'), Result(True, 'Queen - Bohemian Rhapsody')]
+    res = execute(executor, 'media_play')
+    assert res.ok and 'Media playback started: Queen - Bohemian Rhapsody (verified)' in res.output
+
+    # media_pause
+    executor._shell.side_effect = None
+    executor._shell.return_value = Result(True, '')
+    res = execute(executor, 'media_pause')
+    assert res.ok and 'Media playback paused (verified)' in res.output
+
+    # media_next
+    executor._shell.side_effect = [Result(True, 'Playing'), Result(True, ''), Result(True, "Queen - Don't Stop Me Now")]
+    res = execute(executor, 'media_next')
+    assert res.ok and "Skipped to next track: Queen - Don't Stop Me Now (verified)" in res.output
+
+
+def test_window_controls_close_fullscreen_float_pin_center():
+    executor = Mock()
+    win_data = json.dumps({'address': '0x123', 'class': 'kitty', 'title': 'Terminal', 'fullscreen': 0, 'floating': False, 'pinned': False})
+    fs_win = json.dumps({'address': '0x123', 'class': 'kitty', 'title': 'Terminal', 'fullscreen': 1, 'floating': False, 'pinned': False})
+    fl_win = json.dumps({'address': '0x123', 'class': 'kitty', 'title': 'Terminal', 'fullscreen': 0, 'floating': True, 'pinned': False})
+    pin_win = json.dumps({'address': '0x123', 'class': 'kitty', 'title': 'Terminal', 'fullscreen': 0, 'floating': True, 'pinned': True})
+
+    # window_close
+    executor._tool_hypr_query.return_value = Result(True, win_data)
+    executor._shell.return_value = Result(True, '')
+    res = execute(executor, 'window_close')
+    assert res.ok and 'Closed Terminal (verified)' in res.output
+
+    # window_fullscreen
+    executor._tool_hypr_query.side_effect = [Result(True, win_data), Result(True, fs_win)]
+    res = execute(executor, 'window_fullscreen')
+    assert res.ok and 'Window fullscreen enabled (verified)' in res.output
+
+    # window_toggle_float
+    executor._tool_hypr_query.side_effect = [Result(True, win_data), Result(True, fl_win)]
+    res = execute(executor, 'window_toggle_float')
+    assert res.ok and 'Window set to floating (verified)' in res.output
+
+    # window_pin
+    executor._tool_hypr_query.side_effect = [Result(True, fl_win), Result(True, pin_win)]
+    res = execute(executor, 'window_pin')
+    assert res.ok and 'Window pinned across workspaces (verified)' in res.output
+
+    # window_center
+    executor._tool_hypr_query.side_effect = [Result(True, win_data)]
+    res = execute(executor, 'window_center')
+    assert res.ok and 'Window centered (verified)' in res.output
+
+
+def test_window_focus_by_fuzzy_name():
+    executor = Mock()
+    clients = json.dumps([
+        {'address': '0x1', 'class': 'google-chrome', 'title': 'GitHub - Chrome', 'workspace': {'name': '2'}},
+        {'address': '0x2', 'class': 'foot', 'title': 'g0pi@omarchy:~', 'workspace': {'name': '1'}},
+    ])
+    executor._tool_hypr_query.return_value = Result(True, clients)
+    executor._shell.return_value = Result(True, '')
+
+    # Exact class match
+    res = execute(executor, 'window_focus', target='google-chrome')
+    assert res.ok and 'Focused google-chrome on workspace 2 (verified)' in res.output
+
+    # Substring match on title / class
+    res = execute(executor, 'window_focus', target='chrome')
+    assert res.ok and 'Focused google-chrome on workspace 2 (verified)' in res.output
+
+    # Not found
+    res = execute(executor, 'window_focus', target='nonexistent')
+    assert not res.ok and 'No open window matching' in res.output
+
+
+def test_notification_dismiss():
+    executor = Mock()
+    executor._shell.return_value = Result(True, '')
+
+    # Dismiss all
+    res = execute(executor, 'notification_dismiss')
+    assert res.ok and 'Dismissed notifications (verified)' in res.output
+    assert executor._shell.call_args[0][0] == ['hyprctl', 'dismissnotify']
+
+    # Dismiss targeted summary
+    res = execute(executor, 'notification_dismiss', target='battery')
+    assert res.ok and "Dismissed notification matching 'battery' (verified)" in res.output
+    assert executor._shell.call_args[0][0] == ['omarchy', 'notification', 'dismiss', 'battery']

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "skills": [{
+    "name": "parse_command_values",
+    "adapter": "parsing.values",
+    "description": "Read-only English number/date/duration values with original offsets. Pass the user's verbatim words. Use before scheduling; report the resolved timestamp and explicit timezone (default Asia/Kolkata). If requires_clarification, ask before acting. candidate_only means nothing was scheduled. Bare times need AM/PM; quotes, paths and IDs are data. Temporal parsing needs optional dependencies; errors are not no-match results.",
+    "parameters_json_schema": {
+      "type": "object",
+      "properties": {
+        "text": {"type": "string", "description": "Original user words, at most 512 characters."},
+        "language": {"type": "string", "default": "en-US"},
+        "include_temporal": {"type": "boolean", "default": true},
+        "anchor_datetime": {"type": "string", "description": "Optional ISO reference time with explicit UTC offset; omitted means current time in time_zone."},
+        "time_zone": {"type": "string", "default": "Asia/Kolkata", "description": "Explicit IANA timezone. Do not guess ambiguous abbreviations."}
+      },
+      "required": ["text"], "additionalProperties": false
+    }
+  }]
+}

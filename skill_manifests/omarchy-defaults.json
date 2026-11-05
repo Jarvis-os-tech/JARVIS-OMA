@@ -14,7 +14,7 @@
     },
     {
       "name": "open_application",
-      "description": "Open an installed graphical desktop application by its visible name.",
+      "description": "Open an installed graphical desktop application by its visible name. DO NOT use this for external platform connections or account authorizations (use connect_platform instead).",
       "adapter": "applications.open",
       "parameters_json_schema": {
         "type": "object",
@@ -27,7 +27,7 @@
     },
     {
       "name": "open_website",
-      "description": "Open an HTTP or HTTPS website in the default Omarchy browser.",
+      "description": "Open an arbitrary HTTP or HTTPS website in the default Omarchy browser. DO NOT use this when the user asks to connect to, sign into, authenticate, or open an authorization/login page for an external platform or service (like LinkedIn, GitHub, Slack, Notion, Spotify, Google, etc.) — for those, ALWAYS use connect_platform or open_platform_authorization.",
       "adapter": "web.open",
       "parameters_json_schema": {
         "type": "object",

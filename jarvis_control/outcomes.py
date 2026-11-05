@@ -6,10 +6,12 @@ import json
 
 
 PENDING = frozenset({'queued', 'running', 'started', 'submitted', 'accepted',
-                     'pending', 'waiting', 'validating', 'cancelling'})
+                     'pending', 'waiting', 'validating', 'cancelling', 'in_progress',
+                     'awaiting_authorization'})
 FAILURES = frozenset({'error', 'failed', 'blocked', 'unavailable', 'rejected',
                       'denied', 'not_run', 'cancelled', 'interrupted', 'partial',
-                      'unknown', 'needs_confirmation'})
+                      'unknown', 'needs_confirmation', 'stopped', 'timed_out',
+                      'waiting_approval', 'requires_auth', 'setup_required'})
 UNVERIFIED = frozenset({'unverified', 'unverified_effect', 'dispatched',
                         'dispatched_unverified', 'requested', 'sent_unverified'})
 
@@ -23,7 +25,8 @@ class Outcome:
 
     def response(self, result):
         response = {'ok': self.ok, 'status': self.status,
-                    'completed': self.completed, 'result': result}
+                    'completed': self.completed, 'result': result,
+                    'completion_scope': 'tool_call' if self.completed else 'none'}
         if not self.ok:
             response['error'] = self.detail or self.status
         if not self.completed:
@@ -54,10 +57,20 @@ def classify_result(result, _depth=0) -> Outcome:
             return Outcome(False, 'needs_confirmation' if held else 'failed', False, detail)
         if text.startswith('[dry-run]'):
             return Outcome(True, 'dry_run', False, text)
+        if text.casefold() in PENDING:
+            return Outcome(True, text.casefold(), False, text)
+        if text.casefold() == 'none':
+            return Outcome(False, 'unverified', False, 'No result was returned')
         try:
             decoded = json.loads(text)
         except (ValueError, RecursionError):
             return Outcome(True, 'completed', True)
+        if decoded is None:
+            return Outcome(False, 'unverified', False, 'No result was returned')
+        if decoded is False:
+            return Outcome(False, 'failed', False, 'Adapter returned false')
+        if isinstance(decoded, str):
+            return classify_result(decoded, _depth + 1)
         if not isinstance(decoded, dict):
             return Outcome(True, 'completed', True)
         result = decoded
@@ -68,9 +81,12 @@ def classify_result(result, _depth=0) -> Outcome:
     detail = str(result.get('error') or result.get('reason') or result.get('message') or status)
     if status in FAILURES:
         return Outcome(False, 'failed' if status == 'error' else status, False, detail)
-    if result.get('ok') is False or result.get('success') is False or result.get('isError') is True or result.get('error'):
+    if (any(result.get(key) is False for key in ('ok', 'success', 'successful'))
+            or any(result.get(key) is True for key in ('isError', 'is_error')) or result.get('error')):
         return Outcome(False, 'failed', False, detail or 'Adapter reported failure')
-    if status in UNVERIFIED or result.get('verified') is False or result.get('reobserve_required') is True:
+    if (status in UNVERIFIED or any(result.get(key) is False for key in
+            ('verified', 'ground_truth_verified', 'post_action_verified', 'post_action_focus_verified'))
+            or result.get('reobserve_required') is True):
         return Outcome(False, 'unverified', False, detail or 'The effect has not been verified')
     if status in PENDING:
         return Outcome(True, status, False, detail)
@@ -85,12 +101,20 @@ def classify_result(result, _depth=0) -> Outcome:
             isinstance(step, dict) and not classify_result(step, _depth + 1).completed
             for step in result['steps']):
         return Outcome(False, 'partial', False, 'One or more requested steps are unfinished')
-    for key in ('task', 'job', 'goal', 'result', 'output'):
+    for key in ('task', 'job', 'goal', 'result', 'output', 'structuredContent', 'structured_content'):
         child = result.get(key)
         if isinstance(child, (dict, str)) and child:
             nested = classify_result(child, _depth + 1)
             if not nested.completed:
                 return nested
+    # SDK execution envelopes sometimes keep their real failure flag under
+    # data while the transport wrapper reports success. Do not interpret
+    # arbitrary records as envelopes merely because they contain a status.
+    data = result.get('data')
+    if isinstance(data, dict) and any(key in data for key in ('successful', 'success', 'isError', 'is_error')):
+        nested = classify_result(data, _depth + 1)
+        if not nested.completed:
+            return nested
     if status == 'dry_run':
         return Outcome(True, 'dry_run', False, detail)
     return Outcome(True, 'completed', True)

@@ -210,3 +210,53 @@ async def test_control_skills_read_url(monkeypatch):
     invalid_result = await skills.execute("read_url", {"url": "ftp://example.com"})
     assert "http or https address" in invalid_result
 
+
+@pytest.mark.asyncio
+async def test_control_skills_natural_assent_and_decline():
+    skills = ControlSkills(Config(dry_run=True))
+
+    # 1. Natural assent: "sounds good"
+    res1 = await skills.execute("omarchy_cli", {"command": "reboot"})
+    assert "needs spoken confirmation" in res1
+    confirm_res1 = await skills.execute("confirm_last", {"heard_phrase": "sounds good"})
+    assert "reboot" in confirm_res1 or "would run" in confirm_res1
+
+    # 2. Multilingual assent: "haan kar do"
+    res2 = await skills.execute("omarchy_cli", {"command": "reboot"})
+    assert "needs spoken confirmation" in res2
+    confirm_res2 = await skills.execute("confirm_last", {"heard_phrase": "haan kar do"})
+    assert "reboot" in confirm_res2 or "would run" in confirm_res2
+
+    # 3. Active decline: "don't do that"
+    res3 = await skills.execute("omarchy_cli", {"command": "reboot"})
+    assert "needs spoken confirmation" in res3
+    decline_res = await skills.execute("confirm_last", {"heard_phrase": "don't do that"})
+    assert "Cancelled:" in decline_res
+    assert skills.executor.pending is None
+
+    # 4. Multilingual decline: "mat karo"
+    res4 = await skills.execute("omarchy_cli", {"command": "reboot"})
+    assert "needs spoken confirmation" in res4
+    decline_res2 = await skills.execute("confirm_last", {"heard_phrase": "mat karo"})
+    assert "Cancelled:" in decline_res2
+    assert skills.executor.pending is None
+
+
+@pytest.mark.asyncio
+async def test_control_skills_pending_ttl_expiration(monkeypatch):
+    import time
+    skills = ControlSkills(Config(dry_run=True))
+    res = await skills.execute("omarchy_cli", {"command": "reboot"})
+    assert "needs spoken confirmation" in res
+    assert skills.executor.pending is not None
+
+    # Simulate 61 seconds passing
+    original_time = skills.executor._pending_time
+    monkeypatch.setattr(time, "monotonic", lambda: original_time + 65.0)
+
+    # pending property expires automatically
+    assert skills.executor.pending is None
+    confirm_res = await skills.execute("confirm_last", {"heard_phrase": "yes"})
+    assert "nothing is waiting for confirmation" in confirm_res
+
+

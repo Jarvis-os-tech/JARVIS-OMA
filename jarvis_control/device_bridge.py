@@ -8,6 +8,7 @@ import ssl
 import time
 import os
 import re
+import ipaddress
 from pathlib import Path
 
 from jarvis_voice.config import SOCKET_PATH
@@ -146,30 +147,40 @@ class DeviceBridge:
 
 
 async def run(args):
-    credentials = json.loads(args.pairing.read_text())
-    bridge = DeviceBridge(credentials['auth_token'], args.socket)
+    if bool(args.cert) != bool(args.key):
+        raise ValueError('HTTPS requires both --cert and --key')
+    try:
+        loopback = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        loopback = args.host == 'localhost'
     tls = None
     if args.cert and args.key:
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.minimum_version = ssl.TLSVersion.TLSv1_2
         tls.load_cert_chain(args.cert, args.key)
-    if args.host not in {'127.0.0.1', '::1', 'localhost'} and tls is None and not getattr(args, 'allow_lan', False):
-        raise ValueError('Non-loopback device access requires HTTPS certificate and key or --allow-lan')
+    if not loopback and tls is None and not args.allow_lan:
+        raise ValueError('Non-loopback device access requires HTTPS certificate and key or explicit --allow-lan')
+    credentials = json.loads(args.pairing.read_text())
+    bridge = DeviceBridge(credentials['auth_token'], args.socket)
     server = await asyncio.start_server(bridge.handle, args.host, args.port, ssl=tls, limit=16384)
     async with server:
         await server.serve_forever()
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='0.0.0.0')
+    parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8766)
     parser.add_argument('--pairing', type=Path, default=Path.home() / '.config/jarvis/pairing_credentials.json')
     parser.add_argument('--socket', type=Path, default=SOCKET_PATH)
-    parser.add_argument('--allow-lan', action='store_true', default=True, help='Allow authenticated access across trusted local network without TLS')
+    parser.add_argument('--allow-lan', action='store_true', help='Allow non-loopback access without TLS (unsafe)')
     parser.add_argument('--cert')
     parser.add_argument('--key')
-    asyncio.run(run(parser.parse_args()))
+    return parser
+
+
+def main():
+    asyncio.run(run(build_parser().parse_args()))
 
 
 if __name__ == '__main__':

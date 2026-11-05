@@ -21,6 +21,24 @@ def open_pairing_qr():
     if result.returncode or not destination.exists():
         path_for(session).unlink(missing_ok=True)
         raise RuntimeError('Unable to create the phone pairing QR. Check desktop Gemini configuration and QR image support.')
+    try:
+        from ui.jarvis_widgets import backend
+        import json
+        with open(Path.home() / ".config/jarvis/pairing_credentials.json") as f:
+            creds = json.load(f)
+        payload = {
+            'v': 1, 'pid': creds['project_id'], 'dev': creds['device_id'],
+            'tok': creds['auth_token'], 'bkt': creds['gcs_bucket'],
+            'ep': creds['endpoint'], 'exec': 'http://127.0.0.1:8766', 'key': ''
+        }
+        widget = backend.make_widget(
+            "qr", "📱 Scan to Pair JARVIS Mobile",
+            {"content": json.dumps(payload, separators=(',', ':'))},
+            widget_id="jarvis-pairing-qr", presentation="floating", expires_seconds=300
+        )
+        backend.shell_call("present", widget)
+    except Exception:
+        pass
     subprocess.Popen(['/usr/bin/python', str(root / 'scripts/mobile_pairing_widget.py'),
         '--image', str(destination), '--session', session], cwd=root,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)

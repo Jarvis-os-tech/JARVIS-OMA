@@ -4,13 +4,14 @@ import re
 
 ROUTING = """
 OMARCHY DESKTOP SKILL:
-For volume, output mute, mic mute, brightness, night light, stay-awake/idle,
-do-not-disturb, bluetooth, touchpad, status bar, and workspace requests, prefer
-system_control: it reads state, acts and verifies in one call. Do not run discovery
-for these known controls. Use signed percentage points for relative changes; use
-workspace_back for 'go back' after a switch. Set binary controls with enabled=true/false
-or call the corresponding toggle action. Do not substitute a toggle when the user
-requested an explicit state.
+For volume, output mute, mic mute, brightness, media playback (play, pause, next, previous, status),
+window controls (window_close, window_fullscreen, window_toggle_float, window_center, window_pin,
+and window_focus by name with target="app"), night light, stay-awake/idle, do-not-disturb,
+bluetooth, touchpad, status bar, and workspace requests, prefer system_control: it reads state,
+acts and verifies in one call. Do not run discovery for these known controls. Use signed percentage
+points for relative changes; use workspace_back for 'go back' after a switch. Set binary controls
+with enabled=true/false or call the corresponding toggle action. Do not substitute a toggle when the
+user requested an explicit state.
 For other unfamiliar Omarchy actions, discover routes with omarchy_help(topic=commands),
 then command_details for exact arguments. Use omarchy_cli without a leading
 'omarchy'. Use system_query for current facts, hypr_query before targeted window

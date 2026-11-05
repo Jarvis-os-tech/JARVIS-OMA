@@ -23,7 +23,9 @@ def test_typing_receipt_does_not_prove_an_app_or_message_effect(monkeypatch):
     assert receipt['dispatched'] is True
     assert receipt['verified'] is False
     assert not classify_result(result.as_tool_result()).completed
-    executor._shell.assert_called_once_with(['wtype', '-d', '5', '-', '-s', '150'], input_text='hi')
+    executor._shell.assert_called_once_with([
+        sys.executable, str(Path(__file__).resolve().parents[2] / 'jarvis_control/wayland_keyboard.py'),
+        '--text'], input_text='hi')
 
 
 def test_shortcut_delivery_is_not_message_submission_evidence(monkeypatch):

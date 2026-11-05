@@ -29,13 +29,13 @@ from .grounding import background_google_grounding, format_grounding_result
 GATE_TOOLS = [
     {
         "name": "confirm_last",
-        "description": "Confirm the held action after the user explicitly spoke a confirmation word or phrase. Pass the exact phrase heard.",
+        "description": "Confirm the held action after the user verbally assented or confirmed. Accepts natural conversational assents, colloquial expressions, and multilingual confirmations (e.g., 'yes', 'go ahead', 'proceed', 'sure', 'sounds good', 'do it', 'haan kar do', 'kar do'). Pass the exact phrase heard.",
         "parameters": {
             "type": "object",
             "properties": {
                 "heard_phrase": {
                     "type": "string",
-                    "description": "The exact confirmation phrase spoken by the user (e.g. 'yes', 'confirm', 'proceed')."
+                    "description": "The exact affirmation phrase spoken by the user (e.g. 'yes', 'go ahead', 'proceed', 'sounds good', 'kar do')."
                 }
             },
             "required": ["heard_phrase"],

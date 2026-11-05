@@ -8,6 +8,7 @@ It requires only the Wayland and XKB libraries already used by the desktop.
 from __future__ import annotations
 
 import ctypes as c
+from functools import lru_cache
 import sys
 import tempfile
 import time
@@ -33,7 +34,8 @@ def _function(lib, name, restype, *argtypes):
     return fn
 
 
-def keymap_for_shortcut(mods, keysym):
+@lru_cache(maxsize=256)
+def keymap_for_shortcut(mods, keysym, *, literal=False):
     """Return a full US map, evdev code and modifier mask; never inject text."""
     xkb = c.CDLL('libxkbcommon.so.0')
     ptr, uint = c.c_void_p, c.c_uint
@@ -62,7 +64,11 @@ def keymap_for_shortcut(mods, keysym):
             raise RuntimeError('Could not create keyboard context')
         names = Names(b'evdev', b'pc105', b'us', b'', b'')
         keymap = map_new(context, c.byref(names), 0)
-        wanted = from_name(keysym.encode(), 1)
+        if literal:
+            to_symbol = _function(xkb, 'xkb_utf32_to_keysym', uint, uint)
+            wanted = to_symbol(ord(keysym))
+        else:
+            wanted = from_name(keysym.encode(), 1)
         if not keymap or not wanted:
             raise ValueError('Invalid keyboard map or keysym')
         aliases = {'CTRL': 'Control', 'SHIFT': 'Shift', 'ALT': 'Mod1', 'SUPER': 'Mod4'}
@@ -99,8 +105,34 @@ def keymap_for_shortcut(mods, keysym):
             context_unref(context)
 
 
+def literal_plan(text):
+    """Plan every character before dispatch; never place text on Tab/Enter/Esc."""
+    if not isinstance(text, str) or not text or len(text) > 10000:
+        raise ValueError('Unsupported literal text: expected 1–10000 characters')
+    events=[]
+    data=None
+    try:
+        for char in text:
+            if not char.isprintable():
+                raise ValueError('literal control character requires paste')
+            data, code, mask = keymap_for_shortcut('', char, literal=True)
+            events.append((code,mask))
+    except ValueError as error:
+        raise ValueError('Unsupported literal text: use a content paste for these characters') from error
+    return data, events
+
+
 def send_shortcut(mods, keysym):
     data, keycode, mask = keymap_for_shortcut(mods, keysym)
+    _send_events(data, [(keycode,mask)], interval=.02)
+
+
+def send_text(text):
+    data, events = literal_plan(text)
+    _send_events(data, events, interval=.002)
+
+
+def _send_events(data, events, *, interval):
     wl = c.CDLL('libwayland-client.so.0')
     ptr, uint = c.c_void_p, c.c_uint
     connect = _function(wl, 'wl_display_connect', ptr, c.c_char_p)
@@ -153,15 +185,16 @@ def send_shortcut(mods, keysym):
             stream.write(data)
             stream.flush()
             marshal(keyboard, 0, None, 1, 0, uint(1), c.c_int(stream.fileno()), uint(len(data)))
-            marshal(keyboard, 2, None, 1, 0, uint(mask), uint(0), uint(0), uint(0))
             if roundtrip(display) < 0:
                 raise RuntimeError('Keyboard map was rejected')
-            for state in (1, 0):
-                marshal(keyboard, 1, None, 1, 0, uint(int(time.monotonic()*1000) & 0xffffffff),
-                        uint(keycode), uint(state))
-                if roundtrip(display) < 0:
-                    raise RuntimeError('Keyboard connection lost during delivery')
-                time.sleep(.02)
+            for keycode, mask in events:
+                marshal(keyboard, 2, None, 1, 0, uint(mask), uint(0), uint(0), uint(0))
+                for state in (1, 0):
+                    marshal(keyboard, 1, None, 1, 0, uint(int(time.monotonic()*1000) & 0xffffffff),
+                            uint(keycode), uint(state))
+                    if roundtrip(display) < 0:
+                        raise RuntimeError('Keyboard connection lost during delivery')
+                    time.sleep(interval)
             marshal(keyboard, 2, None, 1, 0, uint(0), uint(0), uint(0), uint(0))
             roundtrip(display)
             time.sleep(.03)
@@ -174,9 +207,12 @@ def send_shortcut(mods, keysym):
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) != 3:
+        if len(sys.argv) == 2 and sys.argv[1] == '--text':
+            send_text(sys.stdin.read(10001))
+        elif len(sys.argv) != 3:
             raise ValueError('Expected modifiers and a keysym')
-        send_shortcut(sys.argv[1], sys.argv[2])
+        else:
+            send_shortcut(sys.argv[1], sys.argv[2])
     except (OSError, RuntimeError, ValueError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

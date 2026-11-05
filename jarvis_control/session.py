@@ -17,8 +17,11 @@ from typing import Callable
 
 from .config import SOCKET_PATH, RUNTIME_DIR, dir_is_private
 
-_FILLERS = frozenset({"please", "thanks", "thank", "you", "yeah", "yep", "ok", "okay"})
-_NEGATION = re.compile(r"\b(don't|dont|do not|never|not)\b")
+_FILLERS = frozenset({
+    "please", "thanks", "thank", "you", "yeah", "yep", "ok", "okay",
+    "now", "bhai", "yaar", "jarvis", "toh", "sir", "just"
+})
+_NEGATION = re.compile(r"\b(don't|dont|do not|never|not|no|nah|mat|nahi|nahin|ruko|rehne do)\b", re.IGNORECASE)
 
 
 def _normalize(text: str) -> str:
@@ -47,6 +50,10 @@ def _matches(text: str, phrases: list[str], *, allow_negation: bool = True) -> s
         if low.startswith(needle + " "):
             rest = low[len(needle):].split()
             if rest and all(word in _FILLERS for word in rest):
+                return phrase
+        if low.endswith(" " + needle):
+            lead = low[:-len(needle)].split()
+            if lead and all(word in _FILLERS for word in lead):
                 return phrase
     return None
 

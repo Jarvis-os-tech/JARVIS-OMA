@@ -109,14 +109,15 @@ class GroundTruthUnitTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(res3["verified"])
                 self.assertIn(1234, res3["details"]["pids"])
 
-    @patch("skills.system_control._query_open_windows")
+    @patch("skills.ground_truth._run_command", new_callable=AsyncMock)
     @patch("skills.system_control._query_active_window")
     @patch("shutil.which", return_value="/usr/bin/hyprctl")
-    async def test_verify_window_state(self, mock_which, mock_active, mock_open):
-        mock_open.return_value = [
+    async def test_verify_window_state(self, mock_which, mock_active, mock_run):
+        windows = [
             {"address": "0x1", "class": "antigravity", "title": "Antigravity Workspace"},
             {"address": "0x2", "class": "foot", "title": "terminal"},
         ]
+        mock_run.return_value = (0, json.dumps(windows), '')
         mock_active.return_value = {"address": "0x1", "class": "antigravity"}
 
         # 1. Window open and active
@@ -194,7 +195,7 @@ class DesktopSkillsGroundTruthIntegrationTests(unittest.IsolatedAsyncioTestCase)
         res = await self.skills._adapter_write_clipboard("test clipboard data")
         self.assertEqual(res["status"], "written")
         self.assertTrue(res["ground_truth_verified"])
-        mock_verify_clip.assert_awaited_once_with(expected_snippet="test clipboard data"[:50], timeout=1.0)
+        mock_verify_clip.assert_awaited_once_with(expected_content="test clipboard data", timeout=1.0)
 
 
 class TaskRunnerGroundTruthTests(unittest.IsolatedAsyncioTestCase):
