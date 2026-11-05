@@ -18,6 +18,21 @@ voice-first personal AI operating system. It consolidates build material from
 
 ## Supporting references
 
+- [API, CLI and connector services](CONNECTOR-SERVICES-2026-11-03.md):
+  supervised API execution, CLI-Hub installation, preserved Composio connectors,
+  live service readiness and verification evidence.
+
+- [System integration audit and execution evidence](SYSTEM-INTEGRATION-AUDIT-2026-11-03.md):
+  real GUI/file checks, guarded spoken results, repaired adapters, deadlines and deployment limits.
+
+- [Complete Voice GUI design](JARVIS_VOICE_GUI_DESIGN.md): one consolidated
+  design document, including the no-dock scope, visual system, widgets,
+  interaction flows, architecture, delivery plan and Fury source analysis.
+- [Voice GUI design package](voice-gui/README.md): supporting split documents for the voice canvas,
+  native and JIT widgets, visual/motion system, interaction contracts, desktop
+  handoff, storyboards, reference research, and phased acceptance plan.
+  Planning/design only; no desktop activation.
+
 - [Voice/control reliability and speed verification](VOICE-CONTROL-RELIABILITY-2026-11-02.md):
   active release, speech-turn fixes, live keyboard/selection repairs, measured timings and limits.
 

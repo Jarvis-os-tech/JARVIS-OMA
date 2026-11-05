@@ -1,173 +1,285 @@
-# JARVIS OS — Sovereign Voice & Persistent Memory Foundation
+# JARVIS OS — Sovereign Voice, Desktop Control & Persistent Memory Operating System
 
-A voice-first, persistent memory personal AI operating system foundation for transforming Linux and Omarchy into **JARVIS OS**.
-
-## Architecture & Principles
-
-JARVIS OS provides two tightly-integrated sovereign subsystems:
-
-### 1. Sovereign Voice Core (`jarvis_voice`)
-- **Ambient Acoustic Ear**: Continuous PipeWire audio capture (16 kHz PCM, 20 ms frames) with local Silero VAD speech detection.
-- **Gemini Live Streaming**: Bidirectional audio transport with local turn detection and automatic startup greetings.
-- **Interruption & Barge-in**: Generation-fenced playback cancellation discards queued audio instantly upon speech detection.
-- **Hardened Error Recovery**: Supervised capture and session workers, explicit microphone backlog errors, and exponential backoff with a 60-second cooldown floor on HTTP 429.
-- **Local Control Socket**: Listens on a protected Unix domain socket (`$XDG_RUNTIME_DIR/jarvis/control.sock`, chmod `0600`) for status queries, mute toggle, and cancel signals.
-
-### 2. Sovereign 4-Tier Memory Engine (`jarvis_memory`)
-- **SQLite WAL Knowledge Ledger**: Immutable revision history, fact deduplication, and atomic JSONL fallback store.
-- **Vector Store & Semantic Embeddings**: SQLite-backed embedding cache with cosine math; supports Google GenAI (`text-embedding-004`) and Ollama.
-- **Hybrid RRF Retrieval**: Reciprocal Rank Fusion (RRF) combining BM25 full-text indexing and semantic vector search with memory strength decay.
-- **Continuous Conversation Memory**: Multi-turn dialogue transcript persistence across system restarts with rolling turn indexing.
-- **Obsidian Synchronization**: Bidirectional synchronization with Obsidian Markdown vaults (`JARVIS-OMA Memory/`).
-- **MCP Server**: Stdio Model Context Protocol interface exposing memory tools to agent fleets.
-
-### 3. Sovereign Desktop Control & Retrieval System (`jarvis_control`)
-- **Desktop Actuators**: Hyprland window/workspace dispatch, application launching, typing, shortcut chords, clipboard control, and window composition.
-- **Information Retrieval**: Live system map and discovery (`omarchy_help`), system queries (battery, wifi, bluetooth, os, audio), web search and URL text extraction, terminal state inspection, and screen OCR.
-- **Policy Gate & Safety Boundary**: Protected execution boundary with regex deny rules, confirmation words gating, and dry-run preview.
-- **Unified Voice Integration**: `UnifiedSkills` seamlessly registers control, retrieval, and memory tools to Gemini Live sessions.
+A voice-first, persistent memory personal AI operating system foundation for Linux and Omarchy. JARVIS OS integrates ambient acoustic interaction, sub-second local actuation, a multi-tier memory vault, modular external connectors, and durable multi-agent orchestration into a unified platform.
 
 ---
 
-## Directory Structure
+## 🏛️ System Architecture
+
+JARVIS OS provides five tightly coupled, sovereign subsystems:
+
+```
+                                  ┌───────────────────────────────┐
+                                  │       User Speech / CLI       │
+                                  └───────────────┬───────────────┘
+                                                  │
+                                                  ▼
+                         ┌─────────────────────────────────────────────────┐
+                         │   Human Interaction Engine (HIE) / voice_layer  │
+                         │  • Silero VAD Turn Gating                       │
+                         │  • Cactus-Needle Local Command Router (<200ms)  │
+                         │  • Instant Situational Spoken Acknowledgements │
+                         │  • Gemini Live Duplex Streaming                 │
+                         │  • Interruption & Playback Cancellation Fence   │
+                         └───────┬─────────────────────────────────┬───────┘
+                                 │                                 │
+                   Local Command │                    Cloud Action │
+                                 ▼                                 ▼
+┌──────────────────────────────────────────────┐  ┌────────────────────────────────────────────────┐
+│         Sovereign Desktop Control            │  │          Hermes Agent Orchestration            │
+│              (jarvis_control)                │  │                (orchestration)                 │
+│  • Wayland Keyboard & Pointer Actuators      │  │  • Multi-Tier Agent Dispatching (FastAPI REST) │
+│  • Hyprland Window & Workspace Management    │  │  • Durable Hermes Gateway & State Lineage      │
+│  • Natural Language Parsing Service          │  │  • Standardized Task Event Lifecycle Contracts │
+│  • Action Evidence Collector & Policy Gate   │  │  • Visual Notification Cards & Desktop Notices │
+└──────────────────────┬───────────────────────┘  └────────────────────────┬───────────────────────┘
+                       │                                                   │
+                       └─────────────────────┬─────────────────────────────┘
+                                             │
+                                             ▼
+                      ┌─────────────────────────────────────────────┐
+                      │    Sovereign 4-Tier Memory & Knowledge      │
+                      │               (jarvis_memory)               │
+                      │  • SQLite WAL Knowledge Ledger              │
+                      │  • Semantic Vector Embeddings Cache         │
+                      │  • Reciprocal Rank Fusion (BM25 + Cosine)   │
+                      │  • Automated Vault Cleaning & Quality Eval  │
+                      │  • Bidirectional Obsidian Synchronization   │
+                      │  • Model Context Protocol (MCP) Server      │
+                      └──────────────────────┬──────────────────────┘
+                                             │
+                                             ▼
+                      ┌─────────────────────────────────────────────┐
+                      │          Connectors & Integrations          │
+                      │                (connectors)                 │
+                      │  • Composio Tool Authentication & Bridge    │
+                      │  • API-Anything Generic REST/GraphQL        │
+                      │  • Integration Health & Status Probes       │
+                      └─────────────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Key Subsystems
+
+### 1. Human Interaction Engine & Voice Core (`voice_layer`)
+* **Ambient Acoustic Ear**: Continuous PipeWire audio capture (16 kHz PCM, 20 ms frames) with local Silero VAD turn gating.
+* **Cactus-Needle Local Command Router**: Embedded high-speed speech recognizer executing offline desktop commands (volume, brightness, app launching, window workspaces, mute, standby) without sending audio to the cloud.
+* **Situational Conversational Acknowledgements**: Pre-rendered, affirmative spoken acknowledgements (`Sure`, `On it`, `Looking into that`) matched dynamically to task context (agent tasks, browser searches, file operations, system actions) to eliminate cloud latency without annoying empty vocal fillers ("Ah", "Haa").
+* **Duplex Cloud Streaming**: Resilient Gemini Live WebSocket session with automatic reconnection backoff, wake confirmation, and session resumption.
+* **Playback Fencing & Interruption**: Generation-tracked audio buffer instantly halts and flushes speaker queues whenever speech is detected.
+* **Voice Subsystem Lock**: The baseline voice engine is frozen at `audio/.voice_lock.json` and `universal-voice/.voice_lock.json`. Enforced by automated checksum verification (`scripts/verify_voice_lock.py`).
+
+### 2. Sovereign Desktop Actuation & Control (`jarvis_control`)
+* **Wayland Actuators**: Emulated input receipts via `wlr-virtual` / `uinput` for reliable Wayland keyboard typing, modifier chords, and pointer navigation.
+* **Hyprland Window Management**: Programmatic workspace switching, window focus, tiling geometry, minimization, and process lifecycle management.
+* **Natural Language Parsing Worker**: Dedicated local parsing service translating natural speech phrases into structured desktop actuator commands.
+* **Safety & Execution Policy**: Gated execution boundary with denied shell patterns, confirmation words for irreversible actions, and dry-run preview capabilities.
+* **Action Evidence Collector**: Structured telemetry recording timestamps, action parameters, verification receipts, and failure outcomes.
+
+### 3. Sovereign 4-Tier Memory Vault (`jarvis_memory`)
+* **SQLite WAL Ledger**: ACID-compliant knowledge base with fact deduplication, revision history, and atomic updates.
+* **Hybrid RRF Retrieval**: Reciprocal Rank Fusion blending full-text FTS5 (BM25) with dense vector embeddings (`text-embedding-004` or Ollama).
+* **Taxonomy & Categorization**: Structured schema classifying knowledge across preferences, workflow habits, technical context, entities, and temporal notes.
+* **Quality & Evaluation Metrics**: Automated metrics (`evaluation.py`) assessing retrieval precision, factual recall, and stale memory decay.
+* **Obsidian Vault Sync**: Continuous bidirectional sync with Obsidian markdown vaults (`JARVIS-OMA Memory/`).
+* **MCP Interface**: Exposes memory tools via standard Model Context Protocol (stdio) for agent fleet consumption.
+
+### 4. Connectors & External Integrations (`connectors/`)
+* **Composio Bridge**: Out-of-the-box integration with Composio tools (GitHub, Google Workspace, Slack, Jira, etc.) with automatic session admission.
+* **API-Anything Bridge**: Generic REST/GraphQL connector translating conversational requests into structured HTTP invocations.
+* **Integration Health Status**: Live status and credential monitoring reporting connection states to system telemetry.
+
+### 5. Hermes Multi-Agent Orchestration (`orchestration/`)
+* **Hermes Gateway Worker**: Durable gateway managing background subagent execution with heartbeat monitoring and state persistence.
+* **Hermes API Server**: Dedicated FastAPI REST interface (`orchestration/hermes_api.py`) exposing agent delegation endpoints.
+* **Task Event Lifecycle**: Standardized UI event contracts (`task_events.py`) dispatching start, progress, milestone, receipt, and completion notifications.
+* **Desktop Presentation Cards**: Rich Quickshell notification widgets rendering agent progress cards on the desktop.
+
+---
+
+## 📁 Repository Layout
 
 ```
 JARVIS OS/
-├── jarvis_voice/              # Sovereign Voice Core
-│   ├── config.py              # XDG config, paths, and environment loader
-│   ├── daemon.py              # LiveVoice & Gemini Live duplex loop (integrated with memory)
-│   ├── ipc.py                 # Protected Unix domain control socket server
-│   ├── playback.py            # PipeWire playback engine & buffer
-│   ├── recovery.py            # Hardened connection recovery logic
-│   └── speech.py              # Silero VAD & turn gating
+├── voice_layer/               # Human Interaction Engine & Voice Core
+│   ├── daemon.py              # Duplex live voice loop and state orchestrator
+│   ├── needle_router.py       # Cactus-Needle local command router (<200ms)
+│   ├── needle_worker.py       # Subprocess worker for offline transcription
+│   ├── acknowledgements.py    # Situational acknowledgement dispatcher
+│   ├── interaction.py         # Interaction lifecycle & playback fence
+│   ├── playback.py            # PipeWire audio sink and output buffer
+│   ├── speech.py              # Silero VAD turn gating
+│   ├── standby.py             # Low-power standby state controller
+│   └── assets/                # Affirmative PCM acknowledgement audio assets
 │
-├── jarvis_memory/             # Sovereign 4-Tier Memory Package
-│   ├── bridge.py              # MemoryBridge orchestrator
-│   ├── knowledge.py           # SQLite WAL knowledge ledger
-│   ├── vector_store.py        # SQLite vector cache & cosine similarity
-│   ├── embeddings.py          # Gemini & Ollama embedding adapters
-│   ├── retrieval.py           # BM25 + FTS5 lexical retriever
-│   ├── hybrid.py              # Reciprocal Rank Fusion (RRF)
-│   ├── session.py             # Conversation history persistence
-│   ├── capture.py             # Rule-based & heuristic fact capture
-│   ├── obsidian.py            # Bidirectional Obsidian vault sync
-│   ├── mcp_server.py          # Model Context Protocol stdio server
-│   ├── skills.py              # Memory tool router & voice adapter
-│   └── config.py              # Memory configuration & validation
-│
-├── jarvis_control/            # Sovereign Control & Information Retrieval Package
+├── jarvis_control/            # Sovereign Desktop Control & Actuation
 │   ├── tools.py               # Desktop actuators & tool execution engine
-│   ├── discovery.py           # System architecture map & discovery engine
-│   ├── capabilities.py        # Dynamic capability manifest
-│   ├── browser.py             # Browser automation & web search
-│   ├── page_text.py           # Clean browser text extraction & paste
-│   ├── keys.py                # Keysym normalization & shortcut chords
-│   ├── security.py            # Data-only boundaries & credential redaction
-│   ├── tasks.py               # Durable background task manager
-│   ├── skills.py              # ControlSkills & UnifiedSkills router
-│   └── __main__.py            # jarvis-control CLI
+│   ├── wayland_keyboard.py    # Wayland keyboard simulation and receipts
+│   ├── wayland_pointer.py     # Wayland pointer simulation & coordinate mapping
+│   ├── parsing_service.py     # Local natural language command parsing
+│   ├── execution_policy.py    # Security admission and confirmation policies
+│   ├── evidence.py            # Execution receipts & audit logging
+│   └── discovery.py           # Omarchy system architecture map
 │
-├── bin/
+├── jarvis_memory/             # Sovereign 4-Tier Memory Vault
+│   ├── bridge.py              # MemoryBridge facade orchestrator
+│   ├── knowledge.py           # SQLite WAL knowledge ledger
+│   ├── vector_store.py        # Vector embedding store & cosine math
+│   ├── hybrid.py              # Reciprocal Rank Fusion (BM25 + Vector)
+│   ├── categories.py          # Structured taxonomy & category definitions
+│   ├── evaluation.py          # Retrieval quality evaluation metrics
+│   ├── vault_layout.py        # Standardized filesystem vault conventions
+│   ├── obsidian.py            # Bidirectional Obsidian markdown sync
+│   └── mcp_server.py          # Model Context Protocol stdio server
+│
+├── connectors/                # External App & Service Connectors
+│   ├── composio.py            # Composio platform tool integration
+│   ├── api_anything.py        # Generic REST/GraphQL API connector
+│   ├── api_service.py         # Connector dispatcher service
+│   └── integration_status.py  # Health & authentication monitor
+│
+├── orchestration/             # Fleet Orchestration & Multi-Agent Bridge
+│   ├── hermes_api.py          # FastAPI REST endpoint for agent delegation
+│   ├── durable_hermes.py      # Durable Hermes gateway worker
+│   ├── task_events.py         # Task event lifecycle contracts
+│   ├── task_presentation.py   # Desktop notification presentation cards
+│   ├── model_routes.py        # Model routing & fallback cascades
+│   └── tool_tiers.py          # Tool permission tiers & isolation
+│
+├── bin/                       # Executable CLI Wrappers
 │   ├── jarvis                 # Unified system CLI
 │   ├── jarvis-voice           # Voice daemon CLI wrapper
-│   ├── jarvis-memory          # Sovereign memory CLI wrapper
-│   └── jarvis-control         # Sovereign control CLI wrapper
+│   ├── jarvis-memory          # Memory vault CLI wrapper
+│   └── jarvis-control         # Desktop control CLI wrapper
 │
-├── memory/                    # Upstream reference models, scripts & vault templates
-│   ├── memory-system/         # Reference implementations (Tiers 01-07)
-│   ├── scripts/               # Obsidian vault sync scripts
-│   └── data/obsidian-vault/   # Memory vault notes
+├── scripts/                   # System Maintenance & Verification Scripts
+│   ├── install.sh             # System package installer
+│   ├── verify_voice_lock.py   # Voice subsystem integrity checker
+│   ├── behavior_gate.py       # Behavior regression testing gate
+│   └── clean_memory_vault.py  # Memory vault maintenance utility
 │
-├── tests/
-│   ├── test_cli.py ...        # Voice unit & integration tests
-│   └── test_memory/           # Memory unit & integration test suites
+├── tests/                     # Comprehensive Pytest Test Suites (2,100+ tests)
+│   ├── test_hie_*.py          # Voice interaction engine test suite
+│   ├── test_control/          # Desktop actuation test suite
+│   ├── test_memory/           # Memory vault test suite
+│   ├── test_connectors/       # Integration & connector test suite
+│   └── test_orchestration/    # Hermes agent orchestration test suite
 │
-└── docs/                      # Architectural specifications & design plans
+├── audio/.voice_lock.json     # Baseline PC voice freeze manifest
+├── universal-voice/           # Standalone universal voice engine baseline
+└── JARVIS OS DOCS/            # Architecture specifications & audit records
 ```
 
 ---
 
-## Quick Start & Verification
+## 🛠️ CLI Tools & Everyday Usage
 
-### 1. Run Verification Suite
+### Unified `jarvis` CLI
 ```bash
-.venv/bin/pytest tests/ -v
+# Query system status, connectivity, and active models
+jarvis doctor
+
+# View real-time system monitor
+jarvis monitor
+
+# Execute desktop command directly
+jarvis task "open firefox and navigate to github.com"
 ```
 
-### 2. Voice CLI Control
+### Voice Core CLI (`jarvis-voice`)
 ```bash
+# Check dependencies and audio devices without opening streams
 jarvis-voice --check
-jarvis-voice status
-jarvis-voice listen toggle
-```
 
-### 3. Memory CLI Control
-```bash
-# View storage statistics
-jarvis-memory stats
-
-# Store a fact
-jarvis-memory store "User prefers dark mode and concise responses."
-
-# Search memory
-jarvis-memory search "concise responses"
-
-# Sync with Obsidian vault
-jarvis-memory sync --vault memory/data/obsidian-vault
-```
-
-### 3. Install & Enable Service
-```bash
-scripts/install.sh
-systemctl --user enable --now jarvis-voice.service
-```
-
-### 4. CLI Control
-```bash
+# Inspect live status, latency metrics, and connection state
 jarvis-voice status
 jarvis-voice status --json
+
+# Toggle active listening or enter low-power standby
 jarvis-voice listen toggle
+jarvis-voice standby
+
+# Discard current speech and cancel active playback
 jarvis-voice listen cancel
 ```
 
-## Voice response quality and timing
+### Sovereign Memory CLI (`jarvis-memory`)
+```bash
+# View storage statistics and fact counts
+jarvis-memory stats
 
-The foundation follows the organized source in
-`/home/g0pi/Projects/JARVIS-OMA/Oma Jarvis/voice`; see
-[the audio map](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/voice-foundation.md) for the runtime components and checks.
-Replies favor a clear, relaxed voice and short answers. The configured voice and
-PCM playback buffering are preserved.
+# Store a verified personal fact
+jarvis-memory store "User preferences: dark theme, 400ms turn silence, local command priority."
 
-`device` selects the microphone source; `output_device` selects the speaker sink.
-An empty value uses the system default. The CLI respects the configured model
-unless `--model` or `GEMINI_LIVE_MODEL` overrides it.
+# Hybrid search across knowledge base
+jarvis-memory search "theme preferences"
 
-`jarvis-voice status --json` exposes `latency.speech_end_to_first_audio_ms`
-(local turn close to first accepted provider audio) and
-`latency.first_audio_chunk_to_write_ms` (first queued audio to playback write).
-These are software timings, not measured sound reaching the speaker. A null
-value means the measurement is not available. Instant replies are not guaranteed:
-local endpoint detection, provider response time, network, and playback all add delay.
+# Sync with external Obsidian vault
+jarvis-memory sync --vault ~/Documents/Obsidian/JarvisVault
+```
 
-## Voice checks
+### Desktop Control CLI (`jarvis-control`)
+```bash
+# Run system discovery
+jarvis-control discovery
 
-See [voice test commands](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/voice-test-commands.md) for spoken checks of reply speed,
-memory storage/search, persistence after restart, and removal of a test fact.
-Memory tools are attached by the production voice startup. Storage work is serialized
-off the audio event loop. The voice and memory CLIs use the same config at
-`$XDG_CONFIG_HOME/jarvis-voice/config.toml` (default `~/.config/jarvis-voice/config.toml`);
-`jarvis-memory --config` can select an explicit file.
+# Test keyboard typing receipt
+jarvis-control type "Hello from JARVIS OS"
 
-## Omarchy desktop skill
+# Focus specific window by title
+jarvis-control focus "Terminal"
+```
 
-JARVIS includes Omarchy command discovery, desktop control and on-demand skill
-guides. See [the integration guide](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/omarchy-integration.md) for supported
-paths, safeguards and spoken checks. The full guides are bundled with the installed
-control package; they are not injected into every voice turn.
+---
 
-The [omarchy-voice port guide](JARVIS%20OS%20DOCS/references/jarvis-os/implementation/docs/omarchy-voice-port.md) documents the imported
-source, shared control settings, optional camera/task features and verification.
+## ⚙️ Service Management (systemd)
 
-## Central build documentation
+JARVIS OS runs as modular systemd user services:
 
-All consolidated JARVIS OS build documentation is in [JARVIS OS DOCS](JARVIS%20OS%20DOCS/README.md).
+```bash
+# Install core packages and link binaries
+./scripts/install.sh
+
+# Enable and start user services
+systemctl --user daemon-reload
+systemctl --user enable --now jarvis-voice.service
+systemctl --user enable --now jarvis-api-agent.service
+systemctl --user enable --now jarvis-monitor.service
+
+# Check service status
+systemctl --user status jarvis-voice.service
+journalctl --user -u jarvis-voice.service -f
+```
+
+---
+
+## 🧪 Testing & Verification
+
+JARVIS OS includes an exhaustive regression suite with over 2,100 unit and integration tests.
+
+### 1. Verify Voice Baseline Freeze
+The voice subsystem is protected by explicit change-control manifests. Verify before and after modifying related code:
+```bash
+python scripts/verify_voice_lock.py
+python universal-voice/scripts/verify_voice_lock.py
+```
+
+### 2. Run Full Python Test Suite
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/ -q
+```
+
+### 3. Run Behavior Gate Checks
+```bash
+python scripts/behavior_gate.py --report
+```
+
+---
+
+## 🔒 Security & Policy Boundaries
+
+1. **Voice Baseline Freezes**: Core audio processing and speech assets are locked against unintended modifications. Changes require explicit user authorization.
+2. **Execution Admission**: Destructive shell invocations (e.g., `rm -rf`, disk formatting, system reboot) require explicit confirmation gates.
+3. **Data Protection**: Personal facts and transcripts remain in sovereign local storage (SQLite WAL + Obsidian markdown) without telemetry or third-party leakage.
+4. **Local Socket Permissions**: Control sockets in `$XDG_RUNTIME_DIR/jarvis/` are restricted to mode `0600` (user-only).
