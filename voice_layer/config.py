@@ -123,7 +123,7 @@ class Config:
     language_codes: list = field(default_factory=lambda: ['en-US', 'en-IN', 'en-GB'])
     api_key_env: str = 'GEMINI_API_KEY'
     enable_tools: bool = True
-    allow_shell: bool = False
+    allow_shell: bool = True
     dry_run: bool = False
     tasks_enabled: bool = True
     vision_enabled: bool = False

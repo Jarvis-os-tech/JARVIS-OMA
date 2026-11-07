@@ -51,6 +51,8 @@ class OfflineSpeech:
 def result_text(name, arguments, outcome):
     if not outcome.completed:
         return 'I could not verify that the local command completed.'
+    if name == 'file_operation' and arguments.get('action') == 'navigate':
+        return f"Opened {arguments.get('path')}."
     if name == 'launch_app':
         return 'The requested application is open.'
     if name == 'system_control':

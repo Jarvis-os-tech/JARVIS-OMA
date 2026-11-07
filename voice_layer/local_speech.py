@@ -85,6 +85,9 @@ def command_for(text, apps):
             return ('system_control', {'action': noun + '_adjust', 'value': 5})
         if text in (f'{noun} down', f'decrease {noun}', f'turn down the {noun}'):
             return ('system_control', {'action': noun + '_adjust', 'value': -5})
+    nav_match = re.fullmatch(r'(?:navigate to|go to|open|show) (?:the |my )?(downloads|documents|pictures|projects|videos|music|desktop)(?: folder| directory| section)?', text)
+    if nav_match:
+        return ('file_operation', {'action': 'navigate', 'path': nav_match[1].capitalize()})
     match = re.fullmatch(r'(?:open|launch|start) (.+)', text)
     if match and match[1] in apps:
         return ('launch_app', {'app': apps[match[1]]})
@@ -99,7 +102,7 @@ def could_be_command(text):
     return bool(text and text.split()[0] in {
         'open', 'launch', 'start', 'volume', 'brightness', 'set', 'increase',
         'decrease', 'turn', 'switch', 'workspace', 'go', 'stop', 'be',
-        'standby', 'stand', 'mute', 'unmute'})
+        'standby', 'stand', 'mute', 'unmute', 'navigate'})
 
 
 class WhistleClient:

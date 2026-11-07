@@ -417,7 +417,7 @@
       "mode_before": 420
     },
     "voice_layer/config.py": {
-      "sha256": "e30c4e1942a2df84675305ceb2456c0f687dde1dbbe6541e34b431bbee29c7c9",
+      "sha256": "131a1c275b3730d8a5796fc19b5ec25871e8037b423725e70f9c8851a11ef02b",
       "mode_before": 420
     },
     "voice_layer/daemon.py": {
@@ -449,7 +449,7 @@
       "mode_before": 420
     },
     "voice_layer/local_speech.py": {
-      "sha256": "1829f14b80182f74b96ccc93e32bf78827934ec9efbc8bb5c5ddaf507e058297",
+      "sha256": "aa96b1f6dbeb768a94a4e396e30490d97540126cdd4e48942b3e8d58aba0a25e",
       "mode_before": 420
     },
     "voice_layer/microphone.py": {
@@ -465,11 +465,11 @@
       "mode_before": 420
     },
     "voice_layer/offline_speech.py": {
-      "sha256": "6df4eeb2878670840e1d39e60dec1022ad61234afc3dfae5b466a3745c6d12c1",
+      "sha256": "0858d1d18ae288eb96e09a3c7a1e5a99e6a8b65006a3a2b9748708f49c1801de",
       "mode_before": 420
     },
     "voice_layer/persona.py": {
-      "sha256": "2d76f5dffe3f09f361d1bef52a2d61573543d2ff8fed818a7074cb683fa1e702",
+      "sha256": "f0574f041795d4097ec27e3b10467938d0f2e9826aa1f210990c70be6647c3a5",
       "mode_before": 420
     },
     "voice_layer/playback.py": {
