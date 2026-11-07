@@ -28,11 +28,11 @@ Rectangle {
     readonly property bool hasActions: Array.isArray(widgetData.actions) && widgetData.actions.length > 0
     readonly property int textLength: String(widgetData.text || "").length
     implicitWidth: widget.kind === "view" ? Math.min(520, Math.max(340, widgetData.width || 380))
-        : ["chart", "table", "image", "pip"].includes(widget.kind) ? 460
+        : ["chart", "table", "image", "pip", "3d"].includes(widget.kind) ? 460
         : widget.kind === "text" && textLength > 250 ? 420
         : 340
     implicitHeight: (widget.kind === "view" ? Math.min(660, (widgetData.layout ? generatedHeight : 280) + 72)
-        : ["image", "pip"].includes(widget.kind) ? 320
+        : ["image", "pip", "3d"].includes(widget.kind) ? 340
         : widget.kind === "qr" ? 340
         : ["chart", "table"].includes(widget.kind) ? 320
         : widget.kind === "progress" ? 115
@@ -42,7 +42,7 @@ Rectangle {
     property real generatedHeight: 300
     radius: 20
     color: "#EF14202D"
-    border.color: card.widget.pinned ? "#55DDEA" : "#4A6075"
+    border.color: (card.widget && card.widget.pinned) ? "#55DDEA" : "#4A6075"
     HoverHandler { id: hover }
     clip: true
 
@@ -59,7 +59,7 @@ Rectangle {
                 Layout.preferredHeight: 30
                 Text {
                     anchors.fill: parent
-                    text: card.widget.title
+                    text: (card.widget && card.widget.title) ? card.widget.title : ""
                     textFormat: Text.PlainText
                     color: "#F2F5FA"
                     font.pixelSize: 16
@@ -87,7 +87,10 @@ Rectangle {
         Loader {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            sourceComponent: card.widget.kind === "task" ? taskBlock : card.widget.kind === "view" ? generatedBlock : card.widget.kind === "text" ? textBlock
+            sourceComponent: card.widget.kind === "3d" ? threeDBlock
+                : card.widget.kind === "task" ? taskBlock
+                : card.widget.kind === "view" ? generatedBlock
+                : card.widget.kind === "text" ? textBlock
                 : card.widget.kind === "table" ? tableBlock
                 : card.widget.kind === "chart" ? chartBlock
                 : card.widget.kind === "progress" ? progressBlock
@@ -223,6 +226,76 @@ Rectangle {
     }
 
     Component {
+        id: threeDBlock
+        ColumnLayout {
+            spacing: 8
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: "#101923"
+                radius: 12
+                clip: true
+
+                AnimatedImage {
+                    id: turntableAnim
+                    anchors.fill: parent
+                    source: String(card.widgetData.source || "")
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    playing: card.activeMedia
+                }
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 8
+                    radius: 6
+                    color: "#A014202D"
+                    border.color: "#354A5E"
+                    implicitHeight: 22
+                    implicitWidth: badgeText.implicitWidth + 12
+
+                    Text {
+                        id: badgeText
+                        anchors.centerIn: parent
+                        text: "3D LIVE"
+                        color: "#55DDEA"
+                        font.pixelSize: 10
+                        font.weight: Font.Bold
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                visible: card.widgetData.dimensions !== undefined
+
+                Text {
+                    Layout.fillWidth: true
+                    text: {
+                        var d = card.widgetData.dimensions || {width: 0, height: 0, depth: 0, unit: "m"}
+                        return d.width + " × " + d.height + " × " + d.depth + " " + (d.unit || "m") + "  •  " + (card.widgetData.triangles || 0) + " tris"
+                    }
+                    color: "#8DA0B5"
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: String(card.widgetData.caption || "")
+                textFormat: Text.PlainText
+                color: "#B4BFCE"
+                wrapMode: Text.WordWrap
+                font.pixelSize: 13
+            }
+        }
+    }
+
+    Component {
         id: imageBlock
         ColumnLayout {
             spacing: 8
@@ -240,7 +313,7 @@ Rectangle {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     mipmap: card.widget.kind !== "qr"
-                    Accessible.name: card.widget.title
+                    Accessible.name: (card.widget && card.widget.title) ? card.widget.title : ""
                 }
                 Text {
                     anchors.centerIn: parent
