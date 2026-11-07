@@ -460,7 +460,8 @@ class NLUEngine:
         auth_word_pattern = (
             r'\b(authori[zs]e|authori[zs]ation|authori[zs]ing|authori[zs]ed|'
             r'auth|authenticat(e|ion|ing|ed)|re-?authori[zs]e|re-?authenticat(e|ion)|'
-            r'login\s*page|log\s*in|sign\s*in|connect|reconnect|link|re-?link)\b'
+            r'login\s*page|log\s*in|sign\s*in|connect|reconnect|link|re-?link|'
+            r'integrat(e|ion)|set\s*up|setup|sync|access)\b'
         )
         has_auth_word = bool(re.search(auth_word_pattern, lower_user))
 

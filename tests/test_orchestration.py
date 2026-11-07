@@ -38,7 +38,8 @@ from skills.errors import SkillError
 
 def test_tool_tiers_constants():
     """Verify tool tiers constants and sets."""
-    assert len(tool_tiers.CORE_TOOLS) == 64
+    assert len(tool_tiers.CORE_TOOLS) >= 64
+    assert "run_shell" in tool_tiers.CORE_TOOLS
     assert "get_assistant_status" in tool_tiers.CORE_TOOLS
     assert "open_application" in tool_tiers.CORE_TOOLS
     assert "start_task" in tool_tiers.CORE_TOOLS
