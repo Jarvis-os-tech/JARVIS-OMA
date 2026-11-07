@@ -19,13 +19,14 @@ try:
 except ModuleNotFoundError:
     from view_schema import validate_view  # Installed shell's short-lived input helper.
 
-KINDS = {"view", "text", "qr", "image", "pip", "table", "chart", "progress"}
+KINDS = {"view", "text", "qr", "image", "pip", "table", "chart", "progress", "3d"}
 FIELDS = {
     "text": {"text", "actions"}, "qr": {"content"}, "image": {"path", "caption", "actions"},
     "pip": {"path", "caption", "actions"}, "table": {"columns", "rows"},
     "chart": {"labels", "values", "unit"},
     "progress": {"text", "value", "maximum", "actions"},
     "view": {"state", "computed", "layout", "width"},
+    "3d": {"script", "caption", "actions"},
 }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_SUFFIXES = {".mp4", ".webm", ".mkv"}
@@ -127,6 +128,35 @@ def validate(kind, data):
             raise ValueError("This bar-chart component supports non-negative values")
         return {"labels": [text(label, 80) for label in labels], "values": values,
                 "unit": text(data.get("unit", ""), 40)}
+    if kind == "3d":
+        script_content = text(data.get("script", ""), 48000)
+        if not script_content.strip():
+            raise ValueError("3D widget requires a Three.js script")
+        try:
+            from ui.jarvis_widgets.three_compiler import compile_3d
+        except ModuleNotFoundError:
+            from three_compiler import compile_3d
+        compiled = compile_3d(script_content, title="3D Model")
+        if not compiled.get("valid", False):
+            raise ValueError(f"3D script error: {compiled.get('error', 'Compilation failed')}")
+
+        actions = [
+            {"label": "Inspect 3D", "action": f"inspect_3d:{compiled['model_path']}", "primary": True},
+            {"label": "Export GLB", "action": f"export_glb:{compiled['model_path']}", "primary": False}
+        ]
+        if "actions" in data and isinstance(data["actions"], list):
+            actions.extend(data["actions"])
+
+        return {
+            "source": compiled["source"],
+            "model_path": compiled["model_path"],
+            "script_path": compiled["script_path"],
+            "caption": text(data.get("caption", ""), 1000),
+            "dimensions": compiled["dimensions"],
+            "triangles": compiled["triangles"],
+            "vertices": compiled["vertices"],
+            "actions": actions
+        }
     result = {"text": text(data.get("text", ""), 1000)}
     if "actions" in data and isinstance(data["actions"], list):
         result["actions"] = [
