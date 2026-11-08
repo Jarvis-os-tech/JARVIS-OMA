@@ -38,6 +38,10 @@ import com.jarvis.os.ui.theme.ObsidianDark
 import com.jarvis.os.ui.theme.TextMuted
 import com.jarvis.os.ui.theme.TextWhite
 import com.jarvis.os.update.MobileUpdater
+import com.jarvis.os.update.UpdateMessages
+import com.jarvis.os.ui.installedVersionLabel
+import kotlinx.coroutines.CancellationException
+import androidx.compose.material3.LinearProgressIndicator
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,6 +55,7 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     var updateBusy by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf("") }
+    val installedVersion = remember(context) { installedVersionLabel(context) }
 
     Column(
         modifier = modifier
@@ -78,7 +83,7 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text(
-                    text = if (hasVoiceKey) "Gemini 2.0 Flash / Live Active" else "API Key Missing",
+                    text = if (hasVoiceKey) "Gemini Live Voice Active" else "API Key Missing",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextWhite
@@ -113,6 +118,23 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        Text("PHONE SYSTEM ACCESS", color = ElectricCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Enable the controls you want JARVIS to use. Android will ask you to grant access.", color = TextMuted, fontSize = 12.sp)
+        listOf(
+            "System settings control" to android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS,
+            "Voice navigation and screen control" to android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS,
+            "Do Not Disturb control" to android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+        ).forEach { (label, action) ->
+            OutlinedButton(onClick = {
+                val intent = android.content.Intent(action).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (action == android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                    intent.data = android.net.Uri.parse("package:${context.packageName}")
+                context.startActivity(intent)
+            }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
         // SECTION 2: OTA SOFTWARE UPDATES
         Text(
             text = "SOFTWARE & UPDATES",
@@ -136,7 +158,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(text = "Current Build", fontSize = 14.sp, color = TextWhite)
-                    Text(text = "v1.2.3 (Debug)", fontSize = 13.sp, color = ElectricCyan, fontWeight = FontWeight.Bold)
+                    Text(text = installedVersion, fontSize = 13.sp, color = ElectricCyan, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -150,12 +172,16 @@ fun SettingsScreen(
 
                 OutlinedButton(
                     onClick = {
+                        updateBusy = true
+                        updateStatus = "Checking public updates…"
                         coroutineScope.launch {
-                            updateBusy = true
                             try {
                                 updateStatus = MobileUpdater(context).update { updateStatus = it }
-                            } catch (_: Exception) {
-                                updateStatus = "Update check failed. Check network connection."
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                android.util.Log.w("JarvisUpdate", "Manual update failed: ${error.javaClass.simpleName}")
+                                updateStatus = UpdateMessages.failure(error)
                             } finally {
                                 updateBusy = false
                             }
@@ -169,13 +195,23 @@ fun SettingsScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, CyberBorder)
                 ) {
                     Text(
-                        text = if (updateBusy) "Checking Releases…" else "CHECK FOR UPDATES",
+                        text = if (updateBusy) "UPDATE IN PROGRESS…" else "UPDATE JARVIS",
                         color = TextWhite,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
 
+                if (updateBusy) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                OutlinedButton(onClick = {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/Jarvis-os-tech/JARVIS-Mobile/releases/latest"))
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                }, modifier = Modifier.fillMaxWidth(), enabled = !updateBusy) {
+                    Text("OPEN PUBLIC DOWNLOAD")
+                }
                 if (updateStatus.isNotBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = updateStatus, fontSize = 11.sp, color = TextMuted)

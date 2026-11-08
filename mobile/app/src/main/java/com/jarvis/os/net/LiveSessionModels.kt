@@ -28,10 +28,11 @@ data class FunctionCall(
  * Helpers for framing, serializing, and parsing Gemini Live bidirectional WebSocket payloads.
  */
 object LiveSessionModels {
-    const val DEFAULT_MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+    const val DEFAULT_MODEL = "models/gemini-3.8-live"
     val SUPPORTED_LIVE_MODELS = listOf(
         DEFAULT_MODEL,
-        "models/gemini-3.1-flash-live-preview"
+        "models/gemini-3.1-flash-live-preview",
+        "models/gemini-2.5-flash-native-audio-preview-12-2025"
     )
 
     fun buildSetupJson(
@@ -48,6 +49,9 @@ object LiveSessionModels {
         val responseModalities = JSONArray()
         responseModalities.put("AUDIO")
         generationConfig.put("responseModalities", responseModalities)
+        if (model.contains("gemini-2.5") && model.contains("native-audio")) {
+            generationConfig.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+        }
 
         val speechConfig = JSONObject()
         val voiceConfig = JSONObject()
@@ -61,11 +65,7 @@ object LiveSessionModels {
         setup.put("outputAudioTranscription", JSONObject())
         setup.put("realtimeInputConfig", JSONObject()
             .put("activityHandling", "START_OF_ACTIVITY_INTERRUPTS")
-            .put("automaticActivityDetection", JSONObject()
-                .put("disabled", false)
-                .put("startOfSpeechSensitivity", "START_SENSITIVITY_HIGH")
-                .put("prefixPaddingMs", 80)
-                .put("silenceDurationMs", 500)))
+            .put("automaticActivityDetection", JSONObject().put("disabled", true)))
 
         val systemInstruction = JSONObject()
         val parts = JSONArray()
@@ -105,6 +105,9 @@ object LiveSessionModels {
         root.put("setup", setup)
         return root.toString()
     }
+
+    fun buildActivityJson(start: Boolean): String = JSONObject().put("realtimeInput",
+        JSONObject().put(if (start) "activityStart" else "activityEnd", JSONObject())).toString()
 
     fun buildAudioChunkJson(pcmBytes: ByteArray): String {
         val base64Data = Base64.getEncoder().encodeToString(pcmBytes)
