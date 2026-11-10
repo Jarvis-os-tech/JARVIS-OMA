@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-ai.teaching",
+  "name": "JARVIS Visual Teaching Whiteboard",
+  "version": "1.0.0",
+  "description": "Interactive whiteboard, live algorithm visualizer and diagram drawer for voice teaching mode.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "TeachingOverlay.qml"
+  }
+}

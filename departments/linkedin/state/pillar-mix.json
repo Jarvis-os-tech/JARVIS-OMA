@@ -1,0 +1,29 @@
+{
+  "target_cadence_posts_per_week": 4,
+  "pillars": [
+    {
+      "name": "Authority & Build Logs",
+      "ratio": 0.40,
+      "description": "Deep dives into engineering, system design, architectural breakthroughs, and live metrics.",
+      "best_formulas": ["F7", "F1", "F10", "F17"]
+    },
+    {
+      "name": "Actionable Frameworks",
+      "ratio": 0.30,
+      "description": "Step-by-step tactics, checklists, or teardowns that the reader can execute immediately.",
+      "best_formulas": ["F8", "F15", "F19"]
+    },
+    {
+      "name": "Founder Story & Vulnerability",
+      "ratio": 0.20,
+      "description": "Behind-the-scenes lessons, pivotal moments, hiring wins/mistakes, and voice resets.",
+      "best_formulas": ["F3", "F4", "F11", "F16"]
+    },
+    {
+      "name": "Contrarian & Perspective",
+      "ratio": 0.10,
+      "description": "Challenging industry sacred cows, AI hype vs reality, and forward-looking theses.",
+      "best_formulas": ["F2", "F18", "F20"]
+    }
+  ]
+}

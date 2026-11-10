@@ -64,6 +64,7 @@ from skills.domains.orchestration import OrchestrationDomain, ADAPTERS as ORCHES
 from skills.domains.composio import ComposioDomain, ADAPTERS as COMPOSIO_ADAPTERS, ADAPTER_COMMANDS as COMPOSIO_COMMANDS
 from skills.domains.api_anything import ApiAnythingDomain, ADAPTERS as API_ANYTHING_ADAPTERS, ADAPTER_COMMANDS as API_ANYTHING_COMMANDS
 from skills.domains.widgets import WidgetsDomain, ADAPTERS as WIDGET_ADAPTERS, ADAPTER_COMMANDS as WIDGET_COMMANDS
+from skills.domains.linkedin import LinkedInDomain, ADAPTERS as LINKEDIN_ADAPTERS, ADAPTER_COMMANDS as LINKEDIN_COMMANDS
 from orchestration.tool_tiers import CORE_TOOLS, META_TOOLS, DOMAINS, META_SPECS, domain_for_tool
 
 
@@ -71,7 +72,7 @@ def _normalized(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.casefold())
 
 
-class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain):
+class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain, LinkedInDomain):
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
     # ── Adapter → method mapping ──────────────────────────────────────
@@ -82,6 +83,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **COMPOSIO_ADAPTERS,
         **API_ANYTHING_ADAPTERS,
         **WIDGET_ADAPTERS,
+        **LINKEDIN_ADAPTERS,
         'harness.status': '_adapter_harness_status',
         'harness.start_check': '_adapter_start_harness_check',
         'harness.check_status': '_adapter_harness_check_status',
@@ -243,6 +245,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **ORCHESTRATION_COMMANDS,
         **COMPOSIO_COMMANDS,
         **API_ANYTHING_COMMANDS,
+        **LINKEDIN_COMMANDS,
         'jarvis.switch_mode': ('systemctl', 'git'),
         'jarvis.get_mode': (),
         'jarvis.sync_branch': ('systemctl', 'git'),
@@ -987,6 +990,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
 
         if not self._arguments_match(arguments, spec['parameters_json_schema']):
             raise SkillError(f'invalid arguments for {name}')
+
         handler = getattr(self, self.ADAPTERS[spec['adapter']])
         try:
             from skills.action_verification import verify_adapter_action
@@ -1585,6 +1589,27 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         apps = self._applications()
         exact = [(app_id, label) for app_id, label in apps.items()
                  if requested in {_normalized(label), _normalized(Path(app_id).stem)}]
+        if not exact:
+            aliases = {
+                'vscode': 'com.microsoft.VSCode.desktop',
+                'code': 'com.microsoft.VSCode.desktop',
+                'visualstudiocode': 'com.microsoft.VSCode.desktop',
+                'terminal': 'foot.desktop',
+                'browser': 'google-chrome.desktop',
+                'chrome': 'google-chrome.desktop',
+                'files': 'org.gnome.Nautilus.desktop',
+                'nautilus': 'org.gnome.Nautilus.desktop',
+                'spotify': 'spotify.desktop',
+                'discord': 'discord.desktop',
+            }
+            if requested in aliases and aliases[requested] in apps:
+                aid = aliases[requested]
+                exact = [(aid, apps[aid])]
+            else:
+                partial = [(a, l) for a, l in apps.items()
+                           if requested in _normalized(l) or requested in _normalized(Path(a).stem)]
+                if len(partial) == 1:
+                    exact = partial
         if len(exact) != 1:
             raise SkillError('application name is not an exact unique match; use list_applications')
         app_id, label = exact[0]

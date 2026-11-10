@@ -27,6 +27,7 @@ CORE_TOOLS = frozenset({
     'activate_teaching_mode', 'update_teaching_lesson', 'exit_teaching_mode', 'teaching_status',
     'run_shell', 'run_in_terminal', 'read_terminal', 'watch_terminal',
     'hypr_dispatch', 'hypr_query', 'read_screen', 'click_text', 'file_operation', 'system_control',
+    'omarchy_cli', 'omarchy_help',
 })
 META_TOOLS = frozenset({'discover_domain_tools', 'execute_domain_tool', 'parse_command_values'})
 DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',

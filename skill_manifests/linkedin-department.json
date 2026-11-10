@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "linkedin_draft_post",
+      "description": "Draft and stage a LinkedIn post through the LinkedIn Department (A3 PostWriter -> A10 Humanizer -> A12 Scheduler). The post is placed in the review queue for user approval before publishing.",
+      "adapter": "linkedin.draft_post",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "The technical or strategic topic to write about."
+          },
+          "angle": {
+            "type": "string",
+            "description": "Specific personal or counter-intuitive angle."
+          },
+          "formula_code": {
+            "type": "string",
+            "description": "Hook formula code (e.g. F7 Odd-Precision Ledger, F1 Platform Risk, F2 Obituary, F10 Contrarian, F3 Pivot).",
+            "default": "F7"
+          },
+          "pillar": {
+            "type": "string",
+            "description": "Content pillar (Authority & Build Logs, Actionable Frameworks, Founder Story & Vulnerability, Contrarian & Perspective).",
+            "default": "Authority & Build Logs"
+          },
+          "scheduled_slot": {
+            "type": "string",
+            "description": "Target publishing datetime string (e.g. 2026-11-08 09:00)."
+          }
+        },
+        "required": ["topic"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_plan_sprint",
+      "description": "Plan a multi-day LinkedIn content calendar balancing content pillars and hook formulas via A2 ContentPlanner.",
+      "adapter": "linkedin.plan_sprint",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "description": "Number of days in the sprint horizon (e.g. 7 or 14).",
+            "default": 7
+          },
+          "focus_topic": {
+            "type": "string",
+            "description": "Core theme or sprint focus.",
+            "default": "Autonomous AI Systems"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_audit_profile",
+      "description": "Audit the 9 core LinkedIn profile components and generate an authority rewrite and positioning thesis via A1 ProfileOptimizer.",
+      "adapter": "linkedin.audit_profile",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "current_profile": {
+            "type": "string",
+            "description": "Current profile text including headline, about, and experience."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Target positioning goal.",
+            "default": "Client acquisition and technical authority"
+          }
+        },
+        "required": ["current_profile"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_pending_reviews",
+      "description": "List all staged LinkedIn posts currently awaiting user review and approval in the department review queue.",
+      "adapter": "linkedin.pending_reviews",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_approve_post",
+      "description": "Record user approval for a staged post in the LinkedIn Department review queue. Optionally publish immediately.",
+      "adapter": "linkedin.approve_post",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "The post ID to approve (e.g. post_20261106_072633_f7)."
+          },
+          "publish_now": {
+            "type": "boolean",
+            "description": "If true, immediately publishes to the user's live LinkedIn feed upon approval.",
+            "default": false
+          }
+        },
+        "required": ["post_id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_sync_profile",
+      "description": "Synchronize live authenticated profile data from LinkedIn via Composio into local department state.",
+      "adapter": "linkedin.sync_profile",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "linkedin_propose_tool",
+      "description": "Use the Omarchy API Agent Daemon to reverse-engineer and propose a blueprint for a missing LinkedIn API capability.",
+      "adapter": "linkedin.propose_tool",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "problem": {
+            "type": "string",
+            "description": "Description of the missing operation (e.g. 'extract comments on a post', 'fetch follower count')."
+          }
+        },
+        "required": ["problem"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

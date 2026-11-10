@@ -1,75 +1,154 @@
-# Conversational Natural Language Understanding & Safe Confirmation Engine
+# Universal Visual Learning & Interactive Diagram Engine (Teaching Mode)
 
 * **Author:** Gopi
-* **Date:** 2026-11-05
+* **Date:** 2026-11-06
 
 ## Overview
 
-JARVIS OS requires an upgraded Natural Language Understanding (NLU) and confirmation processing architecture that supports fluid, human-like conversational interaction without requiring rigid confirmation keywords. Currently, actions held for confirmation (destructive system operations such as reboot, shutdown, and system package changes) fail unless the user recites one of seven hardcoded keywords (`yes`, `confirm`, `proceed`, `do it`, `yep`, `yeah`, `sure`) with strict trailing filler restrictions. Furthermore, command processing can misclassify polite conversational requests as advisory inquiries, and confirmation error messages instruct the assistant to demand explicit keywords.
+Teaching Mode is an interactive, voice-toggled pedagogical operating mode in JARVIS OS that transforms the assistant into a universal visual tutor. Designed around the cognitive principle that complex technical concepts are best understood when spoken explanations are synchronized with live visual artifacts, Teaching Mode observes what the student is doing on screen via Wayland capture (`grim`), speaks conversationally over PipeWire audio, and dynamically generates multi-modal visual explanations—including algorithmic animations, architectural diagrams, call graphs, and syntax walkthroughs—inside the desktop Quickshell HUD (`ui/jarvis_widgets`).
 
-This overhaul delivers conversational natural language understanding across `jarvis_control` by introducing a unified, deterministic confirmation and cancellation evaluator, expanding natural affirmative and negative vocabularies across English and Hinglish, updating tool schema contracts to prevent LLM keyword suppression, and establishing short-circuiting negation safety. The design strictly preserves the PC voice subsystem freeze (`audio/.voice_lock.json`), maintains zero cloud LLM runtime dependencies for local safety checks, and prevents architectural bloat.
+Whether the user asks to understand an algorithm (e.g. Bubble Sort, Dijkstra), a systems concept (e.g. Linux IPC, PipeWire audio graphs), a code error, or a math formulation, the engine automatically selects the optimal visual rendering pipeline, moves an animated pointer to spotlight key elements as it explains them, and restricts mutating desktop actuation to preserve student agency.
+
+---
 
 ## Analysis
 
-### 1. Safety Airlock & Strict Negation Precedence
-* **Destructive Scope**: Actions held for confirmation are exclusively high-risk operations (`shutdown`, `reboot`, `poweroff`, `suspend`, `omarchy update/install/reinstall`, `close-all`). An open desktop microphone is an untrusted channel subject to ambient chatter, phone calls, and ASR noise.
-* **Fail-Closed Negation**: Conversational fluency must not compromise confirmation airlocks. Any utterance exhibiting negation, ambivalence, or hesitation (e.g., "no", "don't", "stop", "wait", "mat karo", "nahi", "ruko", "rehne do", "nah wait", "haan mat karo") must immediately short-circuit to `DECLINED` or `HELD`. Negation strictly takes precedence over any affirmative tokens.
+### 1. The 4-Tier Visual Diagramming & Rendering Engine
+To enable learning "anything" visually without bloated external dependencies, JARVIS OS leverages four distinct visual pipelines already supported by the Linux host:
 
-### 2. Avoiding Shadow NLU Duplication (YAGNI & Code Minimization)
-* **LLM Role vs. NLU Role**: Gemini Live and the OpenAI Realtime pipeline already serve as the primary conversational comprehension engine, transforming natural dialogue into structured tool calls. Building a massive secondary regex-based intent engine for general window management and navigation duplicates the cloud LLM and introduces unmaintainable shadow parsing.
-* **Focused Mandate for `NLUEngine`**:
-  1. ASR phonetic normalization (`normalize_text`).
-  2. Security and hallucination guardrails (`validate_tool_intent`).
-  3. Action request detection (`_is_action_request`) with polite and multilingual prefix stripping (e.g., "could you please...", "kya aap...", "ek baar...").
-  4. Deterministic confirmation and cancellation evaluation (`evaluate_confirmation`).
+```
+                                  ┌───────────────────────────────┐
+                                  │   Student Speech / Question   │
+                                  └───────────────┬───────────────┘
+                                                  │
+                                                  ▼
+                                ┌───────────────────────────────────┐
+                                │   Teaching Domain Intent Router   │
+                                └─────────────────┬─────────────────┘
+                                                  │
+                ┌──────────────────┬──────────────┴─────┬──────────────────┐
+                ▼                  ▼                    ▼                  ▼
+     ┌─────────────────────┐┌──────────────┐   ┌─────────────────┐┌──────────────────┐
+     │ 1. Vector Canvas    ││ 2. Graphviz  │   │ 3. Code/Syntax  ││ 4. Tabular &     │
+     │    (DrawCanvas.qml) ││    (dot CLI) │   │    (Markdown)   ││    Bar Charts    │
+     │ • Dynamic Arrays    ││ • System DAGs│   │ • Line Diffs    ││ • Complexity     │
+     │ • Sorting Bars      ││ • State Mach.│   │ • Error Spans   ││ • Memory Layouts │
+     │ • Pointers/Nodes    ││ • UML / Flow │   │ • Call Stacks   ││ • Value Traces   │
+     └──────────┬──────────┘└──────┬───────┘   └────────┬────────┘└────────┬─────────┘
+                │                  │                    │                  │
+                └──────────────────┴──────────────┬─────┴──────────────────┘
+                                                  │
+                                                  ▼
+                                ┌───────────────────────────────────┐
+                                │   Quickshell Teaching HUD Card   │
+                                │   (ui/jarvis_widgets - Floating)  │
+                                │   • Synchronized Animated Pointer │
+                                │   • Progressive Step Breadcrumb   │
+                                └───────────────────────────────────┘
+```
 
-### 3. Unified Confirmation Evaluator & Single Source of Truth
-* **Decoupling Transport from Language**: Move linguistic matching and normalization out of the Unix domain socket transport (`jarvis_control/session.py`) into `jarvis_control/nlu.py`.
-* **Standardized Evaluation Contract**: Implement `NLUEngine.evaluate_confirmation(heard_phrase: str, confirm_words: list[str], cancel_words: list[str]) -> ConfirmationDecision`. The decision returns a strongly typed result (`AFFIRMED`, `DECLINED`, `AMBIGUOUS`).
-* **Multi-Dialect Assents & Declines**: Expand built-in vocabularies on `Config` to natively support natural conversational assents ("go ahead", "sounds good", "please do", "do that now", "haan kar do", "bilkul", "theek hai", "sure thing", "definitely") and declines ("nah", "never mind", "don't do that", "mat karo", "rehne do", "ruko").
-* **Phonetic Normalization on Confirmation**: Pass `heard_phrase` through `NLUEngine.normalize_text()` prior to matching to correct ASR mishearings.
-* **Conversational Filler Expansion**: Expand `_FILLERS` to include colloquial particles ("bhai", "yaar", "now", "jarvis", "please", "toh").
-* **Active Cancellation Handling**: If the user's response matches a decline, `ControlSkills.confirm()` actively executes `self.cancel()` rather than trapping the user in a keyword rejection error loop.
+#### Pipeline 1: Native Vector Canvas (`DrawCanvas.qml` & `view_schema.py`)
+* **Mechanism**: Declarative normalized 0..1000 coordinate space rendering `rect`, `circle`, `line`, and `text` with hex colors and arithmetic expression bindings.
+* **Best Suited For**: Dynamic data structures, sorting array comparisons, pointer traversals, binary search trees, and heap trees.
+* **Animated Pointer**: Renders an animated glowing spotlight (`#55DDEA`) that glides across cells/nodes as the voice explanation highlights each comparison.
 
-### 4. Voice Subsystem Freeze & Public API Invariance
-* **Frozen Baseline**: `audio/.voice_lock.json` strictly freezes `voice_layer/`, `jarvis_voice/`, `audio/`, and `core/agent.py`. All changes must be contained inside `jarvis_control/`.
-* **Tool Schema Invariance**: `confirm_last` must retain its exact function name and argument signature (`heard_phrase: str`).
-* **Tool Description Optimization**: Update the description of `confirm_last` in `jarvis_control/__init__.py:GATE_TOOLS` to inform the LLM that natural conversational assents and multilingual affirmations are valid inputs, preventing the model from suppressing natural confirmations.
-* **Config Dataclass Invariance**: All new configuration properties must be explicitly typed on `jarvis_control.config.Config` to prevent `ValueError: Unsupported control setting` during `voice_layer` startup.
-* **Backward-Compatible Return Contract**: Maintain the `"ERROR: ..."` prefix on ambiguous phrases to preserve existing test assertions while replacing the robotic keyword prompt with a natural conversational clarification request.
+#### Pipeline 2: Graphviz Structural Engine (`/usr/bin/dot`)
+* **Mechanism**: Instant compilation of Graphviz DOT syntax into vector SVG or high-resolution PNG images written to `$XDG_RUNTIME_DIR/jarvis_diagrams/` and presented via `show_widget(kind="image", path=...)`.
+* **Best Suited For**: System architecture diagrams, network topologies, database ERDs, Git commit graphs, compiler ASTs, and finite state machines.
+* **Zero New Dependencies**: `dot` is already installed and verified at `/usr/bin/dot`.
 
-### 5. Observability, Telemetry & Pending State Lifecycle
-* **Decision Audit Log**: Emit structured logs whenever a held action is evaluated (`raw_phrase`, `normalized_phrase`, `decision`, `matched_rule`, `held_action`).
-* **Execution Latency SLA**: Precompile all linear regexes at module load time; enforce a strict P99 latency < 2.0ms to prevent real-time audio loop stalls.
-* **Pending Action TTL**: Implement a 60-second time-to-live on `Executor.pending` to prevent stale actions from being accidentally executed by unrelated conversational assents minutes later.
-* **Diagnostic Triage CLI**: Provide an offline evaluation helper (`python -m jarvis_control.nlu eval "<phrase>"`) for rapid local debugging.
+#### Pipeline 3: Syntax & Diagnostic Walkthrough (`MarkdownBlocks.js`)
+* **Mechanism**: Bounded Markdown cards supporting syntax-highlighted code blocks, line numbers, error badges, and collapsible hint accordions.
+* **Best Suited For**: Debugging stack traces, code refactoring explanations, language idioms, and terminal command recipes.
+
+#### Pipeline 4: Comparative Cards & Charts (`WidgetCard.qml`)
+* **Mechanism**: Built-in multi-column tables, progress indicators, and native bar charts.
+* **Best Suited For**: Time/space complexity comparisons ($O(n^2)$ vs $O(n \log n)$), memory register tables, and benchmarking traces.
+
+---
+
+### 2. Concrete Multi-Domain Walkthroughs
+
+#### Scenario A: Algorithms & Data Structures (e.g., Bubble Sort, QuickSort, Trees)
+1. **Student**: *"Teach me how Bubble Sort works on an array of 5 numbers."*
+2. **Visual**: The widget opens displaying 5 array boxes `[5, 1, 4, 2, 8]` using Pipeline 1 (`canvas`).
+3. **Audio + Pointer Motion**: As JARVIS speaks (*"First, we compare index 0 with index 1"*), the visual spotlight moves from box 0 (`5`) to box 1 (`1`), turns amber to indicate comparison, animates their position swap, and marks sorted elements in green.
+
+#### Scenario B: System Architecture & Networking (e.g., How PipeWire audio works)
+1. **Student**: *"Show me how PipeWire routes audio in Linux."*
+2. **Visual**: JARVIS compiles a clean Graphviz DOT diagram (`Hardware Mic -> PipeWire Daemon -> VAD Filter -> Client App`) to a PNG and displays it instantly in the HUD.
+3. **Audio + Pointer**: Spoken explanation walks through buffer passing and latency fences while highlighting each node sequentially.
+
+#### Scenario C: Code Debugging & Screen Perception
+1. **Student**: *"Why is my Python script throwing this TypeError?"*
+2. **Perception**: `grim -g` snaps the active editor window, OCR extracts the error message and line number 42.
+3. **Visual**: HUD renders a focused 2-line code diff showing the fix, with an explanation of why mutable default arguments caused the bug.
+
+---
+
+### 3. Actuation Boundary & Physical Safety
+
+* **Mutating Actuation Prohibition**: In Teaching Mode, all autonomous modifying tools (`gui_click_*`, `type_text`, `press_key`, `filesystem.write`, `system.run`) are intercepted by `PedagogicalGuard` in `DesktopSkills.execute`. The assistant never alters code or executes terminal commands on the user's behalf.
+* **Demonstrative Pointing Allowed**: Visual pointers, animated canvas cursors, and coordinate spotlights are permitted because they provide directional guidance without modifying system state.
+* **Fail-Safe Break-Glass**: The session can be terminated at any millisecond via:
+  1. Voice: *"exit teaching mode"*
+  2. Physical Hotkey: Hyprland binding (`$mainMod+SHIFT+Escape`)
+  3. UI Close Button: Clickable dismiss icon on the top-right of the Quickshell HUD
+  4. Heartbeat Inactivity Watchdog: Auto-exits after 15 minutes of silence.
+
+---
+
+### 4. Zero-Touch Voice Subsystem Compliance
+
+* **Integrity Guardrail**: `audio/.voice_lock.json` protects all files in `voice_layer/`, `jarvis_voice/`, and `audio/`.
+* **Execution Boundary**: Teaching Mode is strictly confined to:
+  - Skill Domain: `skills/domains/teaching.py`
+  - Tool Manifest: `skill_manifests/teaching.json`
+  - Tool Registration: `orchestration/tool_tiers.py` (`CORE_TOOLS`)
+  - UI Presentation: `ui/jarvis_widgets/` (Quickshell layer)
+* **Verification**: Running `python scripts/verify_voice_lock.py` passes 100% with zero modified files in protected roots.
+
+---
 
 ## Goals vs. Non-Goals
 
-* **In-Scope Goals:**
-  * Build a unified, deterministic confirmation and cancellation evaluator in `jarvis_control/nlu.py`.
-  * Support natural English and Hinglish conversational assents and declines in `jarvis_control/skills.py` and `jarvis_control/config.py`.
-  * Strip polite and multilingual prefixes in `NLUEngine._is_action_request()` so polite requests are not misclassified as advice.
-  * Update `confirm_last` tool descriptions in `GATE_TOOLS` to encourage natural assent forwarding by the LLM.
-  * Implement short-circuiting negation precedence so negative or ambivalent phrases never confirm destructive actions.
-  * Handle active cancellations cleanly via `cancel_last` and during `confirm_last` evaluation.
-  * Add a 60-second safety TTL on pending confirmation state.
-  * Maintain 100% compliance with `audio/.voice_lock.json` and pass all unit tests without regressions.
+### In-Scope Goals
+* **Universal Domain Coverage**: Teach algorithms, systems architecture, code debugging, networking, and mathematical concepts using dynamically selected visual representations.
+* **4-Tier Diagramming Engine**: Vector canvas (`DrawCanvas.qml`), Graphviz (`dot`), syntax cards, and metric tables.
+* **Synchronized Demonstrative Pointer**: Animated in-widget spotlight moving smoothly across elements in sync with spoken voice.
+* **Targeted Delta Perception**: Grabs active window frames with `grim -g` on demand to conserve Gemini Live token budgets.
+* **Pedagogical Actuation Fence**: Deterministic blocking of mutating tools with instructional fallbacks.
+* **Triple-Vector Break Glass**: Fail-safe exit via voice, physical keybind, or UI dismiss button.
 
-* **Out-of-Scope Non-Goals:**
-  * Modifying any files protected by `audio/.voice_lock.json` (`voice_layer/`, `jarvis_voice/`, `audio/`, `core/agent.py`).
-  * Building a secondary shadow NLU parser for general desktop navigation or window management (delegated to Gemini Live).
-  * Adding external network dependencies or heavy neural NLP weights for local confirmation safety checks.
-  * Removing safety gating on destructive commands.
+### Out-of-Scope Non-Goals
+* **Physical Hardware Mouse Hijacking**: No moving the OS mouse cursor across external windows; pointer motion is contained within the visual HUD overlay.
+* **Modifying Locked Voice Code**: Zero changes to `voice_layer/`, `jarvis_voice/`, or `audio/`.
+* **Standalone GUI Frameworks**: No Electron, Qt-Python wrappers, or webview daemons; 100% native Quickshell integration.
+* **Curriculum / Courseware Database**: No persistent grading, student tracking, or classroom quizzes.
+
+---
 
 ## Alternatives Weighed
 
-* *Fuzzy Semantic Embeddings / Cloud LLM for Confirmation*: Rejected by author. Adds 250ms–1200ms latency, token costs, network failure points, and ambient false-positive risks for critical safety operations.
-* *Regex Expansion in `session.py` Only*: Rejected by author. Conflates low-level Unix domain socket transport with conversational natural language understanding.
-* *Building Full Desktop NLU in `nlu.py`*: Rejected by author. Duplicates Gemini Live's core conversational capability, creating an unmaintainable shadow parser.
-* *Unified Deterministic Semantic Evaluator with Negation Precedence*: Selected. Offline, executes in <2ms, unifies voice and CLI pathways, respects voice locks, and guarantees safety.
+1. **Client-Side Mermaid.js vs Native Graphviz (`dot`)**:
+   * *Rejected*: Mermaid requires running a headless browser (Puppeteer) or NodeJS rendering pipeline, which adds 300MB+ in dependencies and 2–4s compilation latency.
+   * *Adopted*: Native Graphviz (`/usr/bin/dot`), already installed on the system, compiling diagrams to SVG/PNG in under 80 milliseconds.
 
-## Key Decisions & Staging for Next Steps
+2. **OS Pointer Hijacking vs In-Widget Canvas Pointer**:
+   * *Rejected*: Moving the operating system's hardware mouse pointer fights the student's physical hand and risks accidental clicks.
+   * *Adopted*: In-widget animated spotlight/pointer that smoothly guides eye focus across diagram elements without cursor contention.
 
-1. Review the synthesized brief with the user.
-2. Advance to `/egm-draft` to initialize the formal design specification.
+3. **Continuous 1-FPS Video Stream vs Event-Driven Delta Capture**:
+   * *Rejected*: Continuous 1-FPS video burns 920,000 tokens per hour and degrades voice duplex latency.
+   * *Adopted*: Event-driven active-window capture triggered on student speech turns or major screen focus shifts.
+
+---
+
+## Key Decisions & Implementation Staging
+
+1. **File Manifest**:
+   * `skills/domains/teaching.py`: Core domain mixin, FSM state machine, diagram generator bridge (`dot` + `view_schema`), and `PedagogicalGuard`.
+   * `skill_manifests/teaching.json`: Declarations for `activate_teaching_mode`, `update_teaching_lesson`, `exit_teaching_mode`.
+   * `tests/test_teaching_mode.py`: Automated tests for state transitions, diagram generation, actuation interception, and clean deactivation.
+2. **Next Milestone**:
+   * Execute `/egm-draft` to generate the formal specification document at `docs/designs/universal_visual_learning_teaching_mode.md`.

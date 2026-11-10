@@ -1,0 +1,38 @@
+{
+  "firstName": {
+    "localized": {
+      "en_US": "P. Penchala"
+    },
+    "preferredLocale": {
+      "country": "US",
+      "language": "en"
+    }
+  },
+  "headline": {
+    "localized": {
+      "en_US": "B.Tech CSE Student | AI & Voice AI Enthusiast | Building AI Agents  | Python | Automation | Open Source"
+    },
+    "preferredLocale": {
+      "country": "US",
+      "language": "en"
+    }
+  },
+  "id": "4_jR4WANsE",
+  "lastName": {
+    "localized": {
+      "en_US": "Gopi"
+    },
+    "preferredLocale": {
+      "country": "US",
+      "language": "en"
+    }
+  },
+  "localizedFirstName": "P. Penchala",
+  "localizedHeadline": "B.Tech CSE Student | AI & Voice AI Enthusiast | Building AI Agents  | Python | Automation | Open Source",
+  "localizedLastName": "Gopi",
+  "profilePicture": {
+    "displayImage": "https://media.licdn.com/dms/image/v2/D4E03AQGjTpeMyuc4eQ/profile-displayphoto-scale_100_100/B4EZ.ffq7UIkAc-/0/1785087307750?e=1795651200&v=beta&t=oWpr6fr-d_CCrS_e9RLZZ0wDqSycAiZgSHXGFnjoy60"
+  },
+  "profileUrl": "https://www.linkedin.com/in/p-penchala-gopi-444238425",
+  "vanityName": "p-penchala-gopi-444238425"
+}
