@@ -124,6 +124,18 @@ def check_mandatory_events(active_alerts: dict[str, str]) -> None:
             dismiss_widget(ALERT_WIDGET_ID)
             active_alerts.pop("mic_issue", None)
 
+        # 3. Conversational HUD Cards & Assistant Visual Answers
+        hud_card = data.get("hud_card")
+        if hud_card and isinstance(hud_card, dict):
+            card_id = hud_card.get("id", "jarvis-voice-hud")
+            card_title = hud_card.get("title", "⚡ JARVIS")
+            card_text = hud_card.get("text", "")
+            if active_alerts.get("voice_hud") != card_text and card_text:
+                show_mandatory_widget(card_id, card_title, card_text, expires_seconds=hud_card.get("expires", 15))
+                active_alerts["voice_hud"] = card_text
+        elif "voice_hud" in active_alerts and not data.get("hud_card"):
+            dismiss_widget("jarvis-voice-hud")
+            active_alerts.pop("voice_hud", None)
 
 def run_demo() -> None:
     print("▶️  Demonstrating Sleek Compact Mandatory & On-Demand Widgets...")
@@ -160,8 +172,7 @@ def run_daemon() -> None:
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    # Dismiss any leftover conversational HUD cards
-    dismiss_widget("jarvis-voice-hud")
+    # Allow conversational HUD cards to persist naturally
 
     while True:
         try:

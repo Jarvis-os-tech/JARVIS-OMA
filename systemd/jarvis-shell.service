@@ -1,0 +1,15 @@
+[Unit]
+Description=JARVIS OS Full Holographic Desktop Shell & HUD
+After=graphical-session.target pipewire.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/jarvis-shell
+Restart=always
+RestartSec=3
+Environment=QT_QPA_PLATFORM=wayland
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=graphical-session.target

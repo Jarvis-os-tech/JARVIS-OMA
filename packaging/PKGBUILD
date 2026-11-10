@@ -1,0 +1,50 @@
+# Maintainer: g0pi <jarvis-os@archlinux.local>
+pkgname=jarvis-desktop-environment
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Full holographic AI Desktop Environment for Arch Linux powered by Gemini"
+arch=('x86_64')
+url="https://github.com/g0pi/jarvis-os"
+license=('MIT')
+depends=(
+    'hyprland'
+    'quickshell'
+    'pipewire'
+    'wireplumber'
+    'upower'
+    'grim'
+    'python'
+    'ttf-jetbrains-mono-nerd'
+)
+optdepends=(
+    'code: VS Code launcher integration'
+    'google-chrome: Web browser integration'
+    'foot: Default terminal HUD'
+    'nautilus: File manager integration'
+)
+source=(
+    'jarvis-de'
+    'jarvis-de.desktop'
+)
+sha256sums=(
+    'SKIP'
+    'SKIP'
+)
+
+package() {
+    # 1. Install Session Launcher
+    install -Dm755 "${srcdir}/jarvis-de" "${pkgdir}/usr/bin/jarvis-de"
+
+    # 2. Install Wayland Session Entry (for SDDM / GDM / greetd)
+    install -Dm644 "${srcdir}/jarvis-de.desktop" "${pkgdir}/usr/share/wayland-sessions/jarvis-de.desktop"
+
+    # 3. Install QML Desktop Shell
+    install -d "${pkgdir}/usr/share/jarvis-de/shell"
+    cp -r "${srcdir}/../ui/jarvis_shell"/* "${pkgdir}/usr/share/jarvis-de/shell/"
+
+    # 4. Install Systemd Services
+    install -d "${pkgdir}/usr/lib/systemd/user"
+    if [ -f "${srcdir}/../systemd/jarvis-voice.service" ]; then
+        install -m644 "${srcdir}/../systemd/jarvis-voice.service" "${pkgdir}/usr/lib/systemd/user/"
+    fi
+}

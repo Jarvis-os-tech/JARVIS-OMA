@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# JARVIS Desktop Environment — Session Launcher for Arch Linux
+export XDG_CURRENT_DESKTOP="JARVIS-DE"
+export XDG_SESSION_DESKTOP="JARVIS-DE"
+export QT_QPA_PLATFORM="wayland"
+export GDK_BACKEND="wayland,x11"
+export SDL_VIDEODRIVER="wayland"
+export CLUTTER_BACKEND="wayland"
+
+# Ensure runtime directories exist
+mkdir -p "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvis"
+
+# Start JARVIS Voice Core Daemon
+systemctl --user start jarvis-voice.service 2>/dev/null || true
+
+# Launch Hyprland compositor with JARVIS configuration
+exec Hyprland

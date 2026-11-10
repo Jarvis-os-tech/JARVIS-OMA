@@ -220,7 +220,7 @@ Item {
         PanelWindow {
             id: floating
             required property string modelData
-            readonly property var widgetValue: root.widgets.find(w => w.id === modelData) || ({data: {}})
+            readonly property var widgetValue: root.widgets.find(w => w.id === modelData) || ({id: "", title: "", kind: "text", data: {}})
             readonly property int slot: root.widgets.findIndex(w => w.id === modelData)
             readonly property var position: root.positions[modelData] || ({})
             property real startX: 0

@@ -31,8 +31,7 @@ Item {
   // Live subscription process to JARVIS daemon
   Process {
     id: jarvisSubProc
-    command: ["/home/g0pi/Projects/JARVIS-OMA/.venv/bin/python",
-              "/home/g0pi/Projects/JARVIS-OMA/scripts/island_status.py"]
+    command: ["sh", "-c", "cat ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvis/state.json 2>/dev/null || echo '{}'"]
     running: true
     onExited: {
       root.voiceState = "offline"
@@ -68,8 +67,7 @@ Item {
   // Mute control
   Process {
     id: muteProc
-    command: ["/home/g0pi/Projects/JARVIS-OMA/.venv/bin/python",
-              "/home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py", "toggle"]
+    command: ["sh", "-c", "jarvis listen toggle"]
     onExited: function(code) { root.controlError = code === 0 ? "" : "Could not change microphone state" }
   }
 
@@ -82,8 +80,7 @@ Item {
   // Interrupt active speech
   Process {
     id: interruptProc
-    command: ["/home/g0pi/Projects/JARVIS-OMA/.venv/bin/python",
-              "/home/g0pi/Projects/JARVIS-OMA/scripts/jarvisctl.py", "interrupt"]
+    command: ["sh", "-c", "jarvis listen stop"]
     onExited: function(code) { root.controlError = code === 0 ? "" : "Could not interrupt playback" }
   }
 
