@@ -6,7 +6,7 @@ Wants=pipewire.service
 [Service]
 Type=simple
 WorkingDirectory=%h/JARVIS OS
-ExecStart="/home/g0pi/JARVIS OS/bin/jarvis-monitor" --daemon --interval 15
+ExecStart="%h/JARVIS OS/bin/jarvis-monitor" --daemon --interval 15
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

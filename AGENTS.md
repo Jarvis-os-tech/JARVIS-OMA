@@ -48,3 +48,12 @@ Route by task:
 Use only the relevant workflow; do not run every stage for every request. Ordinary implementation, small clear bug fixes, commands and unrelated tasks keep the normal workflow. EGM is a design/document workflow, not a replacement model or a requirement to modify production code. Follow its explicit approval gates during design; leave the design workflow before separately authorized implementation. Do not invent automatic activation or simulate unavailable skills.
 
 For Goldfish reviews, use actual fresh-context native subagents (`fork_turns: "none"` where supported), wait for completion and report isolation/tool limitations honestly. Never simulate independent reviewers in the parent. User and repository restrictions still apply: no EGM step unlocks protected code, changes voice settings, or overrides the voice subsystem freezes.
+
+## Dynamic Skill & Plugin Auto-Selector Mechanism
+
+To ensure skills and plugins are automatically selected and invoked based on user prompts without requiring explicit `/skill-name` invocation:
+
+1. **Prompt Submission Hook**: Configured in `~/.claude/settings.json` under `UserPromptSubmit`, the hook runs `/home/g0pi/.claude/hooks/dynamic_skill_selector.py` for every user message.
+2. **Intent & Trigger Matching**: The selector script dynamically scans all installed skills in `~/.claude/skills/` (frontmatter descriptions, explicit triggers, and keyword overlap), scores them against the user's prompt text, and selects the best matching skill.
+3. **Context Injection & Auto-Invocation**: When a match is found, the selector injects an `additionalContext` instruction into the turn. Claude Code receives this system instruction and automatically dispatches `Skill({ skill: '<matched_skill>' })` to execute the appropriate workflow seamlessly.
+
