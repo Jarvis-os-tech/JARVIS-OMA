@@ -96,6 +96,24 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 * **Task Event Lifecycle**: Standardized UI event contracts (`task_events.py`) dispatching start, progress, milestone, receipt, and completion notifications.
 * **Desktop Presentation Cards**: Rich Quickshell notification widgets rendering agent progress cards on the desktop.
 
+### 6. Universal Visual Learning Engine / Teaching Mode (`teaching_mode/`)
+* **Pedagogical Agent**: Voice-activated visual tutoring system observing screen contents via Wayland capture (`grim`) and generating real-time explanations.
+* **Interactive Diagram Compiler**: On-the-fly rendering of Graphviz DOT diagrams, algorithmic animations, AST call graphs, and code syntax walkthroughs.
+* **Synchronized Desktop HUD**: Dynamic visual cards and spotlight indicators embedded directly inside the desktop Quickshell HUD (`ui/jarvis_widgets`).
+* **Agency-Preserving Safety Guard**: Pedagogical policy guard that intercepts mutating desktop actuation during lessons to ensure the student learns by doing.
+
+### 7. Autonomous LinkedIn Department (`departments/linkedin/`)
+* **12-Agent Autonomous Fleet**: Specialized multi-agent cluster powered by NVIDIA NIM for end-to-end B2B brand building, content scheduling, and profile optimization.
+* **Content Sprints & Post Generation**: Autonomous content planning, viral hook formulation, formatting, and hashtag clustering.
+* **Human-in-the-Loop Review Airlock**: Generated posts stage into a strict review queue (`linkedin_pending_reviews`) awaiting explicit user approval before publishing.
+* **Profile Optimization & Auditing**: Automated profile sync, headline generation, skill positioning, and SEO audits.
+
+### 8. Quickshell Sci-Fi Desktop Shell (`ui/jarvis_shell/`, `bin/jarvis-de`)
+* **Native Wayland Desktop Environment**: Custom Quickshell desktop environment tailored for Hyprland and Omarchy.
+* **Arc Reactor Core & Telemetry**: Dynamic CPU, GPU, memory, and network telemetry with ambient acoustic waveform visualization.
+* **CyberDock & LeftNav**: Quick action application dock, workspace pager, and system control dashboard.
+* **Agents Status Overview**: Real-time multi-agent activity monitors tracking active tasks, background workers, and fleet states.
+
 ---
 
 ## 📁 Repository Layout
@@ -139,6 +157,28 @@ JARVIS OS/
 │   ├── api_service.py         # Connector dispatcher service
 │   └── integration_status.py  # Health & authentication monitor
 │
+├── departments/               # Autonomous Specialized Departments
+│   └── linkedin/              # 12-Agent LinkedIn Department (NVIDIA NIM)
+│       ├── agents/            # Strategy, drafting, reviewing, and publishing agents
+│       ├── content_sprint.py  # Sprint planning and schedule manager
+│       ├── profile_audit.py   # Profile extraction, analysis, and recommendations
+│       └── airlock.py         # Human-in-the-loop review queue and publishing gate
+│
+├── teaching_mode/             # Universal Visual Learning & Tutoring Engine
+│   ├── domain/                # Pedagogical policies, curriculum, and safety gates
+│   ├── manifest/              # Teaching mode tools and skill manifests
+│   └── ui/                    # Quickshell learning cards and diagram overlays
+│
+├── ui/                        # User Interface & Desktop Shells
+│   ├── jarvis_shell/          # Quickshell Sci-Fi Desktop Environment
+│   │   ├── Shell.qml          # Root Quickshell desktop wrapper
+│   │   ├── CyberDock.qml      # Dynamic application dock & workspace switcher
+│   │   ├── TopBar.qml         # System status, telemetry & media controls
+│   │   └── ArcReactorCore.qml # Animated core telemetry & acoustic visualization
+│   ├── hud/                   # Orbit HUD overlay widgets
+│   ├── jarvis_widgets/        # Interactive desktop widgets & pairing QR
+│   └── omarchy-ai.orbit/      # System tray aura field orbit
+│
 ├── orchestration/             # Fleet Orchestration & Multi-Agent Bridge
 │   ├── hermes_api.py          # FastAPI REST endpoint for agent delegation
 │   ├── durable_hermes.py      # Durable Hermes gateway worker
@@ -149,9 +189,15 @@ JARVIS OS/
 │
 ├── bin/                       # Executable CLI Wrappers
 │   ├── jarvis                 # Unified system CLI
+│   ├── jarvis-de              # Desktop Environment launcher
+│   ├── jarvis-shell           # Quickshell desktop interface
 │   ├── jarvis-voice           # Voice daemon CLI wrapper
 │   ├── jarvis-memory          # Memory vault CLI wrapper
 │   └── jarvis-control         # Desktop control CLI wrapper
+│
+├── packaging/                 # Arch Linux & Distribution Packaging
+│   ├── PKGBUILD               # Arch package specification
+│   └── jarvis-de.desktop      # Wayland session desktop entry
 │
 ├── scripts/                   # System Maintenance & Verification Scripts
 │   ├── install.sh             # System package installer
@@ -231,6 +277,39 @@ jarvis-control type "Hello from JARVIS OS"
 jarvis-control focus "Terminal"
 ```
 
+### Quickshell Sci-Fi Desktop Shell (`jarvis-shell` / `jarvis-de`)
+```bash
+# Launch the full JARVIS Wayland desktop session
+jarvis-de
+
+# Launch or preview the Quickshell desktop shell
+jarvis-shell
+```
+
+### Teaching Mode & Visual Learning
+```bash
+# Start an interactive visual learning session
+jarvis task "activate teaching mode and explain Dijkstra algorithm"
+
+# Check teaching session status
+jarvis task "what is our current teaching topic?"
+
+# Conclude lesson and restore standard desktop actuation
+jarvis task "exit teaching mode"
+```
+
+### Autonomous LinkedIn Department
+```bash
+# Plan a 7-day content sprint
+jarvis task "plan a 7-day LinkedIn sprint on Voice AI and Agentic Systems"
+
+# Audit local profile strategy
+jarvis task "audit my LinkedIn profile positioning"
+
+# Review staged posts in the review queue
+jarvis task "show pending LinkedIn reviews"
+```
+
 ---
 
 ## ⚙️ Service Management (systemd)
@@ -246,9 +325,11 @@ systemctl --user daemon-reload
 systemctl --user enable --now jarvis-voice.service
 systemctl --user enable --now jarvis-api-agent.service
 systemctl --user enable --now jarvis-monitor.service
+systemctl --user enable --now jarvis-shell.service
 
 # Check service status
 systemctl --user status jarvis-voice.service
+systemctl --user status jarvis-shell.service
 journalctl --user -u jarvis-voice.service -f
 ```
 
