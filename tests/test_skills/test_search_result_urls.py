@@ -30,3 +30,7 @@ class SearchResultURLTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(search, '_get_json', new=AsyncMock(return_value=payload)):
             with self.assertRaisesRegex(search.SearchProviderError, 'no usable results'):
                 await search.brave_search('test query', api_key='synthetic')
+
+    async def test_duckduckgo_lite_search_pytest_guard(self):
+        with self.assertRaisesRegex(search.SearchProviderError, 'unmocked network call'):
+            await search.duckduckgo_lite_search('test query')

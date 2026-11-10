@@ -1372,6 +1372,53 @@ CAPTURE_VISION_WIDGET_SCHEMA = {
 }
 TOOL_SCHEMAS.append(CAPTURE_VISION_WIDGET_SCHEMA)
 
+FILE_OPERATION_SCHEMA = {
+    'name': 'file_operation',
+    'description': (
+        'Autonomous filesystem manager. Read, write, append, search, list, '
+        'inspect, copy, move, or delete files and directories anywhere on the system. '
+        'Actions: read, write, append, list, make_dir, copy, move, delete, search, grep, inspect. '
+        'Provide path, and content (for write/append), destination (for copy/move), query (for search/grep).'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'action': {
+                'type': 'string',
+                'enum': ['read', 'write', 'append', 'list', 'make_dir', 'copy', 'move', 'delete', 'search', 'grep', 'inspect', 'navigate']
+            },
+            'path': {'type': 'string', 'description': 'Target file or directory path'},
+            'destination': {'type': 'string', 'description': 'Destination path for copy or move'},
+            'content': {'type': 'string', 'description': 'Text content to write or append'},
+            'query': {'type': 'string', 'description': 'Search pattern or text to grep'},
+            'overwrite': {'type': 'boolean', 'description': 'Overwrite existing file (default: false)'},
+            'recursive': {'type': 'boolean', 'description': 'Recursive directory delete/search (default: false)'}
+        },
+        'required': ['action', 'path'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(FILE_OPERATION_SCHEMA)
+
+UNINSTALL_APP_SCHEMA = {
+    'name': 'uninstall_app',
+    'description': (
+        'Uninstall an application or package from the system using available package '
+        'management tools (pacman, yay, flatpak). Provide the package/application name.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'package_name': {
+                'type': 'string',
+                'description': 'The name of the application or package to uninstall.'
+            }
+        },
+        'required': ['package_name'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(UNINSTALL_APP_SCHEMA)
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -4170,3 +4217,96 @@ class Executor:
         if error := self._write_notes(notes):
             return Result(False, error)
         return Result(True, f"noted. {len(notes[-NOTES_LIMIT:])} note(s) in the notebook")
+
+    def _tool_file_operation(self, action: str, path: str = "", destination: str = "",
+                             content: str = "", query: str = "", overwrite: bool = False,
+                             recursive: bool = False) -> Result:
+        import filesystem.filesystem as fs
+        try:
+            if action == 'read':
+                res = fs.read_text(path)
+                return Result(True, res.get('content', ''))
+            elif action == 'write':
+                res = fs.write_text(path, content, overwrite=overwrite)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'append':
+                res = fs.append_text(path, content)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'list':
+                res = fs.list_directory(path)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'make_dir':
+                res = fs.make_directory(path)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'copy':
+                res = fs.copy_path(path, destination, overwrite=overwrite)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'move':
+                res = fs.move_path(path, destination, overwrite=overwrite)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'delete':
+                res = fs.delete_path(path, recursive=recursive)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'search':
+                res = fs.search_files(path, query)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'grep':
+                res = fs.search_file_content(path, query)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'inspect':
+                res = fs.inspect_path(path)
+                return Result(True, json.dumps(res, ensure_ascii=False))
+            elif action == 'navigate':
+                import re, os
+                from pathlib import Path
+                raw = str(path).strip().strip('"\'')
+                home = Path.home()
+                folder_aliases = {
+                    'download': 'Downloads', 'downloads': 'Downloads',
+                    'document': 'Documents', 'documents': 'Documents', 'doc': 'Documents', 'docs': 'Documents',
+                    'picture': 'Pictures', 'pictures': 'Pictures', 'pic': 'Pictures', 'pics': 'Pictures',
+                    'photo': 'Pictures', 'photos': 'Pictures', 'image': 'Pictures', 'images': 'Pictures',
+                    'project': 'Projects', 'projects': 'Projects', 'code': 'Projects', 'repo': 'Projects', 'repos': 'Projects',
+                    'desktop': 'Desktop', 'video': 'Videos', 'videos': 'Videos', 'music': 'Music', 'home': '',
+                }
+                raw = re.sub(r'^/home/[^/]+', str(home), raw)
+                target = Path(raw).expanduser()
+                if not target.exists():
+                    words = [w.lower() for w in re.findall(r'[A-Za-z0-9_-]+', raw)]
+                    for w in words:
+                        if w in folder_aliases:
+                            dest = home / folder_aliases[w]
+                            if dest.exists():
+                                target = dest
+                                break
+                    else:
+                        name_clean = target.name.lower()
+                        for child in home.iterdir():
+                            if child.name.lower() == name_clean:
+                                target = child
+                                break
+                        else:
+                            if (home / target.name).exists():
+                                target = home / target.name
+                clients_res = self._tool_hypr_query('clients')
+                nautilus = None
+                if clients_res.ok:
+                    try:
+                        clients = json.loads(clients_res.output)
+                        nautilus = next((c for c in clients if 'nautilus' in c.get('class', '').lower()), None)
+                    except Exception:
+                        pass
+                env = os.environ.copy()
+                env.update({'WAYLAND_DISPLAY': 'wayland-1', 'XDG_RUNTIME_DIR': os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')})
+                if nautilus:
+                    addr = nautilus.get('address')
+                    if addr:
+                        self._tool_hypr_dispatch(f'hl.dsp.focus({{ window = "address:{addr}" }})')
+                    subprocess.Popen(['nautilus', str(target)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    subprocess.Popen(['nautilus', str(target)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return Result(True, f"Navigated file explorer to {target} in the existing window without opening new tabs (verified).")
+            else:
+                return Result(False, f"Unknown file action: {action}")
+        except Exception as err:
+            return Result(False, f"File operation failed: {err}")

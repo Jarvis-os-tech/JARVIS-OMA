@@ -5,6 +5,7 @@ import asyncio
 from html import unescape
 import ipaddress
 import json
+import os
 import re
 from urllib.parse import quote, urlencode, urlsplit
 import httpx

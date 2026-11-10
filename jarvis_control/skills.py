@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 class ControlSkills:
     """Desktop control and information retrieval skill executor."""
 
-    def __init__(self, config: Config | None = None):
+    def __init__(self, config: Config | None = None, call_timeout: float = 120):
         if config is None or isinstance(config, Config):
             self.config = config or Config()
         else:
@@ -27,8 +27,9 @@ class ControlSkills:
             # adapter's complete policy/provider defaults for other fields.
             from jarvis_voice.config import control_config
             self.config = control_config(config)
+        self.call_timeout = call_timeout
         self.executor = Executor(self.config)
-        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix='jarvis-control')
+        self._worker = ThreadPoolExecutor(max_workers=4, thread_name_prefix='jarvis-control')
         self._closed = False
         self._watch_events: dict[str, dict] = {}
         self._watch_sequence = 0
@@ -37,40 +38,83 @@ class ControlSkills:
         self.declarations = gemini_tools[0]["function_declarations"]
         self._tool_names = frozenset(tool["name"] for tool in self.declarations)
 
-    async def execute(self, name: str, args: dict[str, Any]) -> str:
+    async def execute(self, name: str, args: dict[str, Any], call_timeout: float | None = None) -> str:
         """Execute a control or retrieval tool asynchronously."""
-        if name not in self._tool_names:
-            return f"ERROR: tool is not enabled: {name}"
-        if name == "confirm_last":
-            heard = str(args.get("heard_phrase", ""))
-            return await self.confirm(heard)
-        elif name == "cancel_last":
-            return await self._run(self.cancel)
-        elif name == "web_search" and args.get("background", False) and args.get("scope", "web") not in ("images", "videos"):
-            from .grounding import background_google_grounding, format_grounding_result
-            res = await background_google_grounding(str(args.get("query", "")))
-            if res.get("ok"):
-                return format_grounding_result(res)
-            outcome = await self._run(self.executor.call, name, args)
-            return outcome.as_tool_result()
-        else:
-            outcome = await self._run(self.executor.call, name, args)
-            return outcome.as_tool_result()
+        try:
+            if name not in self._tool_names:
+                return f"ERROR: tool is not enabled: {name}"
+            if name == "confirm_last":
+                heard = str(args.get("heard_phrase", ""))
+                return await self.confirm(heard)
+            elif name == "cancel_last":
+                try:
+                    return await self._run(self.cancel, timeout=call_timeout)
+                except asyncio.TimeoutError:
+                    return "ERROR: timed out"
+            elif name == "web_search" and args.get("background", False) and args.get("scope", "web") not in ("images", "videos"):
+                from .grounding import background_google_grounding, format_grounding_result
+                res = await background_google_grounding(str(args.get("query", "")))
+                if res.get("ok"):
+                    return format_grounding_result(res)
+                try:
+                    outcome = await self._run(self.executor.call, name, args, timeout=call_timeout)
+                    return outcome.as_tool_result()
+                except asyncio.TimeoutError:
+                    return "ERROR: timed out"
+            else:
+                try:
+                    outcome = await self._run(self.executor.call, name, args, timeout=call_timeout)
+                    return outcome.as_tool_result()
+                except asyncio.TimeoutError:
+                    return "ERROR: timed out"
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            return f"ERROR: {e}"
 
-    async def _run(self, fn, *args):
+    def _ensure_worker(self, rebuild: bool = False):
+        if getattr(self, "_worker", None) is None or rebuild:
+            if getattr(self, "_worker", None) is not None:
+                try:
+                    self._worker.shutdown(wait=False)
+                except Exception:
+                    pass
+            self._worker = ThreadPoolExecutor(max_workers=4, thread_name_prefix='jarvis-control')
+        return self._worker
+
+    async def _run(self, fn, *args, timeout: float | None = None):
         if self._closed:
             raise RuntimeError('Control worker is closed')
-        return await asyncio.get_running_loop().run_in_executor(self._worker, partial(fn, *args))
+        if timeout is None:
+            timeout = self.call_timeout
+        self._ensure_worker()
+        try:
+            return await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(self._worker, partial(fn, *args)),
+                timeout=timeout
+            )
+        except RuntimeError as e:
+            if "shutdown" in str(e) or "broken" in str(e) or "cannot schedule" in str(e):
+                self._ensure_worker(rebuild=True)
+                return await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(self._worker, partial(fn, *args)),
+                    timeout=timeout
+                )
+            raise
 
     async def close(self):
         if not self._closed:
             self._closed = True
-            try:
-                # Serialize camera cleanup after outstanding desktop operations.
-                await asyncio.get_running_loop().run_in_executor(
-                    self._worker, self.executor.vision.stop_owned)
-            finally:
-                await asyncio.to_thread(self._worker.shutdown, wait=True)
+            worker = getattr(self, "_worker", None)
+            if worker is not None:
+                try:
+                    # Serialize camera cleanup after outstanding desktop operations.
+                    await asyncio.get_running_loop().run_in_executor(
+                        worker, self.executor.vision.stop_owned)
+                except Exception:
+                    pass
+                finally:
+                    await asyncio.to_thread(worker.shutdown, wait=True)
 
     async def background_events(self) -> list[dict]:
         """Poll off the audio loop; retain notices until delivery succeeds."""
@@ -194,7 +238,12 @@ class UnifiedSkills:
             self._live_declarations = self.declarations
         else:
             live_names = {tool['name'] for tool in desktop_live}
-            live_names.update({'call_hermes_api', 'start_hermes_goal', 'get_hermes_status'})
+            live_names.update({
+                'call_hermes_api', 'start_hermes_goal', 'get_hermes_status',
+                'linkedin_draft_post', 'linkedin_plan_sprint', 'linkedin_audit_profile',
+                'linkedin_pending_reviews', 'linkedin_approve_post', 'linkedin_sync_profile',
+                'linkedin_propose_tool',
+            })
             self._live_declarations = [tool for tool in self.declarations
                                       if tool['name'] not in self._desktop_names or tool['name'] in live_names]
         self.on_standby_request = None

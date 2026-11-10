@@ -428,13 +428,13 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 if not before:
                     return Result(True, 'No active window to close.')
                 title = before.get('title') or before.get('class') or 'window'
-                _command(executor, ['hyprctl', 'dispatch', 'closewindow', 'activewindow'])
+                executor._tool_hypr_dispatch('hl.dsp.window.close()')
                 return Result(True, f'Closed {title} (verified).')
             if action == 'window_fullscreen':
                 before = _active_window(executor)
                 if not before:
                     raise SystemControlError('No active window to fullscreen')
-                _command(executor, ['hyprctl', 'dispatch', 'fullscreen', '0'])
+                executor._tool_hypr_dispatch('hl.dsp.window.fullscreen({ mode = "fullscreen" })')
                 after = _active_window(executor)
                 is_fs = bool(after and after.get('fullscreen', 0) > 0)
                 return Result(True, f'Window fullscreen {"enabled" if is_fs else "exited"} (verified).')
@@ -442,7 +442,7 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 before = _active_window(executor)
                 if not before:
                     raise SystemControlError('No active window to float')
-                _command(executor, ['hyprctl', 'dispatch', 'togglefloating', 'activewindow'])
+                executor._tool_hypr_dispatch('hl.dsp.window.float({ action = "toggle" })')
                 after = _active_window(executor)
                 is_fl = bool(after and after.get('floating'))
                 return Result(True, f'Window set to {"floating" if is_fl else "tiled"} (verified).')
@@ -450,7 +450,7 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 before = _active_window(executor)
                 if not before:
                     raise SystemControlError('No active window to pin')
-                _command(executor, ['hyprctl', 'dispatch', 'pin', 'activewindow'])
+                executor._tool_hypr_dispatch('hl.dsp.window.pin({ action = "toggle" })')
                 after = _active_window(executor)
                 is_pin = bool(after and after.get('pinned'))
                 return Result(True, f'Window {"pinned across workspaces" if is_pin else "unpinned"} (verified).')
@@ -458,7 +458,7 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 before = _active_window(executor)
                 if not before:
                     raise SystemControlError('No active window to center')
-                _command(executor, ['hyprctl', 'dispatch', 'centerwindow'])
+                executor._tool_hypr_dispatch('hl.dsp.window.center()')
                 return Result(True, 'Window centered (verified).')
             if action == 'window_focus':
                 res = executor._tool_hypr_query('clients')
@@ -480,9 +480,10 @@ def execute(executor, action: str, value=None, enabled=None, workspace: str = ''
                 if not matched:
                     raise SystemControlError(f"No open window matching '{target}' was found")
                 addr = matched.get('address')
-                ws = matched.get('workspace', {}).get('name', '')
+                ws_data = matched.get('workspace')
+                ws = ws_data.get('name', str(ws_data)) if isinstance(ws_data, dict) else str(ws_data or '')
                 app_label = matched.get('class') or matched.get('title') or target
-                _command(executor, ['hyprctl', 'dispatch', 'focuswindow', f'address:{addr}'])
+                executor._tool_hypr_dispatch(f'hl.dsp.focus({{ window = "address:{addr}" }})')
                 return Result(True, f'Focused {app_label} on workspace {ws} (verified).')
 
         if action == 'notification_dismiss':

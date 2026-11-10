@@ -9,6 +9,7 @@ import enum
 import json
 import logging
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -433,7 +434,7 @@ class NLUEngine:
                     'confirm_system_action', 'cancel_system_action', 'hypr_dispatch', 'hypr_query',
                     'list_applications', 'list_windows', 'list_workspaces', 'read_screen',
                     'type_text', 'press_key', 'send_shortcut', 'set_volume', 'set_brightness',
-                    'switch_workspace', 'manage_window', 'focus_window'}
+                    'switch_workspace', 'manage_window', 'focus_window', 'omarchy_cli', 'omarchy_help'}
         if targets == {'phone'} and tool_name in pc_tools:
             return False, 'The user explicitly targeted the phone. Use phone_control; do not act on the PC.'
 
@@ -496,14 +497,16 @@ class NLUEngine:
                 )
 
             if tool_name in ('open_website', 'open_application', 'launch_app', 'open_page', 'web_search'):
-                target = detected_platform or 'the platform'
-                log.info('NLU Gate redirected %s to status tool: "%s"', tool_name, user_text)
-                if target in ('github', 'gh', 'git'):
-                    return False, f"The user is asking whether GitHub is connected. Invoke 'github_connection_status' instead of {tool_name}."
-                if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
-                    return False, f"The user is asking whether Google Workspace is connected. Invoke 'google_connection_status' instead of {tool_name}."
-                return False, f"The user is asking whether {target} is connected or connecting. Invoke 'check_platform_connection' with platform='{target}' instead of {tool_name}."
-
+                if tool_name == 'web_search' and re.search(r'\b(search|find|lookup|look\s*up|google|query)\b', lower_user):
+                    pass
+                else:
+                    target = detected_platform or 'the platform'
+                    log.info('NLU Gate redirected %s to status tool: "%s"', tool_name, user_text)
+                    if target in ('github', 'gh', 'git'):
+                        return False, f"The user is asking whether GitHub is connected. Invoke 'github_connection_status' instead of {tool_name}."
+                    if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail'):
+                        return False, f"The user is asking whether Google Workspace is connected. Invoke 'google_connection_status' instead of {tool_name}."
+                    return False, f"The user is asking whether {target} is connected or connecting. Invoke 'check_platform_connection' with platform='{target}' instead of {tool_name}."
         # Rule: Authorization page tools require an explicit authorization-related keyword
         if tool_name in auth_page_tools:
             if not has_auth_word:
@@ -511,7 +514,7 @@ class NLUEngine:
                 if tool_name == 'github_authorize':
                     return False, (
                         "Do NOT invoke github_authorize. The user asked: "
-                        f"'{user_text}'. All repositories and agent architectures are local on this PC (/home/g0pi/JARVIS OS and ~/.gemini/config/plugins/agency-agents). "
+                        f"'{user_text}'. All repositories and agent architectures are local on this PC ({Path.home()}/JARVIS OS and ~/.gemini/config/plugins/agency-agents). "
                         "Use local inspection tools (such as list_files, search_files, read_file) or discuss the repository directly."
                     )
                 return False, (
@@ -560,20 +563,23 @@ class NLUEngine:
             return True, ""
 
         # Redirect open_website when user explicitly requested to connect/authorize a platform
+        is_open_app_intent = bool(re.search(r'\b(open|launch|start|run|go\s*to|visit|browse|show|view)\b', lower_user))
+        is_explicit_auth_intent = bool(re.search(r'\b(authori[zs]\w*|auth\b|oauth|login\s*page|sign\s*in\s*page|auth\s*page|authorization\s*page|connect\s+(to\s+)?(my\s+)?(account|platform|service))\b', lower_user) or lower_user.strip().startswith('connect to ') or 'connect to' in lower_user)
         if has_auth_word and (detected_platform or any(w in lower_user for w in ('platform', 'service', 'account', 'authorization page', 'login page'))):
             if tool_name in ('open_website', 'open_application', 'launch_app', 'open_page', 'browser_task'):
-                target = detected_platform or 'the platform'
-                log.info('NLU Gate redirected %s to platform integration: "%s"', tool_name, user_text)
-                if target in ('github', 'gh', 'git') or 'github' in lower_user:
-                    return False, f"The user wants to connect to or authorize GitHub. Do NOT invoke {tool_name}. Invoke native 'github_authorize' instead, which opens the OAuth page."
-                if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail') or 'google' in lower_user:
-                    return False, f"The user wants to connect to or authorize Google Workspace. Do NOT invoke {tool_name}. Invoke native 'google_authorize' instead, which opens the OAuth page."
-                return False, (
-                    f"The user wants to connect to or authorize {target}. "
-                    f"Do NOT invoke {tool_name}. "
-                    f"Invoke 'connect_platform' (or 'open_platform_authorization') with platform='{target}' instead, "
-                    "which generates the direct OAuth link and opens the authorization page."
-                )
+                if not (is_open_app_intent and not is_explicit_auth_intent):
+                    target = detected_platform or 'the platform'
+                    log.info('NLU Gate redirected %s to platform integration: "%s"', tool_name, user_text)
+                    if target in ('github', 'gh', 'git') or 'github' in lower_user:
+                        return False, f"The user wants to connect to or authorize GitHub. Do NOT invoke {tool_name}. Invoke native 'github_authorize' instead, which opens the OAuth page."
+                    if target in ('google', 'google workspace', 'google calendar', 'gcal', 'calendar', 'google drive', 'gdrive', 'drive', 'google sheets', 'gsheets', 'sheets', 'google docs', 'gdocs', 'docs', 'gmail', 'mail') or 'google' in lower_user:
+                        return False, f"The user wants to connect to or authorize Google Workspace. Do NOT invoke {tool_name}. Invoke native 'google_authorize' instead, which opens the OAuth page."
+                    return False, (
+                        f"The user wants to connect to or authorize {target}. "
+                        f"Do NOT invoke {tool_name}. "
+                        f"Invoke 'connect_platform' (or 'open_platform_authorization') with platform='{target}' instead, "
+                        "which generates the direct OAuth link and opens the authorization page."
+                    )
 
         analysis = cls.analyze(user_text)
 

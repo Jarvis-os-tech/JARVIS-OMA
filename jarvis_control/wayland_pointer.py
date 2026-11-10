@@ -82,7 +82,7 @@ def click(address,pid,x,y,button='left',count=1):
                        capture_output=True,timeout=2,check=True)
         verify()
         position=query('cursorpos')
-        if abs(position.get('x',-10000)-x)>2 or abs(position.get('y',-10000)-y)>2:
+        if abs(position.get('x',-10000)-x)>4 or abs(position.get('y',-10000)-y)>4:
             raise RuntimeError('Pointer position changed; click was not dispatched')
         code={'left':272,'right':273,'middle':274}[button]
         for _ in range(count):

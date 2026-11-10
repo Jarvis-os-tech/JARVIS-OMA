@@ -87,5 +87,11 @@ def redact_text(text):
 
 def child_env():
     import os
-    return {name:value for name,value in os.environ.items()
-            if not sensitive_name(name) and not _CREDENTIAL.fullmatch(value)}
+    env = {name:value for name,value in os.environ.items()
+           if not sensitive_name(name) and not _CREDENTIAL.fullmatch(value)}
+    try:
+        from core.desktop_session import recover_desktop_environment
+        env.update(recover_desktop_environment(env))
+    except Exception:
+        pass
+    return env

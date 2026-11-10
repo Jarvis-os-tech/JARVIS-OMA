@@ -69,7 +69,9 @@ def _content_result(result: dict, path: Path, expected: bytes | None,
 def path_for(value: str) -> Path:
     if not isinstance(value, str) or not value.strip() or '\x00' in value or len(value) > 4096:
         raise FileOperationError('invalid file path')
-    return Path(value).expanduser().absolute()
+    import re
+    clean = re.sub(r'^/home/[^/]+', str(Path.home()), value.strip())
+    return Path(clean).expanduser().absolute()
 
 
 def _target_path(path: Path) -> Path:
