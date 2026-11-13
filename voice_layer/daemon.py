@@ -67,7 +67,9 @@ ECHO_TAIL_SECONDS = 0.35  # Half-duplex holdoff to suppress acoustic room echo
 TASK_ACK_CONTEXTS = {
     **dict.fromkeys(('web_search', 'internet_search', 'browser_task', 'open_page', 'read_page_text',
                      'run_in_terminal', 'execute_desktop_command', 'api_anything_propose', 'api_anything_learn',
-                     'api_anything_call', 'api_anything_search'), 'system_mutation'),
+                     'api_anything_call', 'api_anything_search',
+                     'manage_packages', 'manage_system_service', 'modify_system_config',
+                     'execute_system_command', 'uninstall_app'), 'system_mutation'),
     **dict.fromkeys(('search_files', 'read_file', 'read_screen', 'inspect_screen',
                      'search_file_content', 'list_files'), 'filesystem_grep'),
     **dict.fromkeys(('start_hermes_goal', 'start_agent_goal', 'create_task_agent',
@@ -679,7 +681,9 @@ class LiveVoice:
         """Acknowledge admitted work once, without waiting for the provider."""
         if name not in TASK_ACK_CONTEXTS and name not in {
             'system_control', 'launch_app', 'open_application',
-            'set_volume', 'set_brightness', 'switch_workspace', 'move_window_to_workspace'
+            'set_volume', 'set_brightness', 'switch_workspace', 'move_window_to_workspace',
+            'manage_packages', 'manage_system_service', 'modify_system_config',
+            'execute_system_command', 'uninstall_app'
         }:
             return False
         if self.gate.active:

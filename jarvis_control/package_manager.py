@@ -1,9 +1,13 @@
 import sys
 import shutil
 import subprocess
+from .security import validate_package_removal
 
 def uninstall_package(package_name: str) -> str:
     """Uninstall a package using the system's available package manager."""
+    error = validate_package_removal(package_name)
+    if error:
+        return f"ERROR: {error}"
 
     # pacman
     if shutil.which("pacman"):

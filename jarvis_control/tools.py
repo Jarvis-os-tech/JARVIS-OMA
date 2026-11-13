@@ -1442,6 +1442,103 @@ UNINSTALL_APP_SCHEMA = {
     }
 }
 TOOL_SCHEMAS.append(UNINSTALL_APP_SCHEMA)
+
+MANAGE_PACKAGES_SCHEMA = {
+    'name': 'manage_packages',
+    'description': (
+        'Install, remove, search, or query packages using pacman or yay. '
+        'Removing packages triggers an automated Btrfs snapshot and hard-blocks critical OS components.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'action': {
+                'type': 'string',
+                'enum': ['install', 'remove', 'search', 'list_installed', 'update_system'],
+                'description': 'Package management action.'
+            },
+            'packages': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'description': 'Target package names for install/remove/search.'
+            },
+            'reason': {
+                'type': 'string',
+                'description': 'Spoken rationale explained to user before prompt.'
+            }
+        },
+        'required': ['action'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(MANAGE_PACKAGES_SCHEMA)
+
+MANAGE_SYSTEM_SERVICE_SCHEMA = {
+    'name': 'manage_system_service',
+    'description': (
+        'Manage systemd service units (start, stop, restart, enable, disable, status, logs) '
+        'for system or --user scope.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'unit': {'type': 'string', 'description': 'Systemd service unit name (e.g. docker.service).'},
+            'action': {
+                'type': 'string',
+                'enum': ['start', 'stop', 'restart', 'enable', 'disable', 'status', 'logs'],
+                'description': 'Action to perform on service unit.'
+            },
+            'scope': {
+                'type': 'string',
+                'enum': ['system', 'user'],
+                'description': 'Unit scope: "system" (requires sudo) or "user" (no sudo).'
+            },
+            'reason': {'type': 'string', 'description': 'Explanation of why this service state change is needed.'}
+        },
+        'required': ['unit', 'action'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(MANAGE_SYSTEM_SERVICE_SCHEMA)
+
+MODIFY_SYSTEM_CONFIG_SCHEMA = {
+    'name': 'modify_system_config',
+    'description': (
+        'Safely modify user dotfiles (~/.config/) or system configuration files (/etc/). '
+        'Automatically creates a *.jarvis.bak backup and snapshot before writing.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'path': {'type': 'string', 'description': 'Absolute or tilde path to config file.'},
+            'patch_or_content': {'type': 'string', 'description': 'Full new text or patch content to write.'},
+            'reason': {'type': 'string', 'description': 'Explanation for the configuration modification.'},
+            'append': {'type': 'boolean', 'description': 'Append to file instead of overwriting.'}
+        },
+        'required': ['path', 'patch_or_content'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(MODIFY_SYSTEM_CONFIG_SCHEMA)
+
+EXECUTE_SYSTEM_COMMAND_SCHEMA = {
+    'name': 'execute_system_command',
+    'description': (
+        'Execute controlled system or bash commands with optional administrator (sudo) privileges. '
+        'Provides spoken voice reasoning and safety snapshots for destructive operations.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'command': {'type': 'string', 'description': 'Command string to execute in shell.'},
+            'requires_sudo': {'type': 'boolean', 'description': 'Whether the command requires root/sudo access.'},
+            'reason': {'type': 'string', 'description': 'Spoken rationale for executing this command.'}
+        },
+        'required': ['command'],
+        'additionalProperties': False
+    }
+}
+TOOL_SCHEMAS.append(EXECUTE_SYSTEM_COMMAND_SCHEMA)
 def tools_for(config: Config) -> list[dict]:
     """The schemas this configuration can actually run.
 
@@ -4351,3 +4448,28 @@ class Executor:
                 return Result(False, f"Unknown file action: {action}")
         except Exception as err:
             return Result(False, f"File operation failed: {err}")
+
+    def _tool_uninstall_app(self, package_name: str):
+        from .privileged import execute_manage_packages
+        res = execute_manage_packages("remove", [package_name], reason=f"I need administrator access to uninstall {package_name}.")
+        return Result(res["ok"], res["output"])
+
+    def _tool_manage_packages(self, action: str, packages: list[str] | str = None, reason: str = ""):
+        from .privileged import execute_manage_packages
+        res = execute_manage_packages(action, packages, reason)
+        return Result(res["ok"], res["output"])
+
+    def _tool_manage_system_service(self, unit: str, action: str, scope: str = "system", reason: str = ""):
+        from .privileged import execute_manage_system_service
+        res = execute_manage_system_service(unit, action, scope, reason)
+        return Result(res["ok"], res["output"])
+
+    def _tool_modify_system_config(self, path: str, patch_or_content: str, reason: str = "", append: bool = False):
+        from .privileged import execute_modify_system_config
+        res = execute_modify_system_config(path, patch_or_content, reason, append)
+        return Result(res["ok"], res["output"])
+
+    def _tool_execute_system_command(self, command: str, requires_sudo: bool = False, reason: str = ""):
+        from .privileged import execute_general_command
+        res = execute_general_command(command, requires_sudo, reason)
+        return Result(res["ok"], res["output"])

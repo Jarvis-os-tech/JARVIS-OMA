@@ -95,3 +95,60 @@ def child_env():
     except Exception:
         pass
     return env
+
+
+# Core OS package protection denylist to prevent unbootable or broken systems
+CORE_PROTECTED_PACKAGES = frozenset({
+    'base',
+    'linux',
+    'linux-cachyos',
+    'linux-omarchy',
+    'systemd',
+    'hyprland',
+    'pipewire',
+    'wireplumber',
+    'btrfs-progs',
+    'cryptsetup',
+    'sudo',
+})
+
+
+class ProtectedPackageError(ValueError):
+    """Raised when an attempt is made to remove a protected core OS package."""
+    pass
+
+
+def is_protected_package(pkg_name: str) -> bool:
+    """Return True if package name matches any critical protected OS package."""
+    if not isinstance(pkg_name, str):
+        return False
+    normalized = pkg_name.strip().lower()
+    return normalized in CORE_PROTECTED_PACKAGES
+
+
+def check_package_removal(packages: str | list[str]) -> None:
+    """Validate package(s) against critical OS protection denylist.
+
+    Raises ProtectedPackageError if any package is critical to system operation.
+    """
+    if isinstance(packages, str):
+        pkg_list = [p.strip().lower() for p in re.split(r'[\s,]+', packages) if p.strip()]
+    else:
+        pkg_list = [str(p).strip().lower() for p in packages if str(p).strip()]
+
+    blocked = [p for p in pkg_list if is_protected_package(p)]
+    if blocked:
+        raise ProtectedPackageError(
+            f"Blocked removal of critical OS package(s): {', '.join(blocked)}. "
+            f"These packages are required for system boot and desktop operation."
+        )
+
+
+def validate_package_removal(packages: str | list[str]) -> str | None:
+    """Return an error string if package removal should be blocked, or None if allowed."""
+    try:
+        check_package_removal(packages)
+        return None
+    except ProtectedPackageError as exc:
+        return str(exc)
+

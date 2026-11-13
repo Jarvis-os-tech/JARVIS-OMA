@@ -259,6 +259,21 @@ class UnifiedSkills:
                 },
             })
 
+        # Ensure full-range OS control tools are present in declarations
+        from .tools import (
+            MANAGE_PACKAGES_SCHEMA,
+            MANAGE_SYSTEM_SERVICE_SCHEMA,
+            MODIFY_SYSTEM_CONFIG_SCHEMA,
+            EXECUTE_SYSTEM_COMMAND_SCHEMA,
+        )
+        from . import to_gemini_tools
+        extra_schemas = [MANAGE_PACKAGES_SCHEMA, MANAGE_SYSTEM_SERVICE_SCHEMA, MODIFY_SYSTEM_CONFIG_SCHEMA, EXECUTE_SYSTEM_COMMAND_SCHEMA]
+        extra_gems = to_gemini_tools(extra_schemas)[0]["function_declarations"]
+        existing_names = {d["name"] for d in self.declarations}
+        for gem in extra_gems:
+            if gem["name"] not in existing_names:
+                self.declarations.append(gem)
+
     @property
     def live_declarations(self):
         if self._live_declarations is self.declarations:
@@ -329,6 +344,22 @@ class UnifiedSkills:
             if isinstance(res, (dict, list)):
                 return json.dumps(res)
             return str(res)
+        if name == 'manage_packages':
+            from .privileged import execute_manage_packages
+            res = execute_manage_packages(**args)
+            return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+        if name == 'manage_system_service':
+            from .privileged import execute_manage_system_service
+            res = execute_manage_system_service(**args)
+            return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+        if name == 'modify_system_config':
+            from .privileged import execute_modify_system_config
+            res = execute_modify_system_config(**args)
+            return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
+        if name == 'execute_system_command':
+            from .privileged import execute_general_command
+            res = execute_general_command(**args)
+            return json.dumps(res) if isinstance(res, (dict, list)) else str(res)
         if self.control:
             return await self.control.execute(name, args)
         if self.desktop:
