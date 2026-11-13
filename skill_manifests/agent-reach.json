@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "reach_search",
+      "description": "Search platforms (reddit, youtube, github, bilibili, v2ex, xueqiu, twitter, boss) via Agent Reach.",
+      "adapter": "agent_reach.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Platform channel (e.g. reddit, youtube, github, bilibili, v2ex, xueqiu, twitter, boss)"
+          },
+          "query": {
+            "type": "string",
+            "description": "Search keyword or query string"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return (default: 5)"
+          }
+        },
+        "required": [
+          "channel",
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reach_read",
+      "description": "Read content, discussions, or articles from any URL across 15+ platforms (Reddit, YouTube, GitHub, Twitter/X, LinkedIn, Xiaohongshu, Bilibili, etc.) via Agent Reach.",
+      "adapter": "agent_reach.read",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full URL to read (e.g. reddit post, github issue, youtube video, tweet)"
+          },
+          "backend": {
+            "type": "string",
+            "description": "Optional backend override (e.g. opencli, jina, exa, gh)"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reach_transcript",
+      "description": "Extract speech-to-text transcript or subtitles from a YouTube video, Bilibili video, or Xiaoyuzhou podcast link via Agent Reach.",
+      "adapter": "agent_reach.transcript",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The video or podcast URL."
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reach_status",
+      "description": "Check the health, available channels, and operational status of Agent Reach.",
+      "adapter": "agent_reach.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -65,6 +65,7 @@ from skills.domains.composio import ComposioDomain, ADAPTERS as COMPOSIO_ADAPTER
 from skills.domains.api_anything import ApiAnythingDomain, ADAPTERS as API_ANYTHING_ADAPTERS, ADAPTER_COMMANDS as API_ANYTHING_COMMANDS
 from skills.domains.widgets import WidgetsDomain, ADAPTERS as WIDGET_ADAPTERS, ADAPTER_COMMANDS as WIDGET_COMMANDS
 from skills.domains.linkedin import LinkedInDomain, ADAPTERS as LINKEDIN_ADAPTERS, ADAPTER_COMMANDS as LINKEDIN_COMMANDS
+from skills.domains.agent_reach import AgentReachDomain, ADAPTERS as AGENT_REACH_ADAPTERS, ADAPTER_COMMANDS as AGENT_REACH_COMMANDS
 from orchestration.tool_tiers import CORE_TOOLS, META_TOOLS, DOMAINS, META_SPECS, domain_for_tool
 
 
@@ -72,7 +73,7 @@ def _normalized(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.casefold())
 
 
-class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain, LinkedInDomain):
+class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain, LinkedInDomain, AgentReachDomain):
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
     # ── Adapter → method mapping ──────────────────────────────────────
@@ -84,6 +85,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **API_ANYTHING_ADAPTERS,
         **WIDGET_ADAPTERS,
         **LINKEDIN_ADAPTERS,
+        **AGENT_REACH_ADAPTERS,
         'harness.status': '_adapter_harness_status',
         'harness.start_check': '_adapter_start_harness_check',
         'harness.check_status': '_adapter_harness_check_status',
@@ -1765,11 +1767,34 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 'next_step': 'Bind the exact browser tab and use gui_browser_navigate for URL readback.'}
 
     async def _adapter_read_url(self, url):
+        reach_domains = (
+            "bilibili.com", "b23.tv", "xiaohongshu.com", "xhslink.com",
+            "reddit.com", "v2ex.com", "xueqiu.com", "youtube.com", "youtu.be",
+            "github.com", "x.com", "twitter.com"
+        )
+        from urllib.parse import urlparse
+        host = urlparse(url).netloc.lower()
+        if any(host == d or host.endswith("." + d) for d in reach_domains):
+            try:
+                from connectors.agent_reach import get_client
+                res = await get_client().read(url)
+                if res.get("ok"):
+                    return {'status': 'success', 'url': url, 'content': res.get("text", "")}
+            except Exception:
+                pass
+
         from jarvis_control.web_text import bounded_page_text, PageReadError
         try:
             text = await asyncio.to_thread(bounded_page_text, url, timeout=12)
             return {'status': 'success', 'url': url, 'content': text}
         except Exception as error:
+            try:
+                from connectors.agent_reach import get_client
+                res = await get_client().read(url)
+                if res.get("ok"):
+                    return {'status': 'success', 'url': url, 'content': res.get("text", "")}
+            except Exception:
+                pass
             return {'status': 'error', 'url': url, 'error': str(error)}
 
     async def _adapter_adjust_volume(self, action, amount=5):

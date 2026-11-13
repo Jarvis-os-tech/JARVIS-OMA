@@ -41,7 +41,8 @@ QUERY_KINDS = {
 READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
                    "read_url", "fetch_web_page", "get_jarvis_mode",
-                   "reach_search", "reach_transcript", "confirm_system_action", "cancel_system_action",
+                   "reach_search", "reach_transcript", "reach_read", "reach_status",
+                   "confirm_system_action", "cancel_system_action",
                    "show_widget", "manage_widget", "capture_vision_widget"}
 
 # Hyprland dispatchers that spawn processes. They bypass allow_shell unless
@@ -647,6 +648,28 @@ TOOL_SCHEMAS = [
                 "url": {"type": "string", "description": "The video or podcast URL."},
             },
             "required": ["url"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "reach_read",
+        "description": "Read content, discussions, or articles from any URL across 15+ platforms (Reddit, YouTube, GitHub, Twitter/X, LinkedIn, Xiaohongshu, Bilibili, etc.) via Agent Reach.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Full URL to read (e.g. reddit post, github issue, youtube video, tweet)"},
+                "backend": {"type": "string", "description": "Optional backend override (e.g. opencli, jina, exa, gh)"},
+            },
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "reach_status",
+        "description": "Check the health, available channels, and operational status of Agent Reach.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
             "additionalProperties": False,
         },
     },
@@ -3665,6 +3688,24 @@ class Executor:
             return Result(res.get("ok", False), res.get("text", ""))
         except Exception as err:
             return Result(False, f"reach transcript error: {err}")
+
+    def _tool_reach_read(self, url: str, backend: str | None = None) -> Result:
+        try:
+            import asyncio
+            from connectors.agent_reach import get_client
+            res = asyncio.run(get_client().read(url, backend=backend))
+            return Result(res.get("ok", False), res.get("text", ""))
+        except Exception as err:
+            return Result(False, f"reach read error: {err}")
+
+    def _tool_reach_status(self) -> Result:
+        try:
+            import asyncio
+            from connectors.agent_reach import get_client
+            res = asyncio.run(get_client().status())
+            return Result(res.get("ok", False), res.get("text", ""))
+        except Exception as err:
+            return Result(False, f"reach status error: {err}")
 
     def _tool_fetch_web_page(self, url: str) -> Result:
         return self._tool_read_url(url)

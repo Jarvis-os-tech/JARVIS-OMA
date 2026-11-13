@@ -78,6 +78,9 @@ def test_domain_for_tool_mappings():
     assert tool_tiers.domain_for_tool('gui_click_button') == 'gui'
     assert tool_tiers.domain_for_tool('cli_hub_search') == 'cli_anything'
     assert tool_tiers.domain_for_tool('phone_send_sms') == 'phone'
+    assert tool_tiers.domain_for_tool('reach_search') == 'agent_reach'
+    assert tool_tiers.domain_for_tool('reach_read') == 'agent_reach'
+    assert tool_tiers.domain_for_tool('reach_transcript') == 'agent_reach'
 
     assert tool_tiers.domain_for_tool('start_agent_goal') == 'orchestration'
     assert tool_tiers.domain_for_tool('list_system_agents') == 'orchestration'
@@ -98,6 +101,7 @@ def test_intent_domains_parsing():
     assert 'github' in tool_tiers.intent_domains("Review open pull requests on github")
     assert 'orchestration' in tool_tiers.intent_domains("Delegate task to claude agent")
     assert 'desktop' in tool_tiers.intent_domains("Turn up the volume")
+    assert 'agent_reach' in tool_tiers.intent_domains("Search reddit or bilibili via agent reach")
     assert 'filesystem' in tool_tiers.intent_domains("Copy the file to another folder")
 
 

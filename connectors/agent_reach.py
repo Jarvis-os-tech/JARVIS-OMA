@@ -118,6 +118,34 @@ class AgentReachClient:
                 "items": []
             }
 
+    async def status(self) -> Dict[str, Any]:
+        """Check status and available channels of Agent Reach."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res_health = await client.get(f"{self.base_url}/health")
+                res_channels = await client.get(f"{self.base_url}/channels")
+                health_data = res_health.json() if res_health.status_code == 200 else {}
+                channels_data = res_channels.json() if res_channels.status_code == 200 else {}
+                channels = [c.get("name") for c in channels_data.get("channels", [])]
+                status_str = health_data.get("status", "unknown")
+                return {
+                    "ok": True,
+                    "status": status_str,
+                    "service": health_data.get("service", "agent-reach"),
+                    "pid": health_data.get("pid"),
+                    "channels": channels,
+                    "text": f"Agent Reach service is {status_str}. Available channels: {', '.join(channels)}",
+                    "raw": {"health": health_data, "channels": channels_data}
+                }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "status": "unavailable",
+                "text": f"Agent Reach service error: {exc}",
+                "error_code": "CONNECTION_FAILED",
+                "channels": []
+            }
+
     def _format_response(self, data: Dict[str, Any]) -> Dict[str, Any]:
         if not data.get("ok", True):
             err = data.get("error", {})

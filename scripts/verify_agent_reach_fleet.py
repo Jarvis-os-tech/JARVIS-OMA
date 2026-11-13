@@ -122,14 +122,24 @@ def check_agent_configs():
         else:
             fail("OpenCode missing agent-reach")
 
-    # 5. Gemini / Antigravity skill
+    # 5. Gemini / Antigravity skill & MCP config
     gemini_skill = Path.home() / ".gemini/config/skills/agent-reach/SKILL.md"
     if gemini_skill.is_file():
         ok("Gemini/Antigravity skill (~/.gemini/config/skills/agent-reach/) installed")
     else:
         fail("Gemini skill missing")
 
+    antigravity_mcp = Path.home() / ".config/Antigravity/mcp.json"
+    if antigravity_mcp.is_file():
+        with open(antigravity_mcp) as f:
+            adata = json.load(f)
+            if "agent-reach" in adata.get("mcpServers", {}):
+                ok("Antigravity (~/.config/Antigravity/mcp.json) configured with agent-reach")
+            else:
+                fail("Antigravity missing agent-reach")
+
 def check_jarvis_tools():
+    import asyncio
     from jarvis_control.tools import Executor, Config
     e = Executor(Config())
     res = e.call("reach_search", {"channel": "github", "query": "agent-reach", "limit": 1})
@@ -137,6 +147,29 @@ def check_jarvis_tools():
         ok("JARVIS OS jarvis_control Executor.call reach_search verified")
     else:
         fail(f"JARVIS OS reach_search failed: {res.output}")
+
+    res_stat = e.call("reach_status", {})
+    if res_stat.ok and "ok" in res_stat.output:
+        ok("JARVIS OS jarvis_control Executor.call reach_status verified")
+    else:
+        fail(f"JARVIS OS reach_status failed: {res_stat.output}")
+
+    from skills.skills import DesktopSkills
+    d = DesktopSkills()
+    reach_skills = [k for k in d._skills.keys() if 'reach' in k]
+    expected_reach = {'reach_search', 'reach_read', 'reach_transcript', 'reach_status'}
+    if expected_reach.issubset(set(reach_skills)):
+        ok(f"JARVIS OS DesktopSkills discovered reach tools: {reach_skills}")
+    else:
+        fail(f"JARVIS OS DesktopSkills missing reach tools: {reach_skills}")
+
+    async def _test_desktop_exec():
+        res_d = await d.execute("reach_status", {})
+        if res_d.get("status") == "ok":
+            ok("JARVIS OS DesktopSkills.execute reach_status verified")
+        else:
+            fail(f"JARVIS OS DesktopSkills.execute reach_status failed: {res_d}")
+    asyncio.run(_test_desktop_exec())
 
 def main():
     print("=== Running Agent-Reach Fleet Verification ===")
