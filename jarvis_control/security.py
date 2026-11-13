@@ -118,12 +118,33 @@ class ProtectedPackageError(ValueError):
     pass
 
 
+def normalize_package_name(pkg_name: str) -> str:
+    """Normalize package name by stripping repo prefixes and version/constraint suffixes."""
+    if not isinstance(pkg_name, str):
+        return ""
+    name = pkg_name.strip().lower()
+    # Strip repository prefix e.g. "extra/hyprland" -> "hyprland"
+    if "/" in name:
+        name = name.split("/")[-1]
+    # Strip version constraints e.g. "hyprland>=0.40", "hyprland=0.45", "hyprland<1.0"
+    name = re.split(r'[=<>~]', name)[0].strip()
+    return name
+
+
 def is_protected_package(pkg_name: str) -> bool:
-    """Return True if package name matches any critical protected OS package."""
+    """Return True if package name matches any critical protected OS package or critical variant."""
     if not isinstance(pkg_name, str):
         return False
-    normalized = pkg_name.strip().lower()
-    return normalized in CORE_PROTECTED_PACKAGES
+    normalized = normalize_package_name(pkg_name)
+    if not normalized:
+        return False
+    if normalized in CORE_PROTECTED_PACKAGES:
+        return True
+    # Check if package matches protected component families (e.g. linux-*, hyprland-*, pipewire-*, systemd-*)
+    for prefix in ('linux-', 'systemd-', 'pipewire-', 'wireplumber-', 'hyprland-', 'sudo-'):
+        if normalized.startswith(prefix):
+            return True
+    return False
 
 
 def check_package_removal(packages: str | list[str]) -> None:
@@ -132,9 +153,14 @@ def check_package_removal(packages: str | list[str]) -> None:
     Raises ProtectedPackageError if any package is critical to system operation.
     """
     if isinstance(packages, str):
-        pkg_list = [p.strip().lower() for p in re.split(r'[\s,]+', packages) if p.strip()]
+        pkg_list = [p.strip() for p in re.split(r'[\s,]+', packages) if p.strip()]
     else:
-        pkg_list = [str(p).strip().lower() for p in packages if str(p).strip()]
+        pkg_list = [str(p).strip() for p in packages if str(p).strip()]
+
+    # Reject arguments starting with '-' (flag injection defense)
+    for p in pkg_list:
+        if p.startswith('-'):
+            raise ProtectedPackageError(f"Invalid package name argument: {p}")
 
     blocked = [p for p in pkg_list if is_protected_package(p)]
     if blocked:

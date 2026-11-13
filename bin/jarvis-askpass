@@ -14,7 +14,12 @@ def main():
 
     password = None
 
-    root = tk.Tk(className="jarvis-askpass")
+    try:
+        root = tk.Tk(className="jarvis-askpass")
+    except Exception as err:
+        sys.stderr.write(f"jarvis-askpass: failed initializing display dialog: {err}\n")
+        sys.exit(1)
+
     root.title("JARVIS Privileged Action")
     root.geometry("480x240")
     root.resizable(False, False)

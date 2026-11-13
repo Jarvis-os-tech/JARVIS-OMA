@@ -22,6 +22,16 @@ ASKPASS_BIN = Path(os.environ.get("JARVIS_ASKPASS_PATH", "/home/g0pi/.local/bin/
 SPEAK_SOCK = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis-voice-speak.sock"
 CONTROL_SOCK = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis" / "control.sock"
 
+CRITICAL_SYSTEM_SERVICES = frozenset({
+    "dbus.service",
+    "pipewire.service",
+    "wireplumber.service",
+    "systemd-journald.service",
+    "systemd-logind.service",
+    "jarvis-voice.service",
+    "hyprland.service",
+})
+
 
 def speak_explanation(text: str) -> None:
     """Send explanation to JARVIS Voice / OS context silently without robotic fallback speech."""
@@ -104,8 +114,13 @@ def run_privileged_action(
         # Step C: Prepare command batch (prepending Btrfs snapshot if destructive)
         final_cmd = build_btrfs_snapshot_command(command) if destructive else command
 
-        # Step D: Execute via sudo -A
+        # Step D: Execute via sudo -A with desktop environment recovery
         env = dict(os.environ)
+        try:
+            from core.desktop_session import recover_desktop_environment
+            env.update(recover_desktop_environment(env))
+        except Exception:
+            pass
         if ASKPASS_BIN.exists():
             env["SUDO_ASKPASS"] = str(ASKPASS_BIN)
         env["JARVIS_SUDO_REASON"] = reason
@@ -169,7 +184,7 @@ def execute_manage_packages(
     if action == "remove":
         if not pkg_list:
             return {"ok": False, "output": "No packages specified for removal", "code": 1}
-        # Check core OS package protection denylist
+        # Check core OS package protection denylist and reject flag arguments
         err = validate_package_removal(pkg_list)
         if err:
             return {"ok": False, "output": f"ERROR: {err}", "code": 1}
@@ -181,14 +196,39 @@ def execute_manage_packages(
     elif action == "install":
         if not pkg_list:
             return {"ok": False, "output": "No packages specified for installation", "code": 1}
-        spk_reason = reason or f"I need administrator access to install package(s): {', '.join(pkg_list)}."
-        cmd = ["pacman", "-S", "--noconfirm", "--needed", *pkg_list]
+        # Filter out flag arguments to prevent option injection
+        clean_pkgs = [p for p in pkg_list if not p.startswith('-')]
+        if not clean_pkgs:
+            return {"ok": False, "output": "No valid package names provided", "code": 1}
+        spk_reason = reason or f"I need administrator access to install package(s): {', '.join(clean_pkgs)}."
+        cmd = ["pacman", "-S", "--noconfirm", "--needed", *clean_pkgs]
         res = run_privileged_action(cmd, reason=spk_reason, destructive=False)
-        # Fallback to yay for AUR packages if not in main repos
+        # Fallback to yay unprivileged (with SUDO_ASKPASS) for AUR packages if pacman fails to find target
         if not res["ok"] and any("target not found" in res["output"].lower() for _ in [1]):
-            log.info("Pacman could not find target, attempting yay for %s", pkg_list)
-            cmd_yay = ["yay", "-S", "--noconfirm", "--needed", *pkg_list]
-            return run_privileged_action(cmd_yay, reason=spk_reason, destructive=False)
+            log.info("Pacman could not find target, attempting unprivileged yay for %s", clean_pkgs)
+            cmd_yay = ["yay", "-S", "--noconfirm", "--needed", *clean_pkgs]
+            env_yay = dict(os.environ)
+            try:
+                from core.desktop_session import recover_desktop_environment
+                env_yay.update(recover_desktop_environment(env_yay))
+            except Exception:
+                pass
+            if ASKPASS_BIN.exists():
+                env_yay["SUDO_ASKPASS"] = str(ASKPASS_BIN)
+            env_yay["JARVIS_SUDO_REASON"] = spk_reason
+            env_yay["JARVIS_SUDO_CMD"] = " ".join(cmd_yay)
+            set_voice_listening_paused(True)
+            try:
+                proc_yay = subprocess.run(cmd_yay, env=env_yay, capture_output=True, text=True, timeout=300)
+                return {
+                    "ok": proc_yay.returncode == 0,
+                    "output": (proc_yay.stdout + "\n" + proc_yay.stderr).strip(),
+                    "code": proc_yay.returncode
+                }
+            except Exception as yay_err:
+                return {"ok": False, "output": f"yay execution failed: {yay_err}", "code": 1}
+            finally:
+                set_voice_listening_paused(False)
         return res
 
     elif action == "update_system":
@@ -244,6 +284,12 @@ def execute_manage_system_service(
         return {"ok": proc.returncode == 0, "output": (proc.stdout + proc.stderr).strip(), "code": proc.returncode}
     else:
         # State-modifying actions require sudo
+        if action in ("stop", "disable", "mask") and unit in CRITICAL_SYSTEM_SERVICES:
+            return {
+                "ok": False,
+                "output": f"Refusing to {action} protected core system service: {unit}. This service is critical to system operation.",
+                "code": 1
+            }
         spk_reason = reason or f"I need administrator access to {action} {unit}."
         destructive = (action in ("stop", "disable"))
         return run_privileged_action(["systemctl", action, unit], reason=spk_reason, destructive=destructive)
@@ -260,16 +306,12 @@ def execute_modify_system_config(
     target_path = Path(os.path.expanduser(raw_path)).resolve()
     is_system = str(target_path).startswith("/etc") or not os.access(target_path.parent, os.W_OK)
 
-    # 1. Automatic backup
+    # 1. Automatic backup for user-space configs
     backup_path = target_path.with_name(f"{target_path.name}.jarvis.bak")
-    if target_path.exists():
+    if target_path.exists() and not is_system:
         try:
-            if not is_system:
-                import shutil
-                shutil.copy2(target_path, backup_path)
-            else:
-                spk_reason = reason or f"Backing up system configuration {target_path}."
-                run_privileged_action(["cp", "-a", str(target_path), str(backup_path)], reason=spk_reason, destructive=False)
+            import shutil
+            shutil.copy2(target_path, backup_path)
         except Exception as err:
             log.warning("Could not create backup of %s: %s", target_path, err)
 
@@ -290,14 +332,21 @@ def execute_modify_system_config(
         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmp:
             tmp_name = tmp.name
             if append and target_path.exists():
-                tmp.write(target_path.read_text(encoding="utf-8", errors="ignore"))
+                try:
+                    tmp.write(target_path.read_text(encoding="utf-8", errors="ignore"))
+                except Exception:
+                    pass
             tmp.write(patch_or_content)
 
         try:
-            res = run_privileged_action(["cp", tmp_name, str(target_path)], reason=spk_reason, destructive=True)
+            # Atomic single privileged execution for backup, copy, and permission set
+            batch_cmd = (
+                f"(test -f {shlex.quote(str(target_path))} && cp -a {shlex.quote(str(target_path))} {shlex.quote(str(backup_path))} || true) && "
+                f"cp {shlex.quote(tmp_name)} {shlex.quote(str(target_path))} && "
+                f"chmod 644 {shlex.quote(str(target_path))}"
+            )
+            res = run_privileged_action(["bash", "-c", batch_cmd], reason=spk_reason, destructive=True)
             if res["ok"]:
-                # Ensure correct permissions
-                run_privileged_action(["chmod", "644", str(target_path)], reason="", destructive=False)
                 res["output"] = f"Successfully modified {target_path} (backup at {backup_path.name})"
             return res
         finally:

@@ -40,6 +40,8 @@ def test_classifier_identifies_crashes():
         ("Application segfault in libc.so.", "crash"),
         ("Kernel panic - not syncing: Fatal hardware error.", "crash"),
         ("Worker killed by OOM killer.", "oom"),
+        ("The screenshot tool crashed with segmentation fault.", "crash"),
+        ("Browser tab crashed unexpectedly with fatal error.", "crash"),
     ]
     for text, expected_cat in crash_samples:
         should_tell, category = EventClassifier.should_tell(text, source="os")

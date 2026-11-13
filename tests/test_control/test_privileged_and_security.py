@@ -164,3 +164,134 @@ async def test_unified_skills_package_denylist_execution():
     
     result = await unified.execute("manage_packages", {"action": "remove", "packages": ["hyprland"]})
     assert "critical OS package" in result
+
+
+# --- 5. Multi-Angle Hardening Tests ---
+
+def test_normalize_package_name_and_prefix_family_blocking():
+    from jarvis_control.security import normalize_package_name
+
+    # Normalization tests
+    assert normalize_package_name("extra/hyprland") == "hyprland"
+    assert normalize_package_name("core/linux>=6.0") == "linux"
+    assert normalize_package_name("community/vlc") == "vlc"
+
+    # Family prefix protections
+    family_protected = [
+        "extra/hyprland",
+        "hyprland-git",
+        "pipewire-pulse",
+        "pipewire-alsa",
+        "wireplumber-git",
+        "linux-zen",
+        "linux-hardened",
+        "systemd-libs",
+        "systemd-sysvcompat",
+        "sudo-git",
+        "hyprland>=0.40.0",
+        "pipewire-audio>=1.0",
+    ]
+    for pkg in family_protected:
+        assert is_protected_package(pkg) is True, f"Expected {pkg} to be recognized as protected"
+        with pytest.raises(ProtectedPackageError):
+            check_package_removal(pkg)
+
+    # Safe package variants should still be permitted
+    safe_pkgs = ["vlc", "extra/vlc", "neovim-qt", "firefox-developer-edition"]
+    for pkg in safe_pkgs:
+        assert is_protected_package(pkg) is False, f"Expected {pkg} to be allowed"
+        check_package_removal(pkg)
+
+
+def test_flag_injection_rejection_in_package_removal():
+    for flag in ("--nodeps", "-f", "-R", "--cascade"):
+        with pytest.raises(ProtectedPackageError) as exc_info:
+            check_package_removal([flag, "vlc"])
+        assert "Invalid package name argument" in str(exc_info.value)
+
+        err = validate_package_removal([flag, "htop"])
+        assert err is not None
+        assert "Invalid package name argument" in err
+
+
+def test_critical_system_services_protection():
+    # Blocking stop, disable, mask on critical infrastructure
+    critical_cases = [
+        ("dbus", "stop"),
+        ("dbus.service", "disable"),
+        ("pipewire", "stop"),
+        ("pipewire.service", "mask"),
+        ("wireplumber", "stop"),
+        ("systemd-journald", "stop"),
+        ("systemd-logind", "stop"),
+        ("jarvis-voice", "stop"),
+        ("hyprland", "stop"),
+    ]
+    for unit, action in critical_cases:
+        res = execute_manage_system_service(unit, action, scope="system")
+        assert res["ok"] is False
+        assert "Refusing to" in res["output"]
+        assert "protected core system service" in res["output"]
+
+    # Allowed safe inspection or restart on services
+    with patch("jarvis_control.privileged.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="active", stderr="")
+        res_status = execute_manage_system_service("pipewire", "status", scope="user")
+        assert res_status["ok"] is True
+
+
+def test_execute_manage_packages_install_flag_filtering_and_yay_fallback():
+    # Reject flag injection on install
+    res_flags = execute_manage_packages("install", ["--nodeps", "-f"])
+    assert res_flags["ok"] is False
+    assert "No valid package names provided" in res_flags["output"]
+
+    # When pacman fails with 'target not found', fallback to unprivileged yay with SUDO_ASKPASS
+    with patch("jarvis_control.privileged.run_privileged_action") as mock_pacman, \
+         patch("jarvis_control.privileged.subprocess.run") as mock_yay, \
+         patch("jarvis_control.privileged.set_voice_listening_paused") as mock_pause:
+        
+        mock_pacman.return_value = {"ok": False, "output": "error: target not found: custom-aur-pkg", "code": 1}
+        mock_yay.return_value = MagicMock(returncode=0, stdout="Installed from AUR", stderr="")
+
+        res = execute_manage_packages("install", ["custom-aur-pkg"])
+        assert res["ok"] is True
+        assert "Installed from AUR" in res["output"]
+
+        # Confirm yay was called unprivileged directly without sudo
+        yay_cmd = mock_yay.call_args[0][0]
+        assert yay_cmd[0] == "yay"
+        assert yay_cmd[1] == "-S"
+        assert "custom-aur-pkg" in yay_cmd
+
+
+def test_execute_modify_system_config_batches_privileged_commands():
+    with patch("jarvis_control.privileged.run_privileged_action") as mock_priv:
+        mock_priv.return_value = {"ok": True, "output": "Updated", "code": 0}
+        
+        res = execute_modify_system_config(
+            path="/etc/sysctl.d/99-jarvis-test.conf",
+            patch_or_content="vm.swappiness=20\n",
+            reason="Tuning swappiness"
+        )
+        assert res["ok"] is True
+        mock_priv.assert_called_once()
+        call_cmd = mock_priv.call_args[0][0]
+        # Verify single batched bash -c command with backup, cp, and chmod
+        assert call_cmd[0] == "bash"
+        assert call_cmd[1] == "-c"
+        assert ".jarvis.bak" in call_cmd[2]
+        assert "chmod 644" in call_cmd[2]
+
+
+def test_jarvis_askpass_graceful_exit_without_display():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    askpass_path = Path(__file__).parent.parent.parent / "bin" / "jarvis-askpass"
+    # Execute with stripped DISPLAY and WAYLAND_DISPLAY
+    env = {"PATH": "/usr/bin:/bin"}
+    proc = subprocess.run([sys.executable, str(askpass_path)], env=env, capture_output=True, text=True)
+    assert proc.returncode == 1
+    assert "failed initializing display dialog" in proc.stderr

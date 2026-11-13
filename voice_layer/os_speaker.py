@@ -109,15 +109,17 @@ class EventClassifier:
     def should_tell(cls, text: str, source: str = "os", urgency: int = 1) -> tuple[bool, str]:
         lowered = text.casefold()
 
-        # 1. Noise / routine / auto-resolved events are strictly silent
+        # 1. Check for genuine fatal crashes, panics, failures, or emergencies first
+        for pattern, category in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, lowered):
+                # Never alert if the notification explicitly reports issue resolved or auto-healed
+                if not re.search(r'\b(?:issue resolved|auto-healed|healed|restored|normal)\b', lowered):
+                    return True, category
+
+        # 2. Noise / routine events are strictly silent in context
         for pattern in cls.NOISE_PATTERNS:
             if re.search(pattern, lowered):
                 return False, "routine_noise"
-
-        # 2. Match against critical patterns (failures, crashes, high usage, low battery)
-        for pattern, category in cls.CRITICAL_PATTERNS:
-            if re.search(pattern, lowered):
-                return True, category
 
         # 3. Explicit D-Bus critical urgency notifications containing warning or error keywords
         if urgency == 2 and re.search(r'\b(?:error|fail|warning|alert|critical|halt|stopped)\b', lowered):
