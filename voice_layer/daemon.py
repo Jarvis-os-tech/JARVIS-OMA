@@ -930,7 +930,8 @@ class LiveVoice:
             return {"status": "error", "message": "empty text"}
         priority = payload.get("priority", "normal")
         source = payload.get("source", "os")
-        silent = bool(payload.get("silent", False) or payload.get("speak") is False or source in ("notification", "privileged_control", "desktop"))
+        is_critical = (priority == "critical")
+        silent = bool(payload.get("silent", False) or payload.get("speak") is False or (not is_critical and source in ("notification", "privileged_control", "desktop")))
 
         # 1. Register in recent OS alert history so conversational LLM has context
         self.recent_os_alerts.append({
