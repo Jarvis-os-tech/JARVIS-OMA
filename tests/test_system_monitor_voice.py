@@ -65,7 +65,7 @@ def test_format_alert_speech_all_categories():
     assert "recovered" in speech_rec.lower() or "restored" in speech_rec.lower() or "healthy" in speech_rec.lower()
 
 
-def test_jarvis_voice_speaker_mock_socket(tmp_path):
+def test_voice_layer_speaker_mock_socket(tmp_path):
     sock_path = tmp_path / "control.sock"
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(sock_path))
@@ -95,7 +95,7 @@ def test_jarvis_voice_speaker_mock_socket(tmp_path):
     assert "Battery is critically low" in received_commands[0]
 
 
-def test_jarvis_voice_speaker_fallback_when_socket_missing(tmp_path):
+def test_voice_layer_speaker_fallback_when_socket_missing(tmp_path):
     missing_sock = tmp_path / "nonexistent.sock"
     speaker = JarvisVoiceSpeaker(socket_path=missing_sock)
     assert speaker.is_available() is False

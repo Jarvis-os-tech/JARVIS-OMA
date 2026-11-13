@@ -4,10 +4,10 @@ from pathlib import Path
 
 
 def test_all_modules_import():
-    """Every jarvis_voice submodule imports without error."""
-    import jarvis_voice
-    from jarvis_voice import config, ipc, recovery, speech, playback, daemon
-    assert jarvis_voice.__version__ == '0.1.0'
+    """Every voice_layer submodule imports without error."""
+    import voice_layer
+    from voice_layer import config, ipc, recovery, speech, playback, daemon
+    assert voice_layer.__version__ == '0.1.0'
 
 
 def test_voice_lock_files_untouched():
@@ -27,8 +27,8 @@ def test_voice_lock_files_untouched():
 
 def test_config_to_daemon_integration():
     """Config loads and feeds into daemon correctly."""
-    from jarvis_voice.config import Config
-    from jarvis_voice.daemon import live_config
+    from voice_layer.config import Config
+    from voice_layer.daemon import live_config
     c = Config(voice='Puck', model='gemini-2.0-flash-live')
     result = live_config(voice=c.voice)
     assert 'Puck' in str(result['speech_config'])
@@ -36,7 +36,7 @@ def test_config_to_daemon_integration():
 
 def test_recovery_in_daemon_context():
     """Recovery module integrates with daemon error handling."""
-    from jarvis_voice.recovery import ConnectionRecovery
+    from voice_layer.recovery import ConnectionRecovery
     r = ConnectionRecovery(retry_budget=3)
     d = r.decide(ConnectionError('closed'), session_opened=True, session_seconds=120)
     assert not d.fatal

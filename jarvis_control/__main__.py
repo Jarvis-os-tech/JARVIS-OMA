@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from jarvis_voice.config import control_config, load, load_env
+from voice_layer.config import control_config, load, load_env
 from .discovery import TOPICS, lookup
 from .tools import Executor, tools_for
 

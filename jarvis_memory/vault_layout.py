@@ -241,8 +241,7 @@ def sovereign_notes(notes, groups, old_folder, memory):
         f"- **Core Tech Stack**: Python 3.13 / 3.14, FastHTML, SQLite, Rust, PipeWire, systemd\n"
         f"- **Primary Voice Architecture**: Gemini 3.8 Live Cloud WebSocket + Offline Whisper/Piper fallback\n"
         f"- **Main Repositories**:\n"
-        f"  - `JARVIS OS`: Command center, skills, voice runtime, continuous memory\n"
-        f"  - `universal-voice`: Standalone portable voice daemon\n\n"
+        f"  - `JARVIS OS`: Command center, skills, voice runtime, continuous memory\n\n"
         f"---\n[[Personal/INDEX|📁 Personal Data Index]] | [[00 HOME|🏠 Master Dashboard]]\n"
     )
     sovereign["Personal/System & Environment.md"] = sys_content

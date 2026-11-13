@@ -1,6 +1,6 @@
 """Audio-independent construction of the shared JARVIS harness configuration."""
 from pathlib import Path
-from jarvis_voice.persona import system_persona
+from voice_layer.persona import system_persona
 
 from orchestration.groq_tool_router import (
     ROUTER_DECLARATION, configured_groq_api_keys, partition_declarations_for_router)

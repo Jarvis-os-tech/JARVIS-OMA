@@ -6,7 +6,7 @@ import pytest
 
 from jarvis_control.device_execution import SharedToolExecutor
 from jarvis_control.device_bridge import DeviceBridge
-from jarvis_voice.ipc import ControlServer
+from voice_layer.ipc import ControlServer
 
 
 @pytest.mark.asyncio

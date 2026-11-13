@@ -3,7 +3,7 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from jarvis_voice.ipc import ControlServer
+from voice_layer.ipc import ControlServer
 from jarvis_control.device_bridge import DeviceBridge
 
 

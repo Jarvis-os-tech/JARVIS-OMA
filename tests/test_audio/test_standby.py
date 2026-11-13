@@ -3,7 +3,7 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 
-from jarvis_voice.standby import OpenWakeWordDetector, StandbyController
+from voice_layer.standby import OpenWakeWordDetector, StandbyController
 
 
 class FakeModel:
@@ -164,8 +164,8 @@ class StandbyTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(detector.process(window))
 
     async def test_standby_announces_before_entering_standby(self):
-        from jarvis_voice.daemon import LiveVoice, EnterStandby
-        from jarvis_voice.playback import Playback
+        from voice_layer.daemon import LiveVoice, EnterStandby
+        from voice_layer.playback import Playback
 
         player = Playback('default')
         voice = LiveVoice(player)
@@ -220,8 +220,8 @@ class StandbyReleaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(controller.engaged)
 
     async def test_wake_during_announcement_cancels_old_standby_transition(self):
-        from jarvis_voice.daemon import LiveVoice
-        from jarvis_voice.playback import Playback
+        from voice_layer.daemon import LiveVoice
+        from voice_layer.playback import Playback
         voice=LiveVoice(Playback('test'));voice.connected=True
         voice.standby=StandbyController(detector=SimpleNamespace(reset=lambda:None))
         voice.player.enqueue=lambda data:voice.standby.wake()

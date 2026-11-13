@@ -39,12 +39,12 @@ def test_installed_commands_and_distributed_config(tmp_path):
     assert (installed / 'jarvis_memory/__init__.py').is_file()
     assert (installed / 'jarvis_control/omarchy_guides/SKILL.md').is_file()
     assert (installed / 'jarvis_control/web_text.py').is_file()
-    assert (installed / 'jarvis_voice/background.py').is_file()
+    assert (installed / 'voice_layer/background.py').is_file()
     assert (installed / 'skill_manifests/vision.json').is_file()
     interpreter = installed / '.venv/bin/python'
     run(str(interpreter), '-c',
         'import sys; sys.path.insert(0, ' + repr(str(installed)) + '); '
-        'from skills.skills import DesktopSkills; from jarvis_voice.background import monitor; '
+        'from skills.skills import DesktopSkills; from voice_layer.background import monitor; '
         'from orchestration.task_events import CONTRACT; import learning')
 
     service = (destination / '.config/systemd/user/jarvis-voice.service').read_text()

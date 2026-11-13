@@ -12,7 +12,7 @@ from jarvis_control.skills import UnifiedSkills
 from orchestration.task_agents import TaskAgents
 from orchestration.task_presentation import TaskPresentation
 from skills.skills import DesktopSkills
-from jarvis_voice.daemon import build_instruction
+from voice_layer.daemon import build_instruction
 
 
 def worker():

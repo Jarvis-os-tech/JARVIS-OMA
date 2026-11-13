@@ -44,8 +44,8 @@ def deploy():
     write('skill_manifests/composio.json', 'skill_manifests/composio.json')
     write('skill_manifests/omarchy-defaults.json', 'skill_manifests/omarchy-defaults.json')
     write('orchestration/tool_tiers.py', 'orchestration/tool_tiers.py')
-    write('jarvis_voice/daemon.py', 'voice_layer/daemon.py')
-    write('jarvis_voice/persona.py', 'voice_layer/persona.py')
+    write('voice_layer/daemon.py', 'voice_layer/daemon.py')
+    write('voice_layer/persona.py', 'voice_layer/persona.py')
     write('jarvis_control/nlu.py', 'jarvis_control/nlu.py')
     write('jarvis_control/execution_policy.py', 'jarvis_control/execution_policy.py')
     write('jarvis_control/skills.py', 'jarvis_control/skills.py')
@@ -72,7 +72,7 @@ def deploy():
                 (secrets_dest / sfile.name).chmod(0o600)
 
     # Update persona in the runtime release with strict native vs composio instructions
-    persona_target = target / 'jarvis_voice/persona.py'
+    persona_target = target / 'voice_layer/persona.py'
     if persona_target.exists():
         persona_target.chmod(persona_target.stat().st_mode | 0o200)
         p_content = persona_target.read_text(encoding='utf-8')

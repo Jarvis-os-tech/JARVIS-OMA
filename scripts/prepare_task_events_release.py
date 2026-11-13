@@ -56,13 +56,6 @@ def prepare():
     for path in (SOURCE / 'tests').rglob('*'):
         if path.is_file() and path.suffix in {'.py', '.json'} and '__pycache__' not in path.parts:
             put(str(path.relative_to(SOURCE)), path.read_text())
-    put('tests/conftest.py', (target / 'tests/conftest.py').read_text() + '''
-import jarvis_voice
-sys.modules['voice_layer'] = jarvis_voice
-for _name, _module in list(sys.modules.items()):
-    if _name.startswith('jarvis_voice.'):
-        sys.modules['voice_layer' + _name[len('jarvis_voice'):]] = _module
-''')
     subprocess.run([str(PYTHON), str(target / 'scripts/behavior_gate.py'), '--report',
                     str(target / 'behavior-gate.json')], cwd=target, check=True, timeout=140)
     evidence = json.loads((target / 'behavior-gate.json').read_text())

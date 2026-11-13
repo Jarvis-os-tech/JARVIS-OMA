@@ -76,8 +76,8 @@ def prepare(destination):
         path.write_text(body)
         changed.append(relative)
 
-    write('jarvis_voice/persona.py', (SOURCE / 'voice_layer/persona.py').read_text())
-    relative = 'jarvis_voice/daemon.py'
+    write('voice_layer/persona.py', (SOURCE / 'voice_layer/persona.py').read_text())
+    relative = 'voice_layer/daemon.py'
     body, source = (target / relative).read_text(), (SOURCE / 'voice_layer/daemon.py').read_text()
     for name in ('build_instruction', 'live_config'):
         body = replace_once(body, function_text(body, name), function_text(source, name))
@@ -94,7 +94,7 @@ def prepare(destination):
 
     relative = 'core/harness_config.py'
     body, source = (target / relative).read_text(), (SOURCE / relative).read_text()
-    if 'from jarvis_voice.persona import system_persona' not in body:
+    if 'from voice_layer.persona import system_persona' not in body:
         old_start = body.index('        instruction = (', body.index('    elif skills is not None:'))
         end_marker = "            'Begin with the answer or execute the requested action immediately. '"
         old_end = body.index(end_marker, old_start)
@@ -102,7 +102,7 @@ def prepare(destination):
         new_end = source.index(end_marker, new_start)
         body = body[:old_start] + source[new_start:new_end] + body[old_end:]
         body = replace_once(body, 'from pathlib import Path\n',
-                            'from pathlib import Path\nfrom jarvis_voice.persona import system_persona\n')
+                            'from pathlib import Path\nfrom voice_layer.persona import system_persona\n')
     # Superseded hard-coded rules otherwise override the shared conversation policy.
     for start, end in (
         ('            \'Interpret a bare “mute”,', "            'JARVIS is never permitted"),
@@ -151,7 +151,7 @@ def prepare(destination):
     check = """from types import SimpleNamespace as NS
 from pathlib import Path
 from google.genai import types
-from jarvis_voice.daemon import live_config
+from voice_layer.daemon import live_config
 from skills.skills import DesktopSkills
 from orchestration.tool_tiers import CORE_TOOLS
 r=DesktopSkills.__new__(DesktopSkills);r.manifest_dirs=[Path('skill_manifests')]

@@ -40,7 +40,7 @@ from jarvis_control.outcomes import classify_result
 from jarvis_control.execution_policy import tool_timeout
 from jarvis_control.evidence import requires_action_evidence, META_TOOLS
 
-log = logging.getLogger('jarvis_voice')
+log = logging.getLogger('voice_layer')
 INPUT_BYTES = 640  # 20ms at 16kHz mono s16le (320 samples)
 
 

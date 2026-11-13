@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from jarvis_voice.daemon import LiveVoice, live_config
+from voice_layer.daemon import LiveVoice, live_config
 from jarvis_memory.config import Config
 from jarvis_memory.bridge import MemoryBridge
 from jarvis_memory.extractor import FactExtractor

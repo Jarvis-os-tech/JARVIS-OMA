@@ -25,7 +25,7 @@ class ControlSkills:
         else:
             # The voice config exposes these switches; keep the control
             # adapter's complete policy/provider defaults for other fields.
-            from jarvis_voice.config import control_config
+            from voice_layer.config import control_config
             self.config = control_config(config)
         self.call_timeout = call_timeout
         self.executor = Executor(self.config)

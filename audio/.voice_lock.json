@@ -5,7 +5,6 @@
   "scope": "PC voice subsystem; shared application/UI code and Android excluded",
   "protected_roots": [
     "voice_layer",
-    "jarvis_voice",
     "audio"
   ],
   "locked_files": {
@@ -94,58 +93,7 @@
       "mode_before": 420
     },
     "docs/voice-subsystem-lock.md": {
-      "sha256": "8a5478627753b6b47dbc4901b1490d77ca7946abb3790428e48b3426d3613e39",
-      "mode_before": 420
-    },
-    "jarvis_voice/__init__.py": {
-      "sha256": "f8feefd25ccff9cd9fd9b7b1a4a2bbe0fd161daac3c1a1eb2786c208f9cb3d0e",
-      "mode_before": 420
-    },
-    "jarvis_voice/__main__.py": {
-      "sha256": "73e4fe17ee554c6fb9e786cf3fbf5f4c3d22ca03940794834b173674ea05bce3",
-      "mode_before": 420
-    },
-    "jarvis_voice/assets": {
-      "link_target": "../voice_layer/assets"
-    },
-    "jarvis_voice/background.py": {
-      "sha256": "d8bf7f651fb6fbb984d43272854a1f224f110a5235d47e383992dfdaec90bdc9",
-      "mode_before": 420
-    },
-    "jarvis_voice/config.py": {
-      "sha256": "6867b927e18e929e5d1c23e90c31d19a807a339498f478df725a4caf0e521c4c",
-      "mode_before": 420
-    },
-    "jarvis_voice/daemon.py": {
-      "sha256": "f001549eb8a7243d297be9e8584180784e1bf3d31cf28f8451651a1000833536",
-      "mode_before": 420
-    },
-    "jarvis_voice/echo.py": {
-      "sha256": "7a028ed642aec4370e730f45a593bfdd628fd0a3a6bdf1a19c63557d431728e7",
-      "mode_before": 420
-    },
-    "jarvis_voice/ipc.py": {
-      "sha256": "1bb76feca24ebeee48f6797e55a0dc61e25d73ee3477acbf558e795c62ec28c1",
-      "mode_before": 420
-    },
-    "jarvis_voice/microphone.py": {
-      "sha256": "6939606c1140ad8a0945e3bfef71192ffe08d0e2167d3bbc99e16574b06f66ee",
-      "mode_before": 420
-    },
-    "jarvis_voice/playback.py": {
-      "sha256": "b4c10b34aa8e0b7fd66782dbb2ce1f5e79761c6731cadd44f9b74462edee91a5",
-      "mode_before": 420
-    },
-    "jarvis_voice/recovery.py": {
-      "sha256": "1595fd0615b9c28718b3defa96a3286475700dc5d1a8c6e36b65587f379960f0",
-      "mode_before": 420
-    },
-    "jarvis_voice/speech.py": {
-      "sha256": "8a344bd4c8f35645e85b947406c69fe4be892b2e59ff4b5d9cc3906ee7354ff7",
-      "mode_before": 420
-    },
-    "jarvis_voice/standby.py": {
-      "sha256": "f57efa3831821a627c987eadc14a6d88ce8be0500f3d7d032ced0954d0ceb614",
+      "sha256": "c3fead496adcbd3e23542acd101e62cf76a7a79040da161bb67ad062ef8654fd",
       "mode_before": 420
     },
     "scripts/verify_voice_lock.py": {
@@ -153,7 +101,7 @@
       "mode_before": 420
     },
     "systemd/jarvis-voice.service": {
-      "sha256": "5fb9d7efda228a9b3e15287644bf79d45979af66ef932216ea022724c843594c",
+      "sha256": "43f181d5f5f6f082703a0adc87c156f24bfcd5277a81f4970904fbc9afc662f5",
       "mode_before": 420
     },
     "systemd/omarchy-voice.service": {
@@ -161,11 +109,11 @@
       "mode_before": 420
     },
     "tests/test_acknowledgement_cadence.py": {
-      "sha256": "aa8f7544ccfb714950d7b2d7b873159bb82ba8e9d728691213847d0d192efb23",
+      "sha256": "ae89c0264b2b95ea66a9a58e45261f9d2885c0803430ec754579eb1b22328226",
       "mode_before": 420
     },
     "tests/test_action_speech_evidence.py": {
-      "sha256": "471899e6c4dcbc4b17ff38c976cfc2556b9a9115f512aa3980a980d67683df58",
+      "sha256": "bc0c22080e90b0baf82e0b7ef47555ba9a3d47021d63b281f3c3d9fdb4dd4c7c",
       "mode_before": 420
     },
     "tests/test_audio/test_filler_crossfade.py": {
@@ -173,19 +121,19 @@
       "mode_before": 420
     },
     "tests/test_audio/test_standby.py": {
-      "sha256": "2e93ddd866dc10693f41af2a48992f4e080b8666d4213286994d025a73d2fd0e",
+      "sha256": "42bb9f8277a731becd2a0b808b0a9e0d945a30af378039ae73458ce431e322c7",
       "mode_before": 420
     },
     "tests/test_background.py": {
-      "sha256": "386068da8431161e612271035625d105d0c76e30f3b13ea4c55099c13b4cb590",
+      "sha256": "012c7e5ddaa12154da0d36922afcc8f08531a335c7ed3a376a4083d0bf9f8bdd",
       "mode_before": 420
     },
     "tests/test_config.py": {
-      "sha256": "51e0bd4326d1178e26e4496a630cad0fcabd768aa4089e63456031ddc839bb62",
+      "sha256": "dc312d7eadaa84bce93aed25d821130e1b33b7ae566edfd71fc10973c1d4c849",
       "mode_before": 420
     },
     "tests/test_daemon.py": {
-      "sha256": "58d01c8e07b74a4cc24ce4c0b5d82b7706c670e6987f0ea67c808fc8ccd01265",
+      "sha256": "790ade5e020120b05f6b58b34ad5bc8c27308eddb308891fe0b67c9b24c2eb3e",
       "mode_before": 420
     },
     "tests/test_hie_contextual_ack.py": {
@@ -213,11 +161,11 @@
       "mode_before": 420
     },
     "tests/test_hie_startup_interruption.py": {
-      "sha256": "3b68baee6cdefe0fb8f3cccfdff2d045c8c697ca86fb558b9718b10e30de400a",
+      "sha256": "d07289095ba979f09968720c985244c2ed6535db35bcf06a54706ea80b2d9536",
       "mode_before": 420
     },
     "tests/test_interruptions.py": {
-      "sha256": "afb41f8aa362c1e9d901365d1a98b20e1fcaf95120c7b801334aa79415979a58",
+      "sha256": "858f9ad73fc5d1affc1897f03a4e8ef6e72fea977a406aa62980687f3ad9ba3e",
       "mode_before": 420
     },
     "tests/test_local_speech.py": {
@@ -229,19 +177,19 @@
       "mode_before": 420
     },
     "tests/test_no_repeated_waiting.py": {
-      "sha256": "dfb5612acd5c10ecd9df6cdad977e4b087fd0727b5c1f1373c7b269987f209b3",
+      "sha256": "008ad1fb4576364165a0fd5afd54b4aa25de8a157ee35cef967222f239e0f86e",
       "mode_before": 420
     },
     "tests/test_persona_review_fixes.py": {
-      "sha256": "5aa6e17f4b709798dd630cf1ea048fc57377958fe40eec74fd9ba14854ddaa4a",
+      "sha256": "27ad356fb765127fbb84abcbd7b6a7815398f60bb7ad5bc688fbd6fe7ce656cb",
       "mode_before": 420
     },
     "tests/test_playback.py": {
-      "sha256": "3cc806077f6ad9f1abafcc6ce0cc93375f5d3f70a091fc4f39c9f388ab7290c2",
+      "sha256": "c9d4e1db392ad9409cfe691cefbeba76c553d802449120a7a506a63f6bc57b07",
       "mode_before": 420
     },
     "tests/test_reply_guard.py": {
-      "sha256": "81efc10795a67dfdfcfa44c639d41d96d139d4be41fb1f88a5cbfd31ff858936",
+      "sha256": "fc4b0fd0e12e75e975a3130dc6a2702aba4ff4f0c26532cedb61dfd878c21c1e",
       "mode_before": 420
     },
     "tests/test_situational_acknowledgements.py": {
@@ -249,11 +197,11 @@
       "mode_before": 420
     },
     "tests/test_speech.py": {
-      "sha256": "5d46324e653e857f15d95569fce3e83d6fd5614cbe5eadf69afdc39c64411a59",
+      "sha256": "c5cb31883023a3643694e65138b41286e96412c2dc1b92e5304bfc88bcf310aa",
       "mode_before": 420
     },
     "tests/test_spoken_fillers.py": {
-      "sha256": "9406f0ddf14ef0af7a366091d0069c1fad7e8a5c0cc722ad2fe23bba54526e6b",
+      "sha256": "cca1ee8a2ac2484971edeb688d13cff8fffc0b99089332fc083378ad88f5da69",
       "mode_before": 420
     },
     "tests/test_system_persona.py": {
@@ -261,11 +209,11 @@
       "mode_before": 420
     },
     "tests/test_task_start_acknowledgement.py": {
-      "sha256": "978f72bf4d269bf59ecf704cb0be2494fda35fc03579d58df72a1fd49d01712b",
+      "sha256": "a0592115628eef9e1fdb3c99326f9617d6937e1bb9e26b6ec5314a53fa0e21d6",
       "mode_before": 420
     },
     "tests/test_voice_latency.py": {
-      "sha256": "f1129ceac48ef6340274781b9cfecb6e28c75d1c40182037e160f747eaef00b1",
+      "sha256": "d95dc8620766b1867387e7b9e93ee2009a6469c85641369c4b0dbb84a58d900e",
       "mode_before": 420
     },
     "tests/test_voice_layer.py": {
@@ -277,7 +225,7 @@
       "mode_before": 420
     },
     "tests/test_voice_responsiveness.py": {
-      "sha256": "12281c81999f26189e9f03bd6916d0ad78bd42a510e990d22a0ed7376cdfd929",
+      "sha256": "48c072943d00bd8207846ad29e83db118bbc1b9203a0d221f90b7510527941fd",
       "mode_before": 420
     },
     "tests/test_voice_system_update.py": {
@@ -285,11 +233,11 @@
       "mode_before": 420
     },
     "tests/test_voice_tool_catalog.py": {
-      "sha256": "a11206f2aa4b2de3479bd1c4c3b8427f4c591e1f878082ec52c5bbb4cf23cde8",
+      "sha256": "7a4765d9148f95132a647b4ea27655af9e3ade0f956dfac42b61a7627c2a7f14",
       "mode_before": 420
     },
     "tests/test_wake_repair.py": {
-      "sha256": "2a91d22193de46497a1291a3e293b4fee5c9b6bf8692dffed15577c18e73353a",
+      "sha256": "cbec5ef6ef2a1a9f48b6795a4380368c3f7e7a07720d1557e437a2fb54af66e2",
       "mode_before": 384
     },
     "voice_layer/__init__.py": {
@@ -297,7 +245,7 @@
       "mode_before": 420
     },
     "voice_layer/__main__.py": {
-      "sha256": "6cd07427b3d6ba14a13e98bfcb5c0fdb55e2a795dc05a749a617dc747f147487",
+      "sha256": "ec65ab98a69de0e38eafd7fb1bbba772b0e6a24b0c510b4a4b4b3bb8c22880ac",
       "mode_before": 420
     },
     "voice_layer/acknowledgements.py": {
@@ -413,7 +361,7 @@
       "mode_before": 420
     },
     "voice_layer/background.py": {
-      "sha256": "351543646dd7edacd2e8b214e780c34202c3c5afdeb1eee6ccae7c04da1fb82a",
+      "sha256": "07ee22b38667abc0c31e5475c46c4a7ce827cc0d3d1b19932770a9bc6d8a70b7",
       "mode_before": 420
     },
     "voice_layer/config.py": {
@@ -421,7 +369,7 @@
       "mode_before": 420
     },
     "voice_layer/daemon.py": {
-      "sha256": "6ace5cc15637de7517bb1903f806fb0d3220e660cecf4760c24e7f3ee38207d9",
+      "sha256": "3479e5e988292d8ae489a940504ecd0bf14e0b2cce6ca53e49bc2b3127b996fb",
       "mode_before": 420
     },
     "voice_layer/downstream.py": {
@@ -429,7 +377,7 @@
       "mode_before": 420
     },
     "voice_layer/echo.py": {
-      "sha256": "6fd08379a978f971f6eac38faa7cba4c913e35bf6dfa579b5a2311089e158a27",
+      "sha256": "83598b1df9fc375ccbf12ccb9cbb92efeb774153ef5c3e2b2805d0331419dda1",
       "mode_before": 420
     },
     "voice_layer/engine.py": {
@@ -445,7 +393,7 @@
       "mode_before": 420
     },
     "voice_layer/ipc.py": {
-      "sha256": "5c59cb3679409ec07315d1c657204d02c4f010b5f0f156bead730116a3a4e039",
+      "sha256": "7cd78d47c46760c3299e6fd9e1ed127d444befd9a26dd5a3e51c598a7d22d0bb",
       "mode_before": 420
     },
     "voice_layer/local_speech.py": {
@@ -489,7 +437,7 @@
       "mode_before": 420
     },
     "voice_layer/standby.py": {
-      "sha256": "8d4316e96cf95e139770a0f2548d03d60ac0d5b7a47e624e57f5f8c1ddf55cc6",
+      "sha256": "054715678d045e4731f7949e371cc47c21837c2ee05e8f78a0e3dbdc040dc78e",
       "mode_before": 420
     },
     "voice_layer/whistle_worker.py": {
@@ -498,6 +446,10 @@
     },
     "tests/test_microphone_mute_sync.py": {
       "sha256": "10d2ca6403366815052bdbf211e82c12fd08f9bf623975e06cdb0ec3dd038935",
+      "mode_before": 420
+    },
+    "voice_layer/os_speaker.py": {
+      "sha256": "bef21c1bb79d8cd47d30bce4393b719b1a982ace82addfb07c0a929e0db8bc6e",
       "mode_before": 420
     }
   },

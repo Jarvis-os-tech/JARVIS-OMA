@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
-from jarvis_voice.speech import GateFrame, PlaybackReference, SpokenInterruption
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
+from voice_layer.speech import GateFrame, PlaybackReference, SpokenInterruption
 
 
 def pcm_tone(rate, seconds, frequency=440, amplitude=12000):

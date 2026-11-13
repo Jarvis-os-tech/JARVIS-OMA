@@ -39,13 +39,6 @@ def prepare():
     relative = 'skills/skills.py'
     put(relative, splice((target / relative).read_text(), (SOURCE / relative).read_text(),
         ['DesktopSkills._adapter_remember_memory', 'DesktopSkills._adapter_recall_memory', 'DesktopSkills._adapter_forget_memory']))
-    put('tests/conftest.py', (target / 'tests/conftest.py').read_text() + '''
-import jarvis_voice
-sys.modules['voice_layer'] = jarvis_voice
-for _name, _module in list(sys.modules.items()):
-    if _name.startswith('jarvis_voice.'):
-        sys.modules['voice_layer' + _name[len('jarvis_voice'):]] = _module
-''')
     python = str(RUNTIME / 'venv/bin/python')
     subprocess.run([python, '-m', 'pytest', 'tests/test_memory', '-q'], cwd=target, check=True, timeout=90)
     subprocess.run([python, str(target / 'scripts/behavior_gate.py'), '--report',

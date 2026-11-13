@@ -12,8 +12,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
 
 
 def voice():
@@ -83,8 +83,8 @@ async def test_long_wait_gets_one_ack_and_no_processing_notice(monkeypatch):
         if cycles > 2:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 16)
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 16)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
@@ -106,8 +106,8 @@ async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypa
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 11.3)
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 11.3)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.qsize() == 1
@@ -132,8 +132,8 @@ async def test_early_ack_does_not_compete_with_answers_or_control_turns(monkeypa
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 11.3)
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 11.3)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queue.empty()
@@ -141,7 +141,7 @@ async def test_early_ack_does_not_compete_with_answers_or_control_turns(monkeypa
 
 @pytest.mark.asyncio
 async def test_uploaded_speech_boundary_arms_local_ack():
-    from jarvis_voice.speech import GateFrame
+    from voice_layer.speech import GateFrame
     instance = voice()
     queue = asyncio.Queue()
     queue.put_nowait((GateFrame(bytes(640), opened=True), 0))

@@ -4,7 +4,7 @@ import pytest
 
 from jarvis_control.config import Config
 from jarvis_control.skills import ControlSkills, UnifiedSkills
-from jarvis_voice.daemon import build_instruction
+from voice_layer.daemon import build_instruction
 from skills.skills import DesktopSkills
 
 

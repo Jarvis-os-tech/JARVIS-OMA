@@ -170,8 +170,8 @@ def test_absence_conflict_and_unavailable_are_distinct(incident_data):
 
 
 @pytest.mark.parametrize('path', [
-    'audio/new.py', 'voice_layer/daemon.py', 'jarvis_voice/new.py',
-    'universal-voice/new-file', 'audio/.voice_lock.json', 'universal-voice/.voice_lock.json',
+    'audio/new.py', 'voice_layer/daemon.py', 'voice_layer/new.py',
+    'audio/.voice_lock.json',
     'bin/jarvis-voice', 'scripts/verify_voice_lock.py', 'scripts',
     'learning/os_contracts.py', 'tests/test_learning/test_os_contracts.py',
     '../outside', '/etc/passwd', './learning/new.py', 'learning/../audio/new.py',
@@ -189,7 +189,7 @@ def test_path_check_does_not_grant_execution_or_activation():
 
 
 def test_manifests_fail_closed_and_links_cannot_hide_targets(tmp_path):
-    for folder, filename in [('audio', '.voice_lock.json'), ('universal-voice', '.voice_lock.json')]:
+    for folder, filename in [('audio', '.voice_lock.json')]:
         (tmp_path / folder).mkdir()
         (tmp_path / folder / filename).write_text(json.dumps({
             'schema_version': 1, 'status': 'locked', 'protected_roots': ['audio'],

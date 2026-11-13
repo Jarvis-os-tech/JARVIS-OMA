@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from jarvis_voice.ipc import ControlServer
-from jarvis_voice.standby import LocalPhraseDetector, StandbyController, WakeWordUnavailable
+from voice_layer.ipc import ControlServer
+from voice_layer.standby import LocalPhraseDetector, StandbyController, WakeWordUnavailable
 
 
 @pytest.mark.asyncio

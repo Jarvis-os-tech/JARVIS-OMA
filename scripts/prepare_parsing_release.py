@@ -49,8 +49,8 @@ def prepare(destination):
                      'requirements.txt', 'requirements-dev.txt', 'pytest.ini'):
         put(relative, (SOURCE / relative).read_text())
     patches = {
-        'jarvis_voice/local_speech.py': ('voice_layer/local_speech.py', ['command_for']),
-        'jarvis_voice/daemon.py': ('voice_layer/daemon.py', ['LiveVoice.handle', 'LiveVoice.send_inputs']),
+        'voice_layer/local_speech.py': ('voice_layer/local_speech.py', ['command_for']),
+        'voice_layer/daemon.py': ('voice_layer/daemon.py', ['LiveVoice.handle', 'LiveVoice.send_inputs']),
         'jarvis_control/evidence.py': ('jarvis_control/evidence.py', ['META_TOOLS']),
         'orchestration/tool_tiers.py': ('orchestration/tool_tiers.py', ['CORE_TOOLS', 'META_TOOLS']),
         'orchestration/release_manager.py': ('orchestration/release_manager.py', [
@@ -76,16 +76,6 @@ def prepare(destination):
     for path in (SOURCE / 'tests').rglob('*'):
         if path.is_file() and path.suffix in {'.py', '.json'} and '__pycache__' not in path.parts:
             put(str(path.relative_to(SOURCE)), path.read_text())
-    conftest = (target / 'tests/conftest.py').read_text()
-    conftest += '''
-# Installed runtime keeps jarvis_voice; source-checkout tests use voice_layer.
-import jarvis_voice
-sys.modules['voice_layer'] = jarvis_voice
-for _name, _module in list(sys.modules.items()):
-    if _name.startswith('jarvis_voice.'):
-        sys.modules['voice_layer' + _name[len('jarvis_voice'):]] = _module
-'''
-    put('tests/conftest.py', conftest)
     subprocess.run([str(PYTHON), str(target / 'scripts/behavior_gate.py'),
                     '--report', str(target / 'behavior-gate.json')], cwd=target,
                    check=True, timeout=140)

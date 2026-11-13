@@ -6,7 +6,7 @@ import pytest
 
 def test_cli_help():
     result = subprocess.run(
-        [sys.executable, '-m', 'jarvis_voice', '--help'],
+        [sys.executable, '-m', 'voice_layer', '--help'],
         capture_output=True, text=True, timeout=10)
     assert result.returncode == 0
     assert 'jarvis' in result.stdout.lower() or 'voice' in result.stdout.lower()
@@ -14,7 +14,7 @@ def test_cli_help():
 def test_cli_check_no_network():
     """--check validates dependencies without opening audio or network."""
     result = subprocess.run(
-        [sys.executable, '-m', 'jarvis_voice', '--check'],
+        [sys.executable, '-m', 'voice_layer', '--check'],
         capture_output=True, text=True, timeout=10)
     # audio commands pw-record etc. are present on linux or might fail
     assert result.returncode in (0, 1)
@@ -22,9 +22,9 @@ def test_cli_check_no_network():
 def test_cli_status_not_running(tmp_path, monkeypatch):
     """When socket does not exist, status exits with code 1."""
     fake_sock = tmp_path / 'nonexistent.sock'
-    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', fake_sock)
+    monkeypatch.setattr('voice_layer.config.SOCKET_PATH', fake_sock)
     
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'status'])
     rc = main()
     assert rc == 1
@@ -34,7 +34,7 @@ def test_cli_status_json_socket(tmp_path, monkeypatch):
     import socket
     import threading
     sock_path = tmp_path / 'control.sock'
-    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+    monkeypatch.setattr('voice_layer.config.SOCKET_PATH', sock_path)
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(sock_path))
@@ -59,7 +59,7 @@ def test_cli_status_json_socket(tmp_path, monkeypatch):
     t = threading.Thread(target=handle)
     t.start()
 
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'status', '--json'])
     rc = main()
     assert rc == 0
@@ -71,7 +71,7 @@ def test_cli_systemd_commands(monkeypatch):
     calls = []
     monkeypatch.setattr('subprocess.call', lambda cmd: calls.append(cmd) or 0)
 
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     monkeypatch.setattr(sys, 'argv', ['jarvis-voice', 'restart'])
     assert main() == 0
     assert calls[-1] == ['systemctl', '--user', 'restart', 'jarvis-voice.service']
@@ -86,10 +86,10 @@ def test_cli_systemd_commands(monkeypatch):
 
 
 def test_run_honors_configured_model_unless_overridden(monkeypatch):
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
 
     monkeypatch.delenv('GEMINI_LIVE_MODEL', raising=False)
-    with patch('jarvis_voice.daemon.main', return_value=0) as run:
+    with patch('voice_layer.daemon.main', return_value=0) as run:
         assert main(['run']) == 0
         assert run.call_args.args[0].model is None
         assert main(['run', '--model', 'explicit-model']) == 0
@@ -100,7 +100,7 @@ def test_cli_standby_command(tmp_path, monkeypatch):
     import socket
     import threading
     sock_path = tmp_path / 'control.sock'
-    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+    monkeypatch.setattr('voice_layer.config.SOCKET_PATH', sock_path)
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(sock_path))
@@ -123,7 +123,7 @@ def test_cli_standby_command(tmp_path, monkeypatch):
     t = threading.Thread(target=handle)
     t.start()
 
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     rc = main(['standby'])
     assert rc == 0
     t.join()
@@ -133,7 +133,7 @@ def test_cli_send_command(tmp_path, monkeypatch):
     import socket
     import threading
     sock_path = tmp_path / 'control.sock'
-    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+    monkeypatch.setattr('voice_layer.config.SOCKET_PATH', sock_path)
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(sock_path))
@@ -157,7 +157,7 @@ def test_cli_send_command(tmp_path, monkeypatch):
     t = threading.Thread(target=handle)
     t.start()
 
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     rc = main(['send', 'hello', 'jarvis'])
     assert rc == 0
     t.join()
@@ -168,7 +168,7 @@ def test_cli_wake_command(tmp_path, monkeypatch):
     import socket
     import threading
     sock_path = tmp_path / 'control.sock'
-    monkeypatch.setattr('jarvis_voice.config.SOCKET_PATH', sock_path)
+    monkeypatch.setattr('voice_layer.config.SOCKET_PATH', sock_path)
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(sock_path))
@@ -192,7 +192,7 @@ def test_cli_wake_command(tmp_path, monkeypatch):
     t = threading.Thread(target=handle)
     t.start()
 
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     rc = main(['wake'])
     assert rc == 0
     t.join()
@@ -200,14 +200,14 @@ def test_cli_wake_command(tmp_path, monkeypatch):
 
 
 def test_invalid_listen_action_is_rejected_before_connecting():
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     with pytest.raises(SystemExit) as result:
         main(['listen', 'invalid-action'])
     assert result.value.code == 2
 
 
 def test_check_detects_missing_python_dependency(monkeypatch):
-    from jarvis_voice.__main__ import main
+    from voice_layer.__main__ import main
     monkeypatch.setattr('shutil.which', lambda name: '/usr/bin/' + name)
     monkeypatch.setattr('importlib.util.find_spec', lambda name: None if name == 'onnxruntime' else object())
     assert main(['--check']) == 1

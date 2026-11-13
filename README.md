@@ -68,7 +68,7 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 * **Situational Conversational Acknowledgements**: Pre-rendered, affirmative spoken acknowledgements (`Sure`, `On it`, `Looking into that`) matched dynamically to task context (agent tasks, browser searches, file operations, system actions) to eliminate cloud latency without annoying empty vocal fillers ("Ah", "Haa").
 * **Duplex Cloud Streaming**: Resilient Gemini Live WebSocket session with automatic reconnection backoff, wake confirmation, and session resumption.
 * **Playback Fencing & Interruption**: Generation-tracked audio buffer instantly halts and flushes speaker queues whenever speech is detected.
-* **Voice Subsystem Lock**: The baseline voice engine is frozen at `audio/.voice_lock.json` and `universal-voice/.voice_lock.json`. Enforced by automated checksum verification (`scripts/verify_voice_lock.py`).
+* **Voice Subsystem Lock**: The baseline voice engine is frozen at `audio/.voice_lock.json`. Enforced by automated checksum verification (`scripts/verify_voice_lock.py`).
 
 ### 2. Sovereign Desktop Actuation & Control (`jarvis_control`)
 * **Wayland Actuators**: Emulated input receipts via `wlr-virtual` / `uinput` for reliable Wayland keyboard typing, modifier chords, and pointer navigation.
@@ -227,7 +227,6 @@ JARVIS OS/
 │   └── test_orchestration/    # Hermes agent orchestration test suite
 │
 ├── audio/.voice_lock.json     # Baseline PC voice freeze manifest
-├── universal-voice/           # Standalone universal voice engine baseline
 └── JARVIS OS DOCS/            # Architecture specifications & audit records
 ```
 
@@ -380,7 +379,6 @@ JARVIS OS includes an exhaustive regression suite with over 2,100 unit and integ
 The voice subsystem is protected by explicit change-control manifests. Verify before and after modifying related code:
 ```bash
 python scripts/verify_voice_lock.py
-python universal-voice/scripts/verify_voice_lock.py
 ```
 
 ### 2. Run Full Python Test Suite

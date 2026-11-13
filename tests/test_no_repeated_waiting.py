@@ -1,5 +1,5 @@
-from jarvis_voice.daemon import LiveVoice, build_instruction
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice, build_instruction
+from voice_layer.playback import Playback
 
 
 def test_waiting_recording_cannot_be_reintroduced_by_any_caller():

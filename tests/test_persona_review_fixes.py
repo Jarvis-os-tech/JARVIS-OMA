@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from jarvis_control.skills import UnifiedSkills
-from jarvis_voice.background import deliver_once
+from voice_layer.background import deliver_once
 from orchestration.model_routes import ModelJobs
 from orchestration.release_manager import ReleaseManager
 import scripts.prepare_persona_release as deploy
@@ -81,14 +81,14 @@ def test_reprepare_replaces_an_existing_reasoning_prompt(tmp_path, monkeypatch):
         src = source / relative
         src.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(repo / relative, src)
-        installed = parent / relative.replace('voice_layer/', 'jarvis_voice/')
+        installed = parent / relative.replace('voice_layer/', 'voice_layer/')
         installed.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(repo / relative, installed)
     (parent / 'release.json').write_text('{}')
     (runtime / 'current').symlink_to(parent)
     prompt = source / 'orchestration/model_routes.py'
     prompt.write_text(prompt.read_text().replace('analysis worker for JARVIS OS', 'UPDATED analysis worker for JARVIS OS'))
-    daemon = parent / 'jarvis_voice/daemon.py'
+    daemon = parent / 'voice_layer/daemon.py'
     body = daemon.read_text()
     original = deploy.function_text(body, 'send_wake_confirmation', 'LiveVoice')
     body = body.replace(original, "    async def send_wake_confirmation(self, session):\n        raise RuntimeError('legacy wake behavior')\n")
@@ -106,7 +106,7 @@ def test_reprepare_replaces_an_existing_reasoning_prompt(tmp_path, monkeypatch):
     body = (candidate / 'orchestration/model_routes.py').read_text()
     assert 'UPDATED analysis worker for JARVIS OS' in body
     assert body.count('REASONING_INSTRUCTION =') == 1
-    daemon_body = (candidate / 'jarvis_voice/daemon.py').read_text()
+    daemon_body = (candidate / 'voice_layer/daemon.py').read_text()
     assert deploy.function_text(daemon_body, 'send_wake_confirmation', 'LiveVoice') == deploy.function_text(
         (source / 'voice_layer/daemon.py').read_text(), 'send_wake_confirmation', 'LiveVoice')
     assert 'KEEP_INSTALLED_MARKER = True' in daemon_body

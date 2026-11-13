@@ -1,4 +1,4 @@
-"""Tests for jarvis_voice.daemon module."""
+"""Tests for voice_layer.daemon module."""
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -6,13 +6,13 @@ import pytest
 
 
 def test_daemon_imports():
-    from jarvis_voice.daemon import LiveVoice, live_config
+    from voice_layer.daemon import LiveVoice, live_config
     assert LiveVoice is not None
     assert callable(live_config)
 
 
 def test_live_config_produces_valid_dict():
-    from jarvis_voice.daemon import live_config
+    from voice_layer.daemon import live_config
     config = live_config(voice='Aoede')
     assert config['response_modalities'] == ['AUDIO']
     assert 'system_instruction' in config
@@ -26,7 +26,7 @@ def test_live_config_produces_valid_dict():
 
 
 def test_live_config_dynamic_capabilities_with_tools():
-    from jarvis_voice.daemon import live_config
+    from voice_layer.daemon import live_config
     tools = [{'function_declarations': [{'name': 'set_volume'}, {'name': 'tile_window'}]}]
     config = live_config(voice='Puck', tools=tools)
     assert config['tools'] == tools
@@ -35,8 +35,8 @@ def test_live_config_dynamic_capabilities_with_tools():
 
 
 def test_live_voice_status():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     voice = LiveVoice(player)
@@ -49,8 +49,8 @@ def test_live_voice_status():
 
 
 def test_live_voice_mute_and_interrupt():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     voice = LiveVoice(player)
@@ -67,8 +67,8 @@ def test_live_voice_mute_and_interrupt():
 
 @pytest.mark.asyncio
 async def test_live_voice_handle_audio_and_turn():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     voice = LiveVoice(player)
@@ -122,8 +122,8 @@ async def test_live_voice_handle_audio_and_turn():
 @pytest.mark.asyncio
 async def test_live_voice_send_greeting():
     """send_greeting triggers an initial user turn prompt on session start."""
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     voice = LiveVoice(player, greet_on_start=True)
@@ -147,7 +147,7 @@ async def test_live_voice_send_greeting():
 
 @pytest.mark.asyncio
 async def test_supervise_cleans_workers_after_failure():
-    from jarvis_voice.daemon import supervise
+    from voice_layer.daemon import supervise
 
     started, stopped = asyncio.Event(), asyncio.Event()
 
@@ -169,7 +169,7 @@ async def test_supervise_cleans_workers_after_failure():
 
 @pytest.mark.asyncio
 async def test_supervise_cancellation_awaits_workers():
-    from jarvis_voice.daemon import supervise
+    from voice_layer.daemon import supervise
 
     started, stopped = asyncio.Event(), asyncio.Event()
 
@@ -190,8 +190,8 @@ async def test_supervise_cancellation_awaits_workers():
 
 @pytest.mark.asyncio
 async def test_microphone_eof_reaches_session_without_hanging():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     reader = asyncio.StreamReader()
@@ -203,9 +203,9 @@ async def test_microphone_eof_reaches_session_without_hanging():
 
 @pytest.mark.asyncio
 async def test_capture_overflow_does_not_drop_turn_boundary():
-    from jarvis_voice.daemon import LiveVoice, INPUT_BYTES
-    from jarvis_voice.playback import Playback, MicrophoneBacklogError
-    from jarvis_voice.speech import GateFrame
+    from voice_layer.daemon import LiveVoice, INPUT_BYTES
+    from voice_layer.playback import Playback, MicrophoneBacklogError
+    from voice_layer.speech import GateFrame
 
     gate = MagicMock(active=True, tail_seconds=.45)
     gate.process.return_value = GateFrame(bytes(INPUT_BYTES), opened=True)
@@ -220,9 +220,9 @@ async def test_capture_overflow_does_not_drop_turn_boundary():
 
 @pytest.mark.asyncio
 async def test_turn_audio_sent_in_order_with_explicit_boundaries():
-    from jarvis_voice.daemon import LiveVoice, INPUT_BYTES, supervise
-    from jarvis_voice.playback import Playback
-    from jarvis_voice.speech import GateFrame
+    from voice_layer.daemon import LiveVoice, INPUT_BYTES, supervise
+    from voice_layer.playback import Playback
+    from voice_layer.speech import GateFrame
 
     voice = LiveVoice(Playback('default'))
     queue = asyncio.Queue()
@@ -245,25 +245,25 @@ async def test_turn_audio_sent_in_order_with_explicit_boundaries():
 
 @pytest.mark.asyncio
 async def test_first_audio_latency_stays_fixed_across_response_chunks(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     voice._reply_authorized = True
     voice._speech_closed_at = 10.0
     event = SimpleNamespace(server_content=SimpleNamespace(model_turn=SimpleNamespace(
         parts=[SimpleNamespace(inline_data=SimpleNamespace(data=bytes(960)))])))
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 10.25)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 10.25)
     await voice.handle(event)
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 250
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 10.5)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 10.5)
     await voice.handle(event)
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 250
 
 
 def test_default_turn_wait_preserves_thinking_pauses_and_closes_after_1_2s():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     import struct
 
     voice = LiveVoice(Playback('default'))
@@ -282,8 +282,8 @@ def test_default_turn_wait_preserves_thinking_pauses_and_closes_after_1_2s():
 
 @pytest.mark.asyncio
 async def test_provider_latency_measured_from_actual_activity_end(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     voice._reply_authorized = True
@@ -291,21 +291,21 @@ async def test_provider_latency_measured_from_actual_activity_end(monkeypatch):
     voice.activity_end_sent_at = 10.2
     event = SimpleNamespace(server_content=SimpleNamespace(model_turn=SimpleNamespace(
         parts=[SimpleNamespace(inline_data=SimpleNamespace(data=bytes(960)))])))
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 10.5)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 10.5)
     await voice.handle(event)
     assert voice.status()['latency']['activity_end_to_first_audio_ms'] == 300
     assert voice.status()['latency']['speech_end_to_first_audio_ms'] == 500
 
 
 def test_standard_live_model_uses_its_native_reasoning_profile():
-    from jarvis_voice.daemon import live_config
+    from voice_layer.daemon import live_config
     assert 'thinking_config' not in live_config()
 
 
 @pytest.mark.asyncio
 async def test_delayed_audio_still_plays_after_warning(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice._reply_authorized = voice._waiting = True
     voice._last_progress = 10.0
@@ -315,8 +315,8 @@ async def test_delayed_audio_still_plays_after_warning(monkeypatch):
         calls += 1
         if calls > 1:
             raise asyncio.CancelledError
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', one_cycle)
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 26.0)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', one_cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 26.0)
     with pytest.raises(asyncio.CancelledError):
         await voice.monitor_response()
     assert voice.response_delayed
@@ -329,14 +329,14 @@ async def test_delayed_audio_still_plays_after_warning(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stalled_provider_reconnects_without_resuming_old_answer(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice._reply_authorized = True
     voice._last_progress = 10.0
     voice.resume_handle = 'old-session'
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', AsyncMock())
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 56.0)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', AsyncMock())
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 56.0)
     with pytest.raises(ConnectionError, match='Please repeat'):
         await voice.monitor_response()
     assert voice.resume_handle is None
@@ -344,8 +344,8 @@ async def test_stalled_provider_reconnects_without_resuming_old_answer(monkeypat
 
 @pytest.mark.asyncio
 async def test_production_setup_attaches_memory_and_drains_on_exit(tmp_path, monkeypatch):
-    from jarvis_voice import daemon
-    from jarvis_voice.config import Config
+    from voice_layer import daemon
+    from voice_layer.config import Config
     from jarvis_memory.bridge import MemoryBridge
     from google.genai import types
     config = Config(autostart_listening=False)
@@ -391,9 +391,9 @@ async def test_production_setup_attaches_memory_and_drains_on_exit(tmp_path, mon
 
 @pytest.mark.asyncio
 async def test_provider_memory_tool_roundtrip_and_unknown_tool(tmp_path):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.config import Config
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.config import Config
+    from voice_layer.playback import Playback
     from jarvis_memory.skills import MemorySkills
     config = Config()
     config.memory.path = str(tmp_path)
@@ -425,8 +425,8 @@ async def test_provider_memory_tool_roundtrip_and_unknown_tool(tmp_path):
 
 @pytest.mark.asyncio
 async def test_completed_turn_clears_delay_warning():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice.response_delayed = True
     voice.last_error = 'The response is taking longer than expected.'
@@ -436,8 +436,8 @@ async def test_completed_turn_clears_delay_warning():
 
 
 def test_idle_connected_microphone_reports_listening():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice.connected = True
     assert voice.status()['listening']
@@ -451,9 +451,9 @@ def test_idle_connected_microphone_reports_listening():
     (False, 0, 'microphone_silent', 'Microphone volume is zero.'),
 ])
 def test_system_microphone_block_cannot_report_listening(muted, volume, state, issue):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
+    from voice_layer.ipc import ControlServer
     voice = LiveVoice(Playback('default'))
     voice.connected = True
     voice.microphone_state = dict(source='actual-input', muted=muted,
@@ -471,8 +471,8 @@ def test_system_microphone_block_cannot_report_listening(muted, volume, state, i
 
 @pytest.mark.asyncio
 async def test_microphone_monitor_recovers_when_system_unmutes(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice.connected = True
     snapshots = [dict(source='actual-input', muted=True, volume_percent=42,
@@ -485,8 +485,8 @@ async def test_microphone_monitor_recovers_when_system_unmutes(monkeypatch):
         observed.append(voice.status())
         if not snapshots:
             raise asyncio.CancelledError
-    monkeypatch.setattr('jarvis_voice.daemon.read_microphone_state', health)
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.read_microphone_state', health)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await voice.monitor_microphone()
     assert not observed[0]['listening']
@@ -495,8 +495,8 @@ async def test_microphone_monitor_recovers_when_system_unmutes(monkeypatch):
 
 
 def test_unknown_microphone_health_does_not_invent_mute():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice.connected = True
     voice.microphone_state = dict(source='', muted=None, volume_percent=None,
@@ -507,8 +507,8 @@ def test_unknown_microphone_health_does_not_invent_mute():
 
 @pytest.mark.asyncio
 async def test_response_watchdog_does_not_reconnect_during_tool(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     voice._reply_authorized = True
     voice._tools_in_flight = 1
@@ -519,8 +519,8 @@ async def test_response_watchdog_does_not_reconnect_during_tool(monkeypatch):
         count += 1
         if count > 1:
             raise asyncio.CancelledError
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycles)
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 100.0)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycles)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 100.0)
     with pytest.raises(asyncio.CancelledError):
         await voice.monitor_response()
     assert voice._reply_authorized
@@ -528,8 +528,8 @@ async def test_response_watchdog_does_not_reconnect_during_tool(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_tool_call_id_deduplicates_control_effect():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     skills = SimpleNamespace(declarations=[{'name': 'test_action'}], execute=AsyncMock(return_value='done'))
     voice = LiveVoice(Playback('default'), skills=skills)
     voice._reply_authorized = True
@@ -543,8 +543,8 @@ async def test_tool_call_id_deduplicates_control_effect():
 
 @pytest.mark.asyncio
 async def test_spoken_confirmation_needs_real_new_turn():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     skills = SimpleNamespace(declarations=[{'name': 'confirm_last'}], execute=AsyncMock(return_value='done'))
     voice = LiveVoice(Playback('default'), skills=skills)
     voice._reply_authorized = True
@@ -559,15 +559,15 @@ async def test_spoken_confirmation_needs_real_new_turn():
 
 
 def test_omarchy_routing_only_when_attached():
-    from jarvis_voice.daemon import build_instruction, live_config
+    from voice_layer.daemon import build_instruction, live_config
     assert 'OMARCHY DESKTOP SKILL' in build_instruction([{'function_declarations': [{'name': 'omarchy_help'}]}])
     assert 'OMARCHY DESKTOP SKILL' not in build_instruction()
     assert live_config()['session_resumption'] == {}
 
 
 def test_standby_status_and_confirm_wake():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     assert voice.status()['standby'] is False
     assert voice.status()['state'] != 'standby'
@@ -584,8 +584,8 @@ def test_standby_status_and_confirm_wake():
 
 @pytest.mark.asyncio
 async def test_monitor_standby_raises_enter_standby():
-    from jarvis_voice.daemon import LiveVoice, EnterStandby
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice, EnterStandby
+    from voice_layer.playback import Playback
     voice = LiveVoice(Playback('default'))
     await voice.standby.request()
     with pytest.raises(EnterStandby):
@@ -593,9 +593,9 @@ async def test_monitor_standby_raises_enter_standby():
 
 
 def test_long_command_turn_silence_threshold():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
-    from jarvis_voice.config import Config
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
+    from voice_layer.config import Config
     import struct
 
     cfg = Config(turn_silence_frames=35)
@@ -615,9 +615,9 @@ def test_long_command_turn_silence_threshold():
 
 @pytest.mark.asyncio
 async def test_send_greeting_skipped_if_already_greeted_or_user_speaking(tmp_path, monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
-    from jarvis_voice.config import Config
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
+    from voice_layer.config import Config
 
     monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path))
     cfg = Config(greet_on_start=True)
@@ -642,8 +642,8 @@ async def test_send_greeting_skipped_if_already_greeted_or_user_speaking(tmp_pat
 
 @pytest.mark.asyncio
 async def test_interrupted_while_gate_active_preserves_authorization():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     voice.connected = True
@@ -664,8 +664,8 @@ async def test_interrupted_while_gate_active_preserves_authorization():
 
 @pytest.mark.asyncio
 async def test_tool_turn_complete_without_audio_does_not_hang():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     voice.connected = True
@@ -692,8 +692,8 @@ async def test_tool_turn_complete_without_audio_does_not_hang():
 
 @pytest.mark.asyncio
 async def test_send_inputs_forwards_user_text_and_test_bar():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     from skills.input_bar import TestBar
 
     class FakeSkills:
@@ -741,8 +741,8 @@ async def test_send_inputs_forwards_user_text_and_test_bar():
 
 @pytest.mark.asyncio
 async def test_interruption_does_not_drop_subsequent_model_response():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     voice = LiveVoice(Playback('default'))
     voice._model_active = True
@@ -787,8 +787,8 @@ async def test_interruption_does_not_drop_subsequent_model_response():
 
 @pytest.mark.asyncio
 async def test_send_inputs_prefetches_urls_and_attaches_web_content(monkeypatch):
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     from skills.input_bar import TestBar
 
     monkeypatch.setattr(
@@ -827,8 +827,8 @@ async def test_send_inputs_prefetches_urls_and_attaches_web_content(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_send_inputs_formats_code_and_image_attachments():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
     from skills.input_bar import TestBar
 
     class FakeSkills:
@@ -885,8 +885,8 @@ async def test_send_inputs_formats_code_and_image_attachments():
 
 @pytest.mark.asyncio
 async def test_nlu_gate_intercepts_unwanted_pairing_and_intrusive_tools():
-    from jarvis_voice.daemon import LiveVoice
-    from jarvis_voice.playback import Playback
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
 
     skills = SimpleNamespace(
         declarations=[{'name': 'phone_pair'}, {'name': 'phone_list_contacts'}],

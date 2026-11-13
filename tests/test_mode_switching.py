@@ -23,7 +23,7 @@ def mode_paths(tmp_path, monkeypatch):
         (root / 'bin').mkdir(parents=True)
         (root / 'bin/jarvis-voice').touch()
         (root / 'bin/jarvis').touch()
-        (root / 'jarvis_voice').mkdir()
+        (root / 'voice_layer').mkdir()
     for python in (jm.TEST_ROOT / '.venv/bin/python', jm.PRODUCTION_ROOT.parent / 'venv/bin/python'):
         python.parent.mkdir(parents=True)
         python.touch()

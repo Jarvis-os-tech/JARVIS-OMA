@@ -69,7 +69,7 @@ def get_or_create_credentials() -> dict:
 
 def get_gemini_api_key() -> str:
     # Use the same credential loading as the PC voice client.
-    from jarvis_voice.config import load_env
+    from voice_layer.config import load_env
     load_env()
     # 1. Environment variable
     if os.environ.get("GEMINI_API_KEY"):

@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-log = logging.getLogger('jarvis_voice')
+log = logging.getLogger('voice_layer')
 
 
 class WakeWordUnavailable(RuntimeError):

@@ -37,8 +37,8 @@ def prepare():
     for deployed, source, names in (
         ('skills/skills.py', 'skills/skills.py', ['DesktopSkills._resolve_command',
             'DesktopSkills._run', 'DesktopSkills._adapter_cli_hub_launch']),
-        ('jarvis_voice/persona.py', 'voice_layer/persona.py', ['system_persona']),
-        ('jarvis_voice/daemon.py', 'voice_layer/daemon.py', ['build_instruction']),
+        ('voice_layer/persona.py', 'voice_layer/persona.py', ['system_persona']),
+        ('voice_layer/daemon.py', 'voice_layer/daemon.py', ['build_instruction']),
     ):
         put(deployed, splice((target / deployed).read_text(), (SOURCE / source).read_text(), names))
     metadata = json.loads((target / 'release.json').read_text())

@@ -8,7 +8,7 @@ import subprocess
 
 from .progress import ProgressUpdates, announce_progress
 
-log = logging.getLogger('jarvis_voice')
+log = logging.getLogger('voice_layer')
 
 
 def desktop_notification(text: str) -> bool:

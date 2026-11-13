@@ -32,8 +32,8 @@ def prepare(destination):
             'DesktopSkills._adapter_close_input_bar',
             'DesktopSkills._adapter_control_vision_mode',
         ]),
-        'jarvis_voice/daemon.py': ('voice_layer/daemon.py', ['LiveVoice.set_vision_mode']),
-        'jarvis_voice/ipc.py': ('voice_layer/ipc.py', ['ControlServer._handle_json_command']),
+        'voice_layer/daemon.py': ('voice_layer/daemon.py', ['LiveVoice.set_vision_mode']),
+        'voice_layer/ipc.py': ('voice_layer/ipc.py', ['ControlServer._handle_json_command']),
         'orchestration/tool_tiers.py': ('orchestration/tool_tiers.py', ['CORE_TOOLS']),
     }
     hashes = {}
@@ -42,7 +42,7 @@ def prepare(destination):
         if path.is_symlink():
             raise ValueError('Cannot patch a linked runtime module: ' + deployed)
         content = splice(path.read_text(), (SOURCE / source).read_text(), definitions)
-        if deployed == 'jarvis_voice/daemon.py':
+        if deployed == 'voice_layer/daemon.py':
             for name in ('shutil', 'subprocess'):
                 if '\nimport ' + name + '\n' not in content:
                     content = content.replace('\nimport os\n', '\nimport os\nimport ' + name + '\n', 1)
@@ -60,7 +60,7 @@ def prepare(destination):
     path.write_text(json.dumps(metadata, indent=2) + '\n')
     check = """
 import inspect
-from jarvis_voice import daemon
+from voice_layer import daemon
 from skills.skills import DesktopSkills
 from orchestration.tool_tiers import CORE_TOOLS
 assert daemon.shutil.which and daemon.subprocess.Popen

@@ -43,7 +43,7 @@ class FakeDetector:
 
 def test_fix4_quiet_frames_still_reach_detector():
     """Fix 4: quiet frames must pass through the detector for state continuity."""
-    from jarvis_voice.speech import SpeechTurnGate
+    from voice_layer.speech import SpeechTurnGate
 
     detector = FakeDetector(scores=[0.0, 0.0, 0.0])
     gate = SpeechTurnGate(detector=detector)
@@ -60,7 +60,7 @@ def test_fix4_quiet_frames_still_reach_detector():
 
 def test_fix4_absolute_silence_skips_detector():
     """Absolute silence (all zeros) may skip the detector."""
-    from jarvis_voice.speech import SpeechTurnGate
+    from voice_layer.speech import SpeechTurnGate
 
     detector = FakeDetector(scores=[0.0])
     gate = SpeechTurnGate(detector=detector)
@@ -74,7 +74,7 @@ def test_fix4_absolute_silence_skips_detector():
 
 def test_fix5_quiet_frames_update_interruption_microphone_buffer():
     """Fix 5: quiet frames must still update the _microphone deque."""
-    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+    from voice_layer.speech import SpokenInterruption, PlaybackReference
 
     ref = PlaybackReference()
     detector = FakeDetector(scores=[0.0, 0.0, 0.0])
@@ -91,7 +91,7 @@ def test_fix5_quiet_frames_update_interruption_microphone_buffer():
 
 def test_speech_turn_opens_on_voiced_frames():
     """Basic gate operation: opens after trigger_frames of speech."""
-    from jarvis_voice.speech import SpeechTurnGate
+    from voice_layer.speech import SpeechTurnGate
 
     detector = FakeDetector(scores=[0.6, 0.7, 0.8])
     gate = SpeechTurnGate(detector=detector, trigger_frames=2)
@@ -106,7 +106,7 @@ def test_speech_turn_opens_on_voiced_frames():
 
 def test_speech_turn_closes_on_silence():
     """Gate closes after silence_frames of quiet."""
-    from jarvis_voice.speech import SpeechTurnGate
+    from voice_layer.speech import SpeechTurnGate
 
     scores = [0.8] * 3 + [0.1] * 25  # 3 speech + 25 silence
     detector = FakeDetector(scores=scores)
@@ -133,7 +133,7 @@ def test_speech_turn_closes_on_silence():
 
 def test_speech_turn_gate_blocked_by_playback_holdoff():
     """SpeechTurnGate blocks turn admission and suppresses frames when blocked=True."""
-    from jarvis_voice.speech import SpeechTurnGate
+    from voice_layer.speech import SpeechTurnGate
 
     detector = FakeDetector(scores=[0.9, 0.9, 0.9])
     gate = SpeechTurnGate(detector=detector, trigger_frames=2, tail_seconds=0.35)
@@ -153,7 +153,7 @@ def test_speech_turn_gate_blocked_by_playback_holdoff():
 
 def test_spoken_interruption_rejects_speaker_bleed_low_rms():
     """SpokenInterruption rejects low-RMS acoustic speaker bleed (rms < 0.025)."""
-    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+    from voice_layer.speech import SpokenInterruption, PlaybackReference
 
     ref = PlaybackReference()
     detector = FakeDetector(scores=[0.95] * 10)
@@ -168,7 +168,7 @@ def test_spoken_interruption_rejects_speaker_bleed_low_rms():
 
 def test_spoken_interruption_rejects_echo_correlation():
     """SpokenInterruption rejects frames with correlation >= 0.35 against playback reference."""
-    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+    from voice_layer.speech import SpokenInterruption, PlaybackReference
 
     ref = PlaybackReference()
     # Mock high correlation to simulate speaker audio matching reference

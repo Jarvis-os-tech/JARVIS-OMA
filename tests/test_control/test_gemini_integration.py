@@ -1,7 +1,7 @@
 """Tests for Gemini Live tool schema conversion and execution integration."""
 from google.genai import types
 from jarvis_control import tools_for, to_gemini_tools, Config
-from jarvis_voice.daemon import build_instruction, live_config
+from voice_layer.daemon import build_instruction, live_config
 
 
 def test_gemini_tool_declarations_and_instruction():

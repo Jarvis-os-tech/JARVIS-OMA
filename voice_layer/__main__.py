@@ -1,4 +1,4 @@
-"""CLI entry point: python -m jarvis_voice"""
+"""CLI entry point: python -m voice_layer"""
 import argparse
 import importlib.util
 import os

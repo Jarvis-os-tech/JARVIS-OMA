@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jarvis_voice.echo import MonitorEchoCancellation, monitor_properties, pactl
+from voice_layer.echo import MonitorEchoCancellation, monitor_properties, pactl
 
 
 def test_monitor_properties_structure():
@@ -24,9 +24,9 @@ async def test_echo_cancellation_lifecycle_mocked(source_muted):
     echo = MonitorEchoCancellation()
     assert not echo.active
 
-    with patch("jarvis_voice.echo.pactl", new_callable=AsyncMock) as mock_pactl, \
+    with patch("voice_layer.echo.pactl", new_callable=AsyncMock) as mock_pactl, \
          patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec, \
-         patch("jarvis_voice.echo.stop_process", new_callable=AsyncMock) as mock_stop:
+         patch("voice_layer.echo.stop_process", new_callable=AsyncMock) as mock_stop:
 
         mock_pactl.side_effect = lambda *args: {
             ("get-default-source",): "alsa_mic",
@@ -58,7 +58,7 @@ async def test_echo_cancellation_lifecycle_mocked(source_muted):
 @pytest.mark.asyncio
 async def test_echo_cancellation_graceful_failure_fallback():
     echo = MonitorEchoCancellation()
-    with patch("jarvis_voice.echo.pactl", side_effect=RuntimeError("PipeWire unavailable")):
+    with patch("voice_layer.echo.pactl", side_effect=RuntimeError("PipeWire unavailable")):
         success = await echo.start()
         assert success is False
         assert not echo.active

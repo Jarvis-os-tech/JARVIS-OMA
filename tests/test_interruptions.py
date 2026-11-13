@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
-from jarvis_voice.speech import GateFrame, SpeechTurnGate
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
+from voice_layer.speech import GateFrame, SpeechTurnGate
 
 
 def event(**content):
@@ -129,7 +129,7 @@ def test_local_interruption_immediately_flushes_buffered_speech():
 
 @pytest.mark.asyncio
 async def test_sentence_pauses_do_not_close_the_user_turn():
-    from jarvis_voice.config import Config
+    from voice_layer.config import Config
 
     voice = LiveVoice(Playback('default'), barge_in=True,
                       config=Config(turn_silence_frames=100))
@@ -247,7 +247,7 @@ async def test_interruption_while_sender_waits_lock_cannot_upload_old_pcm():
 @pytest.mark.asyncio
 async def test_pending_ack_watchdog_waits_for_tool_then_keeps_five_second_bound(monkeypatch):
     clock = [99.0]
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: clock[0])
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: clock[0])
     voice = LiveVoice(Playback('default'), barge_in=True)
     voice._reply_authorized = voice._waiting = True
     voice.resume_handle = 'retain-this-session'
@@ -273,7 +273,7 @@ async def test_pending_ack_watchdog_waits_for_tool_then_keeps_five_second_bound(
             if calls > 1:
                 raise asyncio.CancelledError
         with monkeypatch.context() as scoped:
-            scoped.setattr('jarvis_voice.daemon.asyncio.sleep', sleep_once)
+            scoped.setattr('voice_layer.daemon.asyncio.sleep', sleep_once)
             with pytest.raises(asyncio.CancelledError):
                 await voice.monitor_response()
 
@@ -301,7 +301,7 @@ async def test_pending_ack_watchdog_waits_for_tool_then_keeps_five_second_bound(
         # A genuinely missing provider boundary still has a finite deadline.
         clock[0] = 172.1
         with monkeypatch.context() as scoped:
-            scoped.setattr('jarvis_voice.daemon.asyncio.sleep', AsyncMock())
+            scoped.setattr('voice_layer.daemon.asyncio.sleep', AsyncMock())
             with pytest.raises(ConnectionError, match='Barge-in acknowledgement timeout'):
                 await voice.monitor_response()
         assert voice.resume_handle is None
@@ -331,8 +331,8 @@ async def test_long_spoken_interruption_does_not_trigger_ack_timeout(monkeypatch
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 20.0)
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', one_tick)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 20.0)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', one_tick)
     with pytest.raises(asyncio.CancelledError):
         await voice.monitor_response()
     assert voice.resume_handle == 'existing-session'
@@ -341,7 +341,7 @@ async def test_long_spoken_interruption_does_not_trigger_ack_timeout(monkeypatch
 
 
 def test_live_voice_initializes_calibrated_barge_gate_from_config():
-    from jarvis_voice.config import Config
+    from voice_layer.config import Config
     player = Playback('default')
     config = Config(
         barge_in=True,
@@ -408,7 +408,7 @@ async def test_capture_holds_microphone_when_model_active_half_duplex():
 
 
 def test_spoken_interruption_clears_frames_and_resets_on_echo():
-    from jarvis_voice.speech import SpokenInterruption, PlaybackReference
+    from voice_layer.speech import SpokenInterruption, PlaybackReference
     ref = PlaybackReference()
     ref.correlation = lambda mic, now: 0.25
     detector = lambda _: 0.95

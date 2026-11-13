@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from jarvis_voice.background import deliver_once
-from jarvis_voice.config import Config, StandbyConfig
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
+from voice_layer.background import deliver_once
+from voice_layer.config import Config, StandbyConfig
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
 from jarvis_control.config import Config as ControlConfig
 from jarvis_control.skills import ControlSkills
 

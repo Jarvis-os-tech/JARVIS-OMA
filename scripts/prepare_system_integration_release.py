@@ -67,9 +67,9 @@ def prepare(destination):
         put(relative,(SOURCE/relative).read_text())
     patches={
         'skills/skills.py':('skills/skills.py',['DesktopSkills._run','DesktopSkills._adapter_write_clipboard']),
-        'jarvis_voice/daemon.py':('voice_layer/daemon.py',['LiveVoice.handle_tools','build_instruction',
+        'voice_layer/daemon.py':('voice_layer/daemon.py',['LiveVoice.handle_tools','build_instruction',
             'LiveVoice.handle','LiveVoice._start_reply_watch','LiveVoice._action_speech_blocked','LiveVoice._finish_unverified_action']),
-        'jarvis_voice/persona.py':('voice_layer/persona.py',['SPOKEN_UPDATES']),
+        'voice_layer/persona.py':('voice_layer/persona.py',['SPOKEN_UPDATES']),
         'jarvis_control/nlu.py':('jarvis_control/nlu.py',['NLUEngine.validate_tool_intent']),
         'connectors/composio.py':('connectors/composio.py',[
             '_execution_receipt','search_tools','execute_tool','execute_platform_action','authorize','connect_platform','open_platform_authorization']),
@@ -77,7 +77,7 @@ def prepare(destination):
     for deployed,(relative,names) in patches.items():
         original=(target/deployed).read_text()
         content=splice(original,(SOURCE/relative).read_text(),names)
-        if deployed=='jarvis_voice/daemon.py':
+        if deployed=='voice_layer/daemon.py':
             if 'from jarvis_control.evidence import requires_action_evidence, META_TOOLS' not in content:
                 content=content.replace('from jarvis_control.outcomes import classify_result',
                     'from jarvis_control.outcomes import classify_result\nfrom jarvis_control.evidence import requires_action_evidence, META_TOOLS')
@@ -85,8 +85,8 @@ def prepare(destination):
                 content=content.replace('from jarvis_control.outcomes import classify_result',
                     'from jarvis_control.outcomes import classify_result\nfrom jarvis_control.execution_policy import tool_timeout')
             if not node_for(content,'MAX_TOOL_CALLS_PER_TURN'):
-                content=content.replace("log = logging.getLogger('jarvis_voice')",
-                    "MAX_TOOL_CALLS_PER_TURN = 64\n\nlog = logging.getLogger('jarvis_voice')")
+                content=content.replace("log = logging.getLogger('voice_layer')",
+                    "MAX_TOOL_CALLS_PER_TURN = 64\n\nlog = logging.getLogger('voice_layer')")
         put(deployed,content)
     relative='skills/domains/composio.py'
     content=(target/relative).read_text()
@@ -109,8 +109,8 @@ from jarvis_control.outcomes import classify_result
 from jarvis_control.execution_policy import tool_timeout
 from jarvis_control.wayland_keyboard import literal_plan
 from jarvis_control.nlu import NLUEngine
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
 assert not classify_result({'ground_truth_verified':False}).completed
 assert not classify_result({'successful':False}).completed
 assert not classify_result({'status':'awaiting_authorization'}).completed

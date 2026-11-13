@@ -25,7 +25,7 @@ def prepare(destination):
     changed = []
     for relative in ('voice_layer/standby.py', 'voice_layer/ipc.py', 'voice_layer/daemon.py',
                      'voice_layer/persona.py', 'skill_manifests/standby.json'):
-        deployed = relative.replace('voice_layer/', 'jarvis_voice/')
+        deployed = relative.replace('voice_layer/', 'voice_layer/')
         path = target / deployed
         if path.is_symlink():
             raise ValueError('Linked source file: ' + deployed)
@@ -36,7 +36,7 @@ def prepare(destination):
             compile(path.read_text(), deployed, 'exec')
         changed.append(deployed)
     model = SOURCE / 'mobile/app/src/main/assets/wake-model'
-    model_target = target / 'jarvis_voice/assets/wake-model'
+    model_target = target / 'voice_layer/assets/wake-model'
     if not (model / 'am/final.mdl').is_file():
         raise ValueError('Bundled offline model is missing')
     for source in model.rglob('*'):
@@ -54,8 +54,8 @@ def prepare(destination):
         changed.append(str(path.relative_to(target)))
     check = """import json
 from importlib.metadata import version
-from jarvis_voice.standby import JarvisWakeDetector
-from jarvis_voice.daemon import live_config
+from voice_layer.standby import JarvisWakeDetector
+from voice_layer.daemon import live_config
 from google.genai import types
 d=JarvisWakeDetector()
 assert version('vosk')=='0.3.45'

@@ -24,7 +24,7 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
 else
     INSTALL_DIR="$(mktemp -d "$RELEASES_DIR/install.XXXXXXXX")"
     FRESH_INSTALL=1
-    for package in voice_layer jarvis_voice jarvis_memory jarvis_control skills \
+    for package in voice_layer jarvis_memory jarvis_control skills \
                    core connectors filesystem orchestration proactive audio ui \
                    plugins skill_manifests quickshell scripts learning contracts configs departments teaching_mode packaging; do
         # Only copy existing directories to support both lean checkouts and legacy structures
@@ -80,7 +80,7 @@ for required in bin/jarvis-voice bin/jarvis bin/jarvis-memory bin/jarvis-control
         exit 1
     fi
 done
-if [[ ! -f "$INSTALL_DIR/voice_layer/__main__.py" && ! -f "$INSTALL_DIR/jarvis_voice/__main__.py" ]]; then
+if [[ ! -f "$INSTALL_DIR/voice_layer/__main__.py" ]]; then
     echo "Runtime voice entry point is missing: $INSTALL_DIR" >&2
     exit 1
 fi

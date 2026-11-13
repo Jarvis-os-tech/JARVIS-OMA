@@ -13,7 +13,7 @@ def socket_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_status_json(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     status = {'listening': True, 'connected': True, 'model': 'test'}
     server = ControlServer(socket_path=socket_path, status_provider=lambda: status)
     await server.start()
@@ -31,7 +31,7 @@ async def test_status_json(socket_path):
 
 @pytest.mark.asyncio
 async def test_listen_toggle(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     state = {'muted': False}
     def toggle():
         state['muted'] = not state['muted']
@@ -55,7 +55,7 @@ async def test_listen_toggle(socket_path):
 
 @pytest.mark.asyncio
 async def test_unknown_command(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     server = ControlServer(socket_path=socket_path, status_provider=lambda: {})
     await server.start()
     try:
@@ -71,7 +71,7 @@ async def test_unknown_command(socket_path):
 
 @pytest.mark.asyncio
 async def test_second_daemon_does_not_unlink_live_socket(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     first = ControlServer(socket_path=socket_path, status_provider=lambda: {'connected': True})
     second = ControlServer(socket_path=socket_path)
     await first.start()
@@ -92,7 +92,7 @@ async def test_second_daemon_does_not_unlink_live_socket(socket_path):
 
 @pytest.mark.asyncio
 async def test_control_path_never_replaces_regular_file(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     socket_path.write_text('keep this file')
     server = ControlServer(socket_path=socket_path)
     with pytest.raises(PermissionError):
@@ -103,7 +103,7 @@ async def test_control_path_never_replaces_regular_file(socket_path):
 
 @pytest.mark.asyncio
 async def test_standby_ipc_command(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     called = []
     server = ControlServer(
         socket_path=socket_path,
@@ -128,7 +128,7 @@ async def test_standby_ipc_command(socket_path):
 @pytest.mark.asyncio
 async def test_local_confirm_and_cancel_await_control_callbacks():
     from unittest.mock import AsyncMock, Mock
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     confirm, cancel, interrupt = AsyncMock(return_value='confirmed'), AsyncMock(return_value='cancelled'), Mock()
     server = ControlServer(confirm_cb=confirm, cancel_cb=cancel, interrupt_cb=interrupt)
     assert json.loads(await server._dispatch('listen confirm')) == {'result': 'confirmed'}
@@ -141,7 +141,7 @@ async def test_local_confirm_and_cancel_await_control_callbacks():
 @pytest.mark.asyncio
 async def test_socket_confirmation_returns_after_async_callback(tmp_path):
     from unittest.mock import AsyncMock
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     callback = AsyncMock(return_value='synthetic confirmed')
     server = ControlServer(socket_path=tmp_path / 'confirmation.sock', confirm_cb=callback)
     await server.start()
@@ -160,7 +160,7 @@ async def test_socket_confirmation_returns_after_async_callback(tmp_path):
 
 @pytest.mark.asyncio
 async def test_send_text_ipc_command(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     sent = []
     server = ControlServer(
         socket_path=socket_path,
@@ -183,7 +183,7 @@ async def test_send_text_ipc_command(socket_path):
 
 @pytest.mark.asyncio
 async def test_wake_ipc_command(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     woken = []
     server = ControlServer(
         socket_path=socket_path,
@@ -206,7 +206,7 @@ async def test_wake_ipc_command(socket_path):
 
 @pytest.mark.asyncio
 async def test_vision_mode_json_ipc_commands(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     current_mode = {'mode': 'off'}
 
     def set_mode(m):
@@ -267,7 +267,7 @@ async def test_vision_mode_json_ipc_commands(socket_path):
 
 @pytest.mark.asyncio
 async def test_sync_memory_command(socket_path):
-    from jarvis_voice.ipc import ControlServer
+    from voice_layer.ipc import ControlServer
     recorded = []
     def record_cb(user, assistant):
         recorded.append((user, assistant))
@@ -302,8 +302,8 @@ async def test_sync_memory_command(socket_path):
 
 @pytest.mark.asyncio
 async def test_standby_toggle_uses_controller_atomically():
-    from jarvis_voice.ipc import ControlServer
-    from jarvis_voice.standby import StandbyController
+    from voice_layer.ipc import ControlServer
+    from voice_layer.standby import StandbyController
     controller=StandbyController(detector=object())
     server=ControlServer(standby_toggle_cb=controller.toggle)
     first=json.loads(await server._handle_json_command({'command':'standby_toggle'}))

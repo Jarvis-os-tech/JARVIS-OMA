@@ -1,4 +1,4 @@
-from jarvis_voice.daemon import build_instruction
+from voice_layer.daemon import build_instruction
 
 
 def test_android_control_is_distinguished_from_bluetooth_calls():

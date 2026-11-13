@@ -7,7 +7,7 @@ from typing import Optional
 
 from .playback import audio_environment, stop_process
 
-log = logging.getLogger('jarvis_voice')
+log = logging.getLogger('voice_layer')
 
 
 async def pactl(*args: str) -> str:

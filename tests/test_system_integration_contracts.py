@@ -7,8 +7,8 @@ import pytest
 
 from jarvis_control.device_execution import SharedToolExecutor
 from jarvis_control.outcomes import classify_result
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
 from jarvis_control.execution_policy import tool_timeout
 from jarvis_control.nlu import NLUEngine
 import asyncio

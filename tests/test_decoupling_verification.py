@@ -7,7 +7,7 @@ from scripts import jarvis_mode
 _RUNTIME_CURRENT = Path.home() / ".local" / "share" / "jarvis-runtime" / "current"
 _SYSTEMD_SERVICE = Path.home() / ".config" / "systemd" / "user" / "jarvis-voice.service"
 
-def test_jarvis_voice_symlink_matches_configured_mode():
+def test_voice_layer_symlink_matches_configured_mode():
     home = Path.home()
     voice_share = home / ".local" / "share" / "jarvis-voice"
     if voice_share.is_symlink():
@@ -28,8 +28,8 @@ def test_jarvis_runtime_current_exists_and_compiled():
     assert (current / "bin" / "jarvis-voice").is_file(), f"Missing jarvis-voice in {current}/bin"
 
     # Verify bytecode files exist
-    pyc_files = list((current / "jarvis_voice").rglob("*.pyc"))
-    assert len(pyc_files) > 0, f"Expected compiled .pyc files in {current}/jarvis_voice, found none"
+    pyc_files = list((current / "voice_layer").rglob("*.pyc")) or list((current / "jarvis_voice").rglob("*.pyc"))
+    assert len(pyc_files) > 0, f"Expected compiled .pyc files in {current}/voice_layer or {current}/jarvis_voice, found none"
 
 @pytest.mark.skipif(not _SYSTEMD_SERVICE.exists(), reason="Requires locally installed systemd service")
 def test_systemd_services_point_to_standalone_runtime():

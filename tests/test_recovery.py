@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from jarvis_voice.recovery import ConnectionRecovery, RecoveryDecision
+from voice_layer.recovery import ConnectionRecovery, RecoveryDecision
 
 class FakeError(Exception):
     def __init__(self, code=None):

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jarvis_voice.daemon import LiveVoice
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice
+from voice_layer.playback import Playback
 
 
 def content(**kwargs):

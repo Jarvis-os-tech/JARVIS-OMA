@@ -244,11 +244,17 @@ def check_change_paths(root, paths):
     """Reject protected/linked paths; success is a path check, not permission to apply."""
     root = Path(root).resolve(strict=True)
     protected = {Path(name) for name in (
-        'audio', 'jarvis_voice', 'voice_layer', 'universal-voice',
+        'audio', 'voice_layer',
         'scripts/verify_voice_lock.py', 'learning/os_contracts.py',
         'tests/test_learning/test_os_contracts.py', 'learning/os_ingestion.py',
         'tests/test_learning/test_os_ingestion.py')}
-    for filename in ('audio/.voice_lock.json', 'universal-voice/.voice_lock.json'):
+    manifest_names = ['audio/.voice_lock.json']
+    if (root / 'universal-voice/.voice_lock.json').is_file():
+        manifest_names.append('universal-voice/.voice_lock.json')
+        protected.add(Path('universal-voice'))
+    if (root / 'jarvis_voice').is_dir():
+        protected.add(Path('jarvis_voice'))
+    for filename in manifest_names:
         manifest_path = root / filename
         if any(part.is_symlink() for part in (manifest_path, *manifest_path.parents) if part != root):
             raise ValueError('Linked protection manifest')

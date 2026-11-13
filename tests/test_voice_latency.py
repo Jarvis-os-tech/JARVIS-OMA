@@ -4,8 +4,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from jarvis_voice.playback import Playback
-from jarvis_voice.standby import StandbyController
+from voice_layer.playback import Playback
+from voice_layer.standby import StandbyController
 
 
 def test_real_reply_drops_unplayed_filler_without_changing_generation():
@@ -86,7 +86,7 @@ async def test_wake_while_awake_does_not_cancel_the_next_standby():
 
 @pytest.mark.asyncio
 async def test_answer_replaces_queued_waiting_notice_too():
-    from jarvis_voice.daemon import LiveVoice
+    from voice_layer.daemon import LiveVoice
     instance = LiveVoice(Playback('test'))
     instance._reply_authorized = True
     instance._reply_notices = {'reply_waiting': bytes(48000)}

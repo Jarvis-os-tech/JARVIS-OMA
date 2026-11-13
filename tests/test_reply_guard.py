@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from jarvis_voice.daemon import LiveVoice, connect_session
-from jarvis_voice.playback import Playback
+from voice_layer.daemon import LiveVoice, connect_session
+from voice_layer.playback import Playback
 
 
 def voice():
@@ -24,7 +24,7 @@ def completed():
 
 
 def test_bundled_feedback_contains_bounded_non_silent_pcm():
-    assets = Path(__file__).resolve().parents[1] / 'jarvis_voice/assets'
+    assets = Path(__file__).resolve().parents[1] / 'voice_layer/assets'
     for name in ('reply_waiting.pcm', 'reply_unavailable.pcm', 'filler_hmm.pcm',
                  'filler_ah.pcm', 'filler_sure.pcm', 'filler_on_it.pcm'):
         pcm = (assets / name).read_bytes()
@@ -121,8 +121,8 @@ async def test_wait_feedback_is_once_per_turn_and_does_not_reset_watchdog(monkey
         if cycles > 3:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 26)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 26)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
     assert instance.player.queued_bytes == 0
@@ -168,7 +168,7 @@ async def test_offline_failure_uses_local_player_without_cloud():
 
 @pytest.mark.asyncio
 async def test_connection_timeout_only_bounds_setup(monkeypatch):
-    monkeypatch.setattr('jarvis_voice.daemon.CONNECT_TIMEOUT_SECONDS', .01)
+    monkeypatch.setattr('voice_layer.daemon.CONNECT_TIMEOUT_SECONDS', .01)
 
     class Connection:
         async def __aenter__(self):
@@ -239,8 +239,8 @@ async def test_rejected_tool_suppresses_reply_waiting(monkeypatch):
         if cycles > 1:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr('jarvis_voice.daemon.asyncio.sleep', cycle)
-    monkeypatch.setattr('jarvis_voice.daemon.time.monotonic', lambda: 16)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 16)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
 

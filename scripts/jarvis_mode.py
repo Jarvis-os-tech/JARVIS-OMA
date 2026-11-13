@@ -20,7 +20,7 @@ def get_production_root() -> Path:
 
 
 def get_test_root() -> Path:
-    # A copied release also contains jarvis_voice; it is never the test workspace.
+    # A copied release also contains voice_layer; it is never the test workspace.
     return Path(os.environ.get('JARVIS_TEST_ROOT', Path.home() / 'JARVIS OS')).resolve()
 
 
@@ -161,7 +161,7 @@ def switch_mode(mode: str, *, restart: bool = True, sync: bool = False) -> dict[
     mode = _normalize(mode)
     root = TEST_ROOT if mode == 'test' else PRODUCTION_ROOT
     python = TEST_ROOT / '.venv/bin/python' if mode == 'test' else PRODUCTION_ROOT.parent / 'venv/bin/python'
-    for required in (root / 'bin/jarvis-voice', root / 'jarvis_voice', python):
+    for required in (root / 'bin/jarvis-voice', root / 'voice_layer', python):
         if not required.exists():
             raise RuntimeError(f'Mode target is incomplete: {required}')
     with _mode_lock():

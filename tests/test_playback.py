@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 @pytest.mark.asyncio
 async def test_fix6_stale_generation_discarded_not_error():
     """Fix 6: cancelled playback generation must discard stale chunks cleanly."""
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     # Enqueue data in generation 0
@@ -28,7 +28,7 @@ async def test_fix6_stale_generation_discarded_not_error():
 @pytest.mark.asyncio
 async def test_playback_backlog_raises():
     """Exceeding bounded backlog raises PlaybackBacklogError."""
-    from jarvis_voice.playback import Playback, PlaybackBacklogError
+    from voice_layer.playback import Playback, PlaybackBacklogError
 
     player = Playback(sink='default')
     # Fill past the max
@@ -39,7 +39,7 @@ async def test_playback_backlog_raises():
 @pytest.mark.asyncio
 async def test_begin_reply_resets_timing():
     """begin_reply resets first-write timing state."""
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     player.enqueue(b'\x00' * 960)
@@ -50,7 +50,7 @@ async def test_begin_reply_resets_timing():
 @pytest.mark.asyncio
 async def test_cancel_pending_clears_queue():
     """cancel_pending empties the queue and advances generation."""
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     player.enqueue(b'\x00' * 960)
@@ -66,7 +66,7 @@ async def test_cancel_pending_clears_queue():
 async def test_is_playing_with_echo_tail():
     """is_playing honors echo tail duration for acoustic reflection holdoff."""
     import time
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     player = Playback(sink='default')
     assert not player.is_playing()
@@ -92,7 +92,7 @@ async def test_is_playing_with_echo_tail():
 async def test_fragmented_reply_keeps_pcm_intact_with_continuity_buffer():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, Mock, patch
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     process = SimpleNamespace(returncode=None, stdin=SimpleNamespace(
         write=Mock(), drain=AsyncMock(), close=Mock()))
@@ -103,7 +103,7 @@ async def test_fragmented_reply_keeps_pcm_intact_with_continuity_buffer():
             while not predicate():
                 await asyncio.sleep(0)
 
-    with patch('jarvis_voice.playback.asyncio.create_subprocess_exec',
+    with patch('voice_layer.playback.asyncio.create_subprocess_exec',
                AsyncMock(return_value=process)) as spawn:
         worker = asyncio.create_task(player.run())
         try:
@@ -126,7 +126,7 @@ async def test_fragmented_reply_keeps_pcm_intact_with_continuity_buffer():
 async def test_cancel_during_buffering_discards_old_audio_and_flushes_short_reply():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, Mock, patch
-    from jarvis_voice.playback import Playback
+    from voice_layer.playback import Playback
 
     process = SimpleNamespace(returncode=None, stdin=SimpleNamespace(
         write=Mock(), drain=AsyncMock(), close=Mock()))
@@ -137,7 +137,7 @@ async def test_cancel_during_buffering_discards_old_audio_and_flushes_short_repl
             while not predicate():
                 await asyncio.sleep(0)
 
-    with patch('jarvis_voice.playback.asyncio.create_subprocess_exec', AsyncMock(return_value=process)):
+    with patch('voice_layer.playback.asyncio.create_subprocess_exec', AsyncMock(return_value=process)):
         worker = asyncio.create_task(player.run())
         try:
             player.enqueue(b'\x01\x00')

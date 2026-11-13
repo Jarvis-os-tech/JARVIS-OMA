@@ -36,7 +36,7 @@ class JarvisModeUnitTests(unittest.TestCase):
         for root in (jm.PRODUCTION_ROOT, jm.TEST_ROOT):
             (root / "bin").mkdir(parents=True)
             (root / "bin/jarvis-voice").touch()
-            (root / "jarvis_voice").mkdir()
+            (root / "voice_layer").mkdir()
         for python in (jm.TEST_ROOT / ".venv/bin/python", jm.PRODUCTION_ROOT.parent / "venv/bin/python"):
             python.parent.mkdir(parents=True)
             python.touch()

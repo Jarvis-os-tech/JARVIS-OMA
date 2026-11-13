@@ -66,7 +66,7 @@ async def test_unified_skills_delegation():
 
 @pytest.mark.asyncio
 async def test_control_adapter_accepts_voice_config_with_policy_defaults():
-    from jarvis_voice.config import Config as VoiceConfig
+    from voice_layer.config import Config as VoiceConfig
     voice_config = VoiceConfig(allow_shell=False, dry_run=False, tasks_enabled=False, vision_enabled=False)
     skills = ControlSkills(voice_config)
     assert skills.config.deny_patterns

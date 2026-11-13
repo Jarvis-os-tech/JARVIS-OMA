@@ -11,7 +11,7 @@ import re
 import ipaddress
 from pathlib import Path
 
-from jarvis_voice.config import SOCKET_PATH
+from voice_layer.config import SOCKET_PATH
 
 
 class DeviceBridge:

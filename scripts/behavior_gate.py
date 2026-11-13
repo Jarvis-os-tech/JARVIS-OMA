@@ -23,7 +23,7 @@ CONTRACT = ROOT / "tests/behavior/contracts.json"
 def source_digest():
     """Fingerprint covered source and test inputs, excluding collected upstreams."""
     digest = hashlib.sha256()
-    directories = ('core', 'connectors', 'jarvis_control', 'jarvis_memory', 'jarvis_voice',
+    directories = ('core', 'connectors', 'jarvis_control', 'jarvis_memory',
                    'voice_layer', 'orchestration', 'skills', 'ui', 'scripts',
                    'skill_manifests', 'configs', 'contracts', 'tests')
     paths = [path for directory in directories for path in (ROOT / directory).rglob('*')
