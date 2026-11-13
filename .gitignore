@@ -21,5 +21,9 @@ mobile/.gradle/
 *.apk
 *.aar
 local.properties
+*.db
+*.sqlite
+*.sqlite3
+memory/data/
 
 
