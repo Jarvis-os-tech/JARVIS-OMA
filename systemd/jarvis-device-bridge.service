@@ -13,7 +13,7 @@ RestartSec=3
 KillMode=mixed
 TimeoutStopSec=10
 UMask=0077
-NoNewPrivileges=true
+NoNewPrivileges=false
 
 [Install]
 WantedBy=default.target

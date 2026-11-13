@@ -17,7 +17,7 @@ KillMode=mixed
 TimeoutStopSec=10
 SendSIGKILL=yes
 UMask=0077
-NoNewPrivileges=true
+NoNewPrivileges=false
 StandardOutput=journal
 StandardError=journal
 

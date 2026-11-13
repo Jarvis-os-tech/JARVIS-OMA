@@ -24,15 +24,17 @@ CONTROL_SOCK = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"
 
 
 def speak_explanation(text: str) -> None:
-    """Send spoken explanation to JARVIS Voice or OS Speaker before prompting."""
+    """Send explanation to JARVIS Voice / OS context silently without robotic fallback speech."""
     if not text or not text.strip():
         return
     payload = json.dumps({
         "command": "speak",
         "text": text.strip(),
-        "priority": "critical",
+        "priority": "normal",
         "source": "privileged_control",
-        "dedup_key": f"priv_{abs(hash(text)) % 100000}"
+        "dedup_key": f"priv_{abs(hash(text)) % 100000}",
+        "silent": True,
+        "speak": False
     }) + "\n"
 
     for sock_path in (SPEAK_SOCK, CONTROL_SOCK):

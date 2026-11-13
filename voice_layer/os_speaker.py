@@ -41,12 +41,9 @@ if not GROQ_API_KEY:
 
 
 class SpeechClient:
-    """Delivers speech announcements to JARVIS Voice socket or local offline fallback."""
+    """Delivers speech announcements to JARVIS Voice socket without local fallback TTS."""
 
-    def __init__(self):
-        self._offline_speech = None
-
-    async def speak(self, text: str, priority: str = "normal", source: str = "os", dedup_key: str = "") -> bool:
+    async def speak(self, text: str, priority: str = "normal", source: str = "os", dedup_key: str = "", silent: bool = False) -> bool:
         if not text or not text.strip():
             return False
 
@@ -55,10 +52,12 @@ class SpeechClient:
             "text": text.strip(),
             "priority": priority,
             "source": source,
-            "dedup_key": dedup_key
+            "dedup_key": dedup_key,
+            "silent": silent,
+            "speak": not silent
         }) + "\n"
 
-        # 1. Try dedicated speak socket
+        # Try dedicated speak socket or control socket
         for sock_path in (SPEAK_SOCKET, CONTROL_SOCKET):
             if sock_path.exists():
                 try:
@@ -70,36 +69,61 @@ class SpeechClient:
                     resp_line = await asyncio.wait_for(reader.readline(), timeout=0.8)
                     writer.close()
                     await writer.wait_closed()
-                    log.info("Dispatched speech via %s: '%s'", sock_path.name, text)
+                    log.info("Dispatched alert via %s (silent=%s, priority=%s): '%s'", sock_path.name, silent, priority, text)
                     return True
                 except Exception as err:
                     log.debug("Socket %s communication failed: %s", sock_path, err)
 
-        # 2. Resilient Offline Fallback (pw-play with OfflineSpeech directly)
-        log.info("Voice socket unavailable; falling back to direct PipeWire offline speech: '%s'", text)
-        return await self._speak_direct_fallback(text)
+        return False
 
-    async def _speak_direct_fallback(self, text: str) -> bool:
-        try:
-            if self._offline_speech is None:
-                from voice_layer.offline_speech import OfflineSpeech
-                self._offline_speech = OfflineSpeech()
-            pcm = self._offline_speech.synthesize(text)
-            if not pcm:
-                return False
 
-            proc = await asyncio.create_subprocess_exec(
-                'pw-play', '--rate', '24000', '--channels', '1', '--format', 's16',
-                '--latency', '80ms', '-',
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            await proc.communicate(input=pcm)
-            return True
-        except Exception as err:
-            log.warning("Direct offline speech fallback failed: %s", err)
-            return False
+class EventClassifier:
+    """Classifies system events and notifications into must-tell criticals vs silent context."""
+
+    # Trivial / routine noise patterns that must NEVER be spoken aloud
+    NOISE_PATTERNS = [
+        r'\b(?:screenshot|omasnap|copied to clipboard|saved to)\b',
+        r'\b(?:layout set|theme changed|workspace \d|switched to workspace)\b',
+        r'\b(?:agent finished|task finished|git repository|build finished successfully)\b',
+        r'\b(?:issue resolved|auto-healed|healed|restored|normal)\b',
+        r'\b(?:usb device connected|usb device disconnected|power cable connected)\b',
+        r'\b(?:volume|brightness|song|track|playback|spotify)\b',
+    ]
+
+    # Critical triggers that JARVIS MUST tell the user
+    CRITICAL_PATTERNS = [
+        # Failures & Crashes
+        (r'\b(?:crash(?:ed|es)?|segfault|segmentation fault|core dump(?:ed)?|kernel panic)\b', 'crash'),
+        (r'\b(?:failed with result|failed at step|service.*failed|failed to start|emergency|fatal error|unhandled exception)\b', 'failure'),
+        (r'\b(?:killed by oom|out of memory|oom-killer)\b', 'oom'),
+        # High resource usage
+        (r'(?:ram|memory)\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[0-9]|100)(?:\.[0-9]+)?\s*%', 'high_ram'),
+        (r'cpu\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[5-9]|100)(?:\.[0-9]+)?\s*%', 'high_cpu'),
+        (r'\b(?:disk full|storage full|filesystem is full|no space left on device)\b', 'disk_full'),
+        (r'\b(?:thermal throttling|critical temperature|cpu overheating)\b', 'thermal'),
+        # Low Battery
+        (r'\b(?:critical battery|battery is low|battery.*(?:down to|remaining|at)\s*(?:[1-9]|1[0-9]|20)\s*(?:%|percent)|time to recharge)\b', 'low_battery'),
+    ]
+
+    @classmethod
+    def should_tell(cls, text: str, source: str = "os", urgency: int = 1) -> tuple[bool, str]:
+        lowered = text.casefold()
+
+        # 1. Noise / routine / auto-resolved events are strictly silent
+        for pattern in cls.NOISE_PATTERNS:
+            if re.search(pattern, lowered):
+                return False, "routine_noise"
+
+        # 2. Match against critical patterns (failures, crashes, high usage, low battery)
+        for pattern, category in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, lowered):
+                return True, category
+
+        # 3. Explicit D-Bus critical urgency notifications containing warning or error keywords
+        if urgency == 2 and re.search(r'\b(?:error|fail|warning|alert|critical|halt|stopped)\b', lowered):
+            return True, "critical_urgency"
+
+        return False, "non_critical"
 
 
 class SpeechArbiter:
@@ -162,13 +186,23 @@ class SpeechArbiter:
         words = text.split()
         return " ".join(words[:16]) + ("." if not text.endswith(".") else "")
 
-    async def handle_event(self, text: str, priority: str = "normal", source: str = "os", dedup_key: str = ""):
+    async def handle_event(self, text: str, priority: str = "normal", source: str = "os", dedup_key: str = "", urgency: int = 1, silent: Optional[bool] = None):
         if self.is_rate_limited(dedup_key):
             return
 
+        should_tell, category = EventClassifier.should_tell(text, source=source, urgency=urgency)
+        # If caller explicitly set silent, respect it; otherwise decide via classifier
+        if silent is None:
+            silent = not should_tell
+        elif not silent and not should_tell:
+            silent = True
+
+        event_priority = "critical" if should_tell else priority
+
         human_text = await self.clean_and_humanize(text, source)
         if human_text:
-            await self.client.speak(human_text, priority=priority, source=source, dedup_key=dedup_key)
+            log.info("Event classified [category=%s, tell=%s, silent=%s]: '%s'", category, should_tell, silent, human_text)
+            await self.client.speak(human_text, priority=event_priority, source=source, dedup_key=dedup_key, silent=silent)
 
 
 # ============================================================================
@@ -240,7 +274,8 @@ async def watch_dbus_notifications(arbiter: SpeechArbiter):
                             priority = "critical" if current_urgency == 2 else "normal"
                             dedup = f"notif_{app_lower}_{current_summary[:20]}"
                             log.info("Notification received from %s (urgency=%d): %s", current_app, current_urgency, combined)
-                            await arbiter.handle_event(combined, priority=priority, source="notification", dedup_key=dedup)
+                            # Classify notification: criticals (crashes, failures, high usage, low battery) get spoken via natural voice; routine noise is registered silently in context
+                            await arbiter.handle_event(combined, source="notification", dedup_key=dedup, urgency=current_urgency)
 
         except asyncio.CancelledError:
             break

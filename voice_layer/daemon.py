@@ -930,6 +930,7 @@ class LiveVoice:
             return {"status": "error", "message": "empty text"}
         priority = payload.get("priority", "normal")
         source = payload.get("source", "os")
+        silent = bool(payload.get("silent", False) or payload.get("speak") is False or source in ("notification", "privileged_control", "desktop"))
 
         # 1. Register in recent OS alert history so conversational LLM has context
         self.recent_os_alerts.append({
@@ -944,25 +945,30 @@ class LiveVoice:
             try:
                 self.skills.queue_memory_exchange(
                     f"[System Alert from {source}]",
-                    f"Spoken alert: {text}",
+                    f"OS alert: {text}",
                     device="os"
                 )
             except Exception as err:
                 log.debug("Continuous memory alert injection error: %s", err)
 
-        # 3. Enqueue for speech synthesis worker
+        if silent:
+            log.info("Registered silent alert from %s in context: '%s'", source, text)
+            return {"status": "ok", "queued": False, "silent": True, "text": text}
+
+        # 3. Enqueue for speech synthesis worker only if not silent
         fut = asyncio.get_running_loop().create_future()
         await self._speak_announcement_queue.put((payload, fut))
         return {"status": "ok", "queued": True, "text": text}
 
     async def _speak_queue_worker(self):
-        """Worker that synthesizes and speaks OS announcements with barge-in coordination."""
+        """Worker that coordinates OS announcements with natural voice or offline fallback."""
         while True:
             try:
                 payload, fut = await self._speak_announcement_queue.get()
                 text = str(payload.get("text", "")).strip()
                 priority = payload.get("priority", "normal")
-                if not text:
+                silent = bool(payload.get("silent", False) or payload.get("speak") is False)
+                if not text or silent:
                     if not fut.done():
                         fut.set_result(False)
                     self._speak_announcement_queue.task_done()
@@ -979,25 +985,17 @@ class LiveVoice:
                             break
                     await asyncio.sleep(0.1)
 
-                # Synthesize offline speech (bounded to 175 chars)
-                pcm = None
-                try:
-                    if self._offline_speech is None:
-                        from .offline_speech import OfflineSpeech
-                        self._offline_speech = OfflineSpeech()
-                    clean_text = text[:175]
-                    pcm = self._offline_speech.synthesize(clean_text)
-                except Exception as synth_err:
-                    log.warning("Speech announcement synthesis failed: %s", synth_err)
-
-                if pcm:
+                # Route speech to Gemini Live natural voice when connected
+                spoken = False
+                if self.connected and self._session and not self.standby_active:
                     try:
-                        self.player.enqueue(pcm)
-                        while self.player.is_playing(0.05):
-                            await asyncio.sleep(0.05)
-                        log.info("Announced OS alert: '%s'", text)
-                    except Exception as play_err:
-                        log.warning("Player output failed for OS alert: %s", play_err)
+                        self.send_text(f"[System critical alert to speak to user: {text}]")
+                        spoken = True
+                        log.info("Dispatched spoken announcement to Gemini Live: '%s'", text)
+                    except Exception as live_err:
+                        log.debug("Failed sending announcement to Gemini Live: %s", live_err)
+                elif not self.connected:
+                    log.info("Gemini Live not connected; skipping spoken alert because local TTS is disabled: '%s'", text)
 
                 if not fut.done():
                     fut.set_result(True)
