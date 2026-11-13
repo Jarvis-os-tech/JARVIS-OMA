@@ -361,10 +361,12 @@ systemctl --user enable --now jarvis-voice.service
 systemctl --user enable --now jarvis-api-agent.service
 systemctl --user enable --now jarvis-monitor.service
 systemctl --user enable --now jarvis-shell.service
+systemctl --user enable --now jarvis-os-speaker.service
 
 # Check service status
 systemctl --user status jarvis-voice.service
 systemctl --user status jarvis-shell.service
+systemctl --user status jarvis-os-speaker.service
 journalctl --user -u jarvis-voice.service -f
 ```
 
