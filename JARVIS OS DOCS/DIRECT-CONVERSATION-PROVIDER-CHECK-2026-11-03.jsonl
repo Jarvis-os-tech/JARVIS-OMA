@@ -1,6 +1,0 @@
-{"input": "Hey Jarvis, can we just talk normally?", "tool_calls": [], "reply": "Absolutely. I'm ready to chat whenever you are.", "audio_bytes_discarded": 162240, "synthetic_volume": 45}
-{"input": "Set my speaker volume to thirty-five percent.", "tool_calls": [{"name": "set_volume", "args": {"percent": 35}}], "reply": "I've set your speaker volume to thirty-five percent.", "audio_bytes_discarded": 139680, "synthetic_volume": 35}
-{"input": "No, make it thirty.", "tool_calls": [{"name": "set_volume", "args": {"percent": 30}}], "reply": "I've updated the volume to thirty percent.", "audio_bytes_discarded": 125760, "synthetic_volume": 30}
-{"input": "A little lower.", "tool_calls": [{"name": "set_volume", "args": {"action": "lower", "amount": 5}}], "reply": "The volume is now lowered to twenty-five percent.", "audio_bytes_discarded": 134402, "synthetic_volume": 25}
-{"input": "Don't speak until I call you.", "tool_calls": [{"name": "enter_standby", "args": {}}], "reply": "Understood. Just say \"Hey Jarvis\" when you need me.", "audio_bytes_discarded": 154560, "synthetic_volume": 25}
-{"passed": true, "turns": 5, "real_os_actions": 0, "audio_played": false}
