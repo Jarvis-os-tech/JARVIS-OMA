@@ -5,9 +5,9 @@ Wants=jarvis-voice.service
 
 [Service]
 Type=simple
-ExecStart=%h/JARVIS OS/.venv/bin/python -m scripts.os_speaker
-WorkingDirectory=%h/JARVIS OS
-Environment="PYTHONPATH=%h/JARVIS OS"
+ExecStart="/home/g0pi/JARVIS OS/.venv/bin/python" -m scripts.os_speaker
+WorkingDirectory=/home/g0pi/JARVIS OS
+Environment="PYTHONPATH=/home/g0pi/JARVIS OS"
 Environment="PYTHONUNBUFFERED=1"
 CPUAffinity=4-11
 Nice=5

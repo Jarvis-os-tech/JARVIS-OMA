@@ -11,6 +11,8 @@ from .config import RUNTIME_DIR, SOCKET_PATH
 
 log = logging.getLogger('jarvis.ipc')
 
+SPEAK_SOCKET_PATH = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis-voice-speak.sock"
+
 
 class ControlServer:
     def __init__(
@@ -32,6 +34,7 @@ class ControlServer:
         tool_call_cb: Optional[Callable] = None,
         record_memory_cb: Optional[Callable] = None,
         sync_companion_cb: Optional[Callable] = None,
+        speak_cb: Optional[Callable] = None,
     ):
         self.socket_path = Path(socket_path) if socket_path else SOCKET_PATH
         self.status_provider = status_provider or (lambda: {})
@@ -50,7 +53,9 @@ class ControlServer:
         self.tool_call_cb = tool_call_cb
         self.record_memory_cb = record_memory_cb
         self.sync_companion_cb = sync_companion_cb
+        self.speak_cb = speak_cb
         self._server = None
+        self._speak_server = None
         self._owns_socket = False
         self._legacy_symlink: Optional[Path] = None
 
@@ -77,6 +82,18 @@ class ControlServer:
         self.socket_path.chmod(0o600)
         log.info('IPC listening on %s', self.socket_path)
 
+        # Dedicated speak socket for OS alerts and external daemons
+        try:
+            if SPEAK_SOCKET_PATH.exists() or SPEAK_SOCKET_PATH.is_symlink():
+                SPEAK_SOCKET_PATH.unlink(missing_ok=True)
+            self._speak_server = await asyncio.start_unix_server(
+                self._handle_client, path=str(SPEAK_SOCKET_PATH), limit=262144
+            )
+            SPEAK_SOCKET_PATH.chmod(0o600)
+            log.info('Speak socket listening on %s', SPEAK_SOCKET_PATH)
+        except Exception as err:
+            log.warning('Could not start speak server on %s: %s', SPEAK_SOCKET_PATH, err)
+
         legacy_sock = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis.sock"
         if self.socket_path == SOCKET_PATH and legacy_sock != self.socket_path:
             try:
@@ -93,6 +110,15 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        if self._speak_server is not None:
+            self._speak_server.close()
+            await self._speak_server.wait_closed()
+            self._speak_server = None
+        if SPEAK_SOCKET_PATH.exists() or SPEAK_SOCKET_PATH.is_symlink():
+            try:
+                SPEAK_SOCKET_PATH.unlink(missing_ok=True)
+            except Exception:
+                pass
         if self._owns_socket:
             self.socket_path.unlink(missing_ok=True)
             self._owns_socket = False
@@ -268,6 +294,15 @@ class ControlServer:
                     asyncio.create_task(res)
                 return json.dumps({'status': 'ok', 'standby': False}) + '\n'
             return json.dumps({'error': 'wake not available'}) + '\n'
+        if cmd == 'speak' or ('text' in req and 'command' not in req):
+            if not self.speak_cb:
+                return json.dumps({'error': 'Speech announcement unavailable'}) + '\n'
+            res = self.speak_cb(req)
+            if asyncio.iscoroutine(res):
+                res = await res
+            if not isinstance(res, dict):
+                res = {'status': 'ok', 'queued': True}
+            return json.dumps(res) + '\n'
         return json.dumps({'error': f'unknown json command: {cmd}'}) + '\n'
 
     def _dispatch(self, command: str):
@@ -354,6 +389,17 @@ class ControlServer:
             if self.confirm_cb:
                 return self._control_result(self.confirm_cb)
             return json.dumps({'error': 'confirmation not available'}) + '\n'
+        if command.startswith(('speak ', 'announce ')):
+            _, _, text = command.partition(' ')
+            clean_text = text.strip()
+            if not clean_text:
+                return json.dumps({'error': 'empty text'}) + '\n'
+            if self.speak_cb:
+                res = self.speak_cb({'text': clean_text, 'priority': 'normal', 'source': 'ipc'})
+                if asyncio.iscoroutine(res):
+                    return self._control_result(lambda: res)
+                return json.dumps(res if isinstance(res, dict) else {'status': 'ok'}) + '\n'
+            return json.dumps({'error': 'speech unavailable'}) + '\n'
         if command.startswith(('send ', 'tell ', 'prompt ', 'say ')):
             _, _, text = command.partition(' ')
             text = text.strip()

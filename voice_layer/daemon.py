@@ -361,6 +361,9 @@ class LiveVoice:
         self.vision_mode_event = asyncio.Event()
         self.on_vision_mode_broadcast = None
         self._camera_device = '/dev/video0'
+        self.recent_os_alerts = deque(maxlen=20)
+        self._speak_announcement_queue = asyncio.Queue()
+        self._offline_speech = None
 
     def status(self) -> dict:
         standby_engaged = self.standby_active or (self.standby is not None and self.standby.engaged)
@@ -413,6 +416,7 @@ class LiveVoice:
             'tool_count': len(self.skills.declarations) if self.skills else 0,
             'voice_tool_count': len(getattr(self.skills, 'live_declarations', self.skills.declarations)) if self.skills else 0,
             'vision_mode': self.vision_mode,
+            'recent_alerts': list(self.recent_os_alerts),
             'latency': {
                 'speech_end_to_first_audio_ms': self.response_first_audio_ms,
                 'first_audio_chunk_to_write_ms': self.player.first_chunk_write_ms,
@@ -912,6 +916,93 @@ class LiveVoice:
             self.standby.wake()
         if text and text.strip():
             self._input_queue.put_nowait({'text': text.strip(), 'data': b'', 'mime': '', 'name': ''})
+
+    async def speak_announcement(self, payload: dict | str) -> dict:
+        """Enqueue OS alert for spoken delivery and register in recent conversational context."""
+        if isinstance(payload, str):
+            payload = {"text": payload, "priority": "normal", "source": "os"}
+        text = str(payload.get("text", "")).strip()
+        if not text:
+            return {"status": "error", "message": "empty text"}
+        priority = payload.get("priority", "normal")
+        source = payload.get("source", "os")
+
+        # 1. Register in recent OS alert history so conversational LLM has context
+        self.recent_os_alerts.append({
+            "text": text,
+            "source": source,
+            "priority": priority,
+            "timestamp": time.time()
+        })
+
+        # 2. Inject into continuous memory if available
+        if self.skills and hasattr(self.skills, 'queue_memory_exchange'):
+            try:
+                self.skills.queue_memory_exchange(
+                    f"[System Alert from {source}]",
+                    f"Spoken alert: {text}",
+                    device="os"
+                )
+            except Exception as err:
+                log.debug("Continuous memory alert injection error: %s", err)
+
+        # 3. Enqueue for speech synthesis worker
+        fut = asyncio.get_running_loop().create_future()
+        await self._speak_announcement_queue.put((payload, fut))
+        return {"status": "ok", "queued": True, "text": text}
+
+    async def _speak_queue_worker(self):
+        """Worker that synthesizes and speaks OS announcements with barge-in coordination."""
+        while True:
+            try:
+                payload, fut = await self._speak_announcement_queue.get()
+                text = str(payload.get("text", "")).strip()
+                priority = payload.get("priority", "normal")
+                if not text:
+                    if not fut.done():
+                        fut.set_result(False)
+                    self._speak_announcement_queue.task_done()
+                    continue
+
+                # Wait if user is currently speaking or conversational turn is in progress
+                max_wait = 15.0 if priority == "normal" else 4.0
+                start_w = time.monotonic()
+                while time.monotonic() - start_w < max_wait:
+                    user_talking = bool(self.gate and self.gate.active)
+                    model_active = bool(self._reply_authorized or self._model_active or self._waiting)
+                    if not user_talking and (priority == "critical" or not model_active):
+                        if not self.player.is_playing(0.1):
+                            break
+                    await asyncio.sleep(0.1)
+
+                # Synthesize offline speech (bounded to 175 chars)
+                pcm = None
+                try:
+                    if self._offline_speech is None:
+                        from .offline_speech import OfflineSpeech
+                        self._offline_speech = OfflineSpeech()
+                    clean_text = text[:175]
+                    pcm = self._offline_speech.synthesize(clean_text)
+                except Exception as synth_err:
+                    log.warning("Speech announcement synthesis failed: %s", synth_err)
+
+                if pcm:
+                    try:
+                        self.player.enqueue(pcm)
+                        while self.player.is_playing(0.05):
+                            await asyncio.sleep(0.05)
+                        log.info("Announced OS alert: '%s'", text)
+                    except Exception as play_err:
+                        log.warning("Player output failed for OS alert: %s", play_err)
+
+                if not fut.done():
+                    fut.set_result(True)
+                self._speak_announcement_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as err:
+                log.warning("Unexpected error in speak queue worker: %s", err)
+                await asyncio.sleep(0.2)
 
     async def send_inputs(self, session):
         """Forward typed and attached input from input bar HUD or IPC into the live voice session."""
@@ -1974,6 +2065,7 @@ async def _run_voice(args, key: str, config, skills):
         tool_call_cb=shared_execution.call,
         record_memory_cb=skills.queue_memory_exchange if skills else None,
         sync_companion_cb=skills.sync_companion if skills else None,
+        speak_cb=voice.speak_announcement,
     )
     await ipc.start()
     voice.broadcast = ipc.broadcast_state
@@ -2001,6 +2093,7 @@ async def _run_voice(args, key: str, config, skills):
     background_worker = asyncio.create_task(monitor_background(voice, skills))
     local_speech_worker = asyncio.create_task(voice.local_speech.maintain())
     needle_worker = asyncio.create_task(voice.local_router.maintain())
+    speak_worker = asyncio.create_task(voice._speak_queue_worker())
     offline_worker = None
 
     async def offline_listener():
@@ -2184,6 +2277,8 @@ async def _run_voice(args, key: str, config, skills):
         needle_worker.cancel()
         await asyncio.gather(needle_worker, return_exceptions=True)
         await voice.local_router.close()
+        speak_worker.cancel()
+        await asyncio.gather(speak_worker, return_exceptions=True)
         background_worker.cancel()
         await asyncio.gather(background_worker, return_exceptions=True)
         await echo.close()
