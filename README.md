@@ -87,6 +87,7 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 
 ### 4. Connectors & External Integrations (`connectors/`)
 * **Composio Bridge**: Out-of-the-box integration with Composio tools (GitHub, Google Workspace, Slack, Jira, etc.) with automatic session admission.
+* **Agent Reach Connector**: High-performance multi-platform content reader and search engine across 15+ platforms (Reddit, YouTube transcripts, GitHub issues/discussions, Twitter/X, Bilibili, Xiaohongshu) via unified tools (`reach_read`, `reach_search`, `reach_transcript`, `reach_status`).
 * **API-Anything Bridge**: Generic REST/GraphQL connector translating conversational requests into structured HTTP invocations.
 * **Integration Health Status**: Live status and credential monitoring reporting connection states to system telemetry.
 
@@ -113,6 +114,13 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 * **Arc Reactor Core & Telemetry**: Dynamic CPU, GPU, memory, and network telemetry with ambient acoustic waveform visualization.
 * **CyberDock & LeftNav**: Quick action application dock, workspace pager, and system control dashboard.
 * **Agents Status Overview**: Real-time multi-agent activity monitors tracking active tasks, background workers, and fleet states.
+
+### 9. Multi-Agent Memory Department (`departments/memory/`)
+* **4-Layer Cognitive Hierarchy**: Strict separation across Working Memory (<5ms), Semantic Memory (<30ms), Episodic Memory (<50ms), and Procedural Memory (<10ms).
+* **Zero-RAM SQLite Graph Engine**: Serverless SQLite WAL with FTS5 BM25 search and recursive CTE graph traversal—eliminating heavy background daemon RAM footprint.
+* **Specialist Agent Cluster**: 6 dedicated memory agents handling extraction/redaction, 4-way consolidation (ADD, UPDATE, SUPERSEDE, NO-OP), procedural failure reflection, query routing, event-driven day rollover, and vault pruning.
+* **Secret Redaction Airlock**: Ingest filter redacting sensitive credentials and keys (`AIza...`, `ghp_...`, `sk-...`) before storage.
+* **Bidirectional Obsidian Sync**: Automatic structured sync with markdown vaults across daily notes and semantic category hierarchies.
 
 ---
 
@@ -152,17 +160,23 @@ JARVIS OS/
 │   └── mcp_server.py          # Model Context Protocol stdio server
 │
 ├── connectors/                # External App & Service Connectors
+│   ├── agent_reach.py         # Multi-platform content reader & search (Reddit, YT, X)
 │   ├── composio.py            # Composio platform tool integration
 │   ├── api_anything.py        # Generic REST/GraphQL API connector
 │   ├── api_service.py         # Connector dispatcher service
 │   └── integration_status.py  # Health & authentication monitor
 │
 ├── departments/               # Autonomous Specialized Departments
-│   └── linkedin/              # 12-Agent LinkedIn Department (NVIDIA NIM)
-│       ├── agents/            # Strategy, drafting, reviewing, and publishing agents
-│       ├── content_sprint.py  # Sprint planning and schedule manager
-│       ├── profile_audit.py   # Profile extraction, analysis, and recommendations
-│       └── airlock.py         # Human-in-the-loop review queue and publishing gate
+│   ├── linkedin/              # 12-Agent LinkedIn Department (NVIDIA NIM)
+│   │   ├── agents/            # Strategy, drafting, reviewing, and publishing agents
+│   │   ├── content_sprint.py  # Sprint planning and schedule manager
+│   │   ├── profile_audit.py   # Profile extraction, analysis, and recommendations
+│   │   └── airlock.py         # Human-in-the-loop review queue and publishing gate
+│   └── memory/                # Multi-Agent Cognitive Memory Department
+│       ├── agents/            # Extractor, Consolidation, Reflection, Retrieval, Rollover
+│       ├── db.py              # Zero-RAM SQLite driver & recursive CTE graph engine
+│       ├── schema.sql         # SQLite schema (nodes, edges, FTS5, traces)
+│       └── department.py      # Department Lead & public API
 │
 ├── teaching_mode/             # Universal Visual Learning & Tutoring Engine
 │   ├── domain/                # Pedagogical policies, curriculum, and safety gates
@@ -308,6 +322,27 @@ jarvis task "audit my LinkedIn profile positioning"
 
 # Review staged posts in the review queue
 jarvis task "show pending LinkedIn reviews"
+```
+
+### Multi-Platform Agent Reach
+```bash
+# Search across social platforms and developer communities
+jarvis task "search reddit for local LLM inference setups"
+
+# Read article, discussion, or issue directly from URL
+jarvis task "read https://github.com/astral-sh/uv/issues/1000"
+
+# Fetch YouTube video transcript
+jarvis task "fetch transcript for https://youtu.be/example"
+```
+
+### Cognitive Memory Department
+```bash
+# Store knowledge with secret redaction and 4-way consolidation
+jarvis task "remember that our production port is 8080 and dark theme is preferred"
+
+# Query semantic and episodic memories via recursive graph search
+jarvis task "what do you know about our production configuration?"
 ```
 
 ---
