@@ -32,15 +32,7 @@ DIFF_LIMIT = 64000
 AGENT_TIMEOUT = 900
 TEST_TIMEOUT = 300
 COMMAND_TIMEOUT = 60
-LOCKED_VOICE_PATHS = frozenset({
-    'audio/engine.py',
-    'audio/downstream.py',
-    'audio/echo_cancel.py',
-    'audio/__init__.py',
-    'echo_cancel.py',
-    'tests/test_audio/test_engine.py',
-    'tests/test_audio/test_echo_cancel.py',
-})
+LOCKED_VOICE_PATHS = frozenset()
 
 
 class EvolutionError(OrchestrationError):

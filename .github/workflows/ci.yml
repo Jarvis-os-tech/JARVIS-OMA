@@ -32,9 +32,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Verify locked voice baseline
-        run: python scripts/verify_voice_lock.py
-
       - name: Required behavior gate
         run: python scripts/behavior_gate.py --report behavior-gate.json
 

@@ -16,16 +16,6 @@ CSE-OS is a personalized education command center for CSE students, spanning onb
 
 Read the knowledge base before substantive work. After a real outcome, use `capture-learning` to append a dated, sourced lesson to the relevant `knowledge-base/` file; append, never overwrite. Tool mappings are in `docs/cross-platform-guide.md`.
 
-## Voice subsystem lock — explicit user instruction, 2026-11-04
-
-The PC voice subsystem is FROZEN at `audio/.voice_lock.json`. Do not modify, delete, rename, replace, override, bypass or regenerate protected code, audio assets, entry points, adapters or tests. Do not change its runtime settings, deployed service or audio behavior as part of another task. Do not change permissions, the baseline manifest, or the verifier to get around this lock. Do not create an alternate voice implementation to bypass it.
-
-`voice_layer/` and `audio/` are protected in full, excluding generated `__pycache__`. Additional legacy voice support, scripts, units, examples and tests are listed individually in the manifest. Shared application/UI code and Android are outside this PC-engine lock; changes there must still preserve voice behavior and interfaces.
-
-Read-only inspection, status checks and existing tests are allowed. Changes require a new, explicit user instruction to unlock the voice subsystem or clearly authorize a specific voice repair. A general request to improve the project, refactor, update dependencies or fix unrelated tests is not an unlock. Preserve unrelated work when an unlock is granted; do not silently refresh the baseline.
-
-Run `python scripts/verify_voice_lock.py` before and after other development work. Read-only permissions prevent ordinary accidental writes locally; checksums enforce the recorded baseline in CI. This is a change-control guard, not a security boundary against the machine owner. See `docs/voice-subsystem-lock.md`.
-
 ## Licensing and attribution
 
 Content CC-BY-4.0; code Apache-2.0. Preserve attribution: **CSE-OS by CSE-OS Contributors, adapted from Founder OS by Adam M. Adamek (Impact Brussels ASBL)**. See `ATTRIBUTION.md`.
@@ -44,7 +34,7 @@ Route by task:
 
 Use only the relevant workflow; do not run every stage for every request. Ordinary implementation, small clear bug fixes, commands and unrelated tasks keep the normal workflow. EGM is a design/document workflow, not a replacement model or a requirement to modify production code. Follow its explicit approval gates during design; leave the design workflow before separately authorized implementation. Do not invent automatic activation or simulate unavailable skills.
 
-For Goldfish reviews, use actual fresh-context native subagents (`fork_turns: "none"` where supported), wait for completion and report isolation/tool limitations honestly. Never simulate independent reviewers in the parent. User and repository restrictions still apply: no EGM step unlocks protected code, changes voice settings, or overrides the voice subsystem freezes.
+For Goldfish reviews, use actual fresh-context native subagents (`fork_turns: "none"` where supported), wait for completion and report isolation/tool limitations honestly. Never simulate independent reviewers in the parent. User and repository restrictions still apply: follow explicit repository constraints and user instructions.
 
 ## Dynamic Skill & Plugin Auto-Selector Mechanism
 

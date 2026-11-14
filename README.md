@@ -213,8 +213,7 @@ JARVIS OS/
 │   ├── test_connectors/       # Integration & connector test suite
 │   └── test_orchestration/    # Hermes agent orchestration test suite
 │
-├── audio/.voice_lock.json     # Baseline PC voice freeze manifest
-└── JARVIS OS DOCS/            # Architecture specifications & audit records
+├── JARVIS OS DOCS/            # Architecture specifications & audit records
 ```
 
 ---
@@ -365,5 +364,5 @@ python scripts/behavior_gate.py --report
 ## 🔒 Security & Policy Boundaries
 
 1. **Execution Admission**: Destructive shell invocations (e.g., `rm -rf`, disk formatting, system reboot) require explicit confirmation gates.
-3. **Data Protection**: Personal facts and transcripts remain in sovereign local storage (SQLite WAL + Obsidian markdown) without telemetry or third-party leakage.
-4. **Local Socket Permissions**: Control sockets in `$XDG_RUNTIME_DIR/jarvis/` are restricted to mode `0600` (user-only).
+2. **Data Protection**: Personal facts and transcripts remain in sovereign local storage (SQLite WAL + Obsidian markdown) without telemetry or third-party leakage.
+3. **Local Socket Permissions**: Control sockets in `$XDG_RUNTIME_DIR/jarvis/` are restricted to mode `0600` (user-only).

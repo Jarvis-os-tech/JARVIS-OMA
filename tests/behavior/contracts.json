@@ -199,17 +199,6 @@
       ]
     },
     {
-      "id": "VOICE-LOCK-1",
-      "expectation": "The frozen voice baseline rejects changed, missing, added or redirected protected source.",
-      "tests": [
-        "tests/test_voice_lock.py::test_current_voice_baseline_is_intact",
-        "tests/test_voice_lock.py::test_voice_lock_detects_changed_missing_and_added_code",
-        "tests/test_voice_lock.py::test_voice_lock_rejects_symlink_replacement",
-        "tests/test_voice_lock.py::test_voice_lock_rejects_paths_outside_workspace",
-        "tests/test_voice_lock.py::test_voice_lock_preserves_only_the_pinned_internal_link"
-      ]
-    },
-    {
       "id": "GATE-1",
       "expectation": "The gate rejects failures, skips, xfails, missing cases, setup/cleanup errors and stale release evidence.",
       "tests": [

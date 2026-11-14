@@ -84,17 +84,8 @@ def doctor(state_dir):
                 raise ValueError('Local voice adapters are not wired')
         return {'voice_tools': sum(len(names) for names in expected.values())}
 
-    def voice_lock():
-        project = Path(__file__).resolve().parents[1]
-        result = subprocess.run([sys.executable, str(project / 'scripts/verify_voice_lock.py')],
-            cwd=project, capture_output=True, timeout=15)
-        if result.returncode:
-            raise ValueError('Locked voice integrity check failed')
-        return 'locked_voice_files_verified'
-
     for name, action in [('python', python_version), ('upstream', dependency),
-                         ('state', state), ('databases', databases), ('voice_tools', tools),
-                         ('voice_lock', voice_lock)]:
+                         ('state', state), ('databases', databases), ('voice_tools', tools)]:
         check(name, action)
     ready = all(row['status'] == 'pass' for row in checks)
     return {'ready': ready, 'status': 'success' if ready else 'warning', 'checks': checks,

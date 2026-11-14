@@ -16,7 +16,7 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('init', help='Register the curated research seed; activate only if uninitialized')
     commands.add_parser('status')
-    commands.add_parser('doctor', help='Verify local dependency, state, databases, tools and voice lock without cloud calls')
+    commands.add_parser('doctor', help='Verify local dependency, state, databases and tools without cloud calls')
     commands.add_parser('episodes', help='List the latest 20 captured task identities')
     commands.add_parser('voice-tests', help='Print spoken test requests and manual expectations')
     commands.add_parser('voice-report', help='Inspect captured test markers; manual verdicts remain pending')

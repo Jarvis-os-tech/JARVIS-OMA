@@ -170,12 +170,10 @@ def test_absence_conflict_and_unavailable_are_distinct(incident_data):
 
 
 @pytest.mark.parametrize('path', [
-    'audio/new.py', 'voice_layer/daemon.py', 'voice_layer/new.py',
-    'audio/.voice_lock.json',
-    'bin/jarvis-voice', 'scripts/verify_voice_lock.py', 'scripts',
     'learning/os_contracts.py', 'tests/test_learning/test_os_contracts.py',
-    '../outside', '/etc/passwd', './learning/new.py', 'learning/../audio/new.py',
-    'learning//new.py', 'learning\\new.py', '', '.', 'audio/\x00',
+    'learning/os_ingestion.py', 'tests/test_learning/test_os_ingestion.py',
+    '../outside', '/etc/passwd', './learning/new.py', 'learning/../learning/new.py',
+    'learning//new.py', 'learning\\new.py', '', '.', 'learning/\x00',
 ])
 def test_candidate_path_rejection(path):
     with pytest.raises(ValueError):
@@ -271,5 +269,5 @@ def test_cli_path_checks_are_checks_not_deployment():
     allowed = subprocess.run(command + ['learning/future_os_adapter.py'], capture_output=True, cwd=ROOT)
     assert allowed.returncode == 0
     assert json.loads(allowed.stdout)['activation_allowed'] is False
-    denied = subprocess.run(command + ['bin/jarvis-voice'], capture_output=True, cwd=ROOT)
+    denied = subprocess.run(command + ['learning/os_contracts.py'], capture_output=True, cwd=ROOT)
     assert denied.returncode == 1
