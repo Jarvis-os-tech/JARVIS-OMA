@@ -34,8 +34,7 @@ def main():
     for line in sys.stdin.buffer:
         request = json.loads(line)
         if 'speak' in request:
-            pcm = speech.synthesize(request['speak'])
-            print(json.dumps({'pcm': base64.b64encode(pcm).decode()}), flush=True)
+            print(json.dumps({'pcm': ''}), flush=True)
             continue
         text = request.get('text')
         if not isinstance(text, str) or len(text) > 240:

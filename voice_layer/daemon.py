@@ -34,6 +34,7 @@ from .recovery import ConnectionRecovery
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
 from .local_speech import LocalSpeechConfig, WhistleClient, app_names, command_for, could_be_command
 from .needle_router import NeedleRouter
+from .decision_router import DecisionRouter, DecisionResult
 from .acknowledgements import PHRASES as ACK_PHRASES, select_ack, short_ack
 from .interaction import InteractionPolicy
 from jarvis_control.outcomes import classify_result
@@ -257,6 +258,13 @@ class LiveVoice:
         self.config = config
         self.local_speech = WhistleClient(getattr(config, 'local_speech', LocalSpeechConfig()))
         self.local_router = NeedleRouter(self.local_speech.config)
+        api_key = getattr(config, 'api_key', None) or os.environ.get(getattr(config, 'api_key_env', 'GEMINI_API_KEY'), '') or os.environ.get('GEMINI_API_KEY', '')
+        self.decision_router = DecisionRouter(
+            config=getattr(config, 'decision', None),
+            api_key=api_key,
+        )
+        self.last_decision = None
+        self._last_turn_text = ''
         self._local_apps = {}
         self.local_commands_executed = 0
         self.last_local_outcome = None
@@ -405,6 +413,8 @@ class LiveVoice:
             'echo_cancellation_active': self.echo_cancellation_active,
             'needle': {'ready': self.local_router.ready, 'error': self.local_router.error,
                        'last_inference_ms': self.local_router.last_inference_ms},
+            'decision': {'last_decision_ms': self.decision_router.last_decision_ms,
+                         'decisions_count': self.decision_router.decisions_count},
             'local_speech': {'ready': self.local_speech.ready,
                              'error': self.local_speech.error,
                              'last_decode_ms': self.local_speech.last_decode_ms,
@@ -1032,19 +1042,7 @@ class LiveVoice:
                     except Exception as live_err:
                         log.debug("Failed sending announcement to Gemini Live: %s", live_err)
                 elif not self.connected:
-                    log.info("Gemini Live not connected; falling back to offline speech for alert: '%s'", text)
-                    try:
-                        if not hasattr(self, '_offline_tts') or self._offline_tts is None:
-                            from .offline_speech import OfflineSpeech
-                            self._offline_tts = OfflineSpeech()
-                        pcm = self._offline_tts.synthesize(text[:160])
-                        if pcm and self.player:
-                            self.player.begin_reply()
-                            self.player.enqueue(pcm)
-                            self.player.finish_reply()
-                            spoken = True
-                    except Exception as err:
-                        log.warning("Offline TTS fallback failed: %s", err)
+                    log.info("Gemini Live not connected; recorded alert silently in context without fallback voice: '%s'", text)
 
                 if not fut.done():
                     fut.set_result(True)
@@ -1749,6 +1747,7 @@ class LiveVoice:
             text = await self.local_speech.transcribe_offline(pcm)
         else:
             text = await self.local_speech.transcribe(pcm)
+        self._last_turn_text = text or ''
         command = command_for(text, self._local_apps) if text else None
         # Exact commands remain instant; Needle broadens offline phrasing only.
         if command is None and text and not self.connected and getattr(self.local_router.config, 'needle_enabled', False):
@@ -1815,6 +1814,89 @@ class LiveVoice:
         log.info('Local voice command %s finished: %s', name, self.last_local_outcome)
         return True
 
+    async def _handle_decision_gate(self, pcm_data, token, buffered, forwarded, session):
+        """Single-pass Gemini Decision 1 gate right after Cactus-Needle.
+
+        Simultaneously selects pre-rendered spoken acknowledgement PCM clip,
+        routes target subsystem, enforces desktop safety policy, and filters room noise.
+        Plays PCM audio immediately through PipeWire to eliminate cloud silence.
+        """
+        if not getattr(getattr(self.config, 'decision', None), 'enabled', True):
+            return False
+        if self.muted or self.standby.engaged:
+            return True
+        if token != (self.gate.accepted_turns, self.player.generation):
+            return True
+
+        text = getattr(self, '_last_turn_text', '') or self._user_text or ''
+        decision = await self.decision_router.evaluate(pcm_data, text=text)
+        self.last_decision = decision
+
+        # 1. Addressability check: filter room noise/side-talk before interrupting active playback
+        if not decision.is_for_jarvis:
+            log.info('Decision Gate: filtered background utterance (is_for_jarvis=False)')
+            return True
+
+        # 2. Zero-wait audio masking: play pre-rendered PCM acknowledgement clip immediately
+        if decision.ack_clip and decision.ack_clip != 'none':
+            pcm = self._reply_notices.get(decision.ack_clip)
+            if pcm and not self.muted and not self.standby.engaged:
+                self.player.begin_reply()
+                getattr(self.player, 'enqueue_filler', self.player.enqueue)(pcm)
+                self._filler_played = True
+                self._previous_ack_clip = decision.ack_clip
+                self._last_reply_sound_at = time.monotonic()
+                self.local_fillers_played += 1
+                self.last_acknowledgement = ACK_PHRASES.get(decision.ack_clip, '')
+                log.info('Decision Gate: playing audio masking clip %s ("%s")', decision.ack_clip, self.last_acknowledgement)
+
+        # 3. Safety policy check: gate destructive or irreversible actions before actuators run
+        if decision.requires_confirmation:
+            log.warning('Decision Gate: action requires explicit user confirmation: %s', text)
+            self._confirmation_gate_turn = token
+            if hasattr(self.skills, 'control') and self.skills.control and hasattr(self.skills.control, 'hold_action'):
+                self.skills.control.hold_action(text or 'destructive_action')
+            return True
+
+        # 4. Target subsystem parallel execution
+        if decision.route == 'gemini_live':
+            self._reply_authorized = True
+            if session is not None:
+                for held_item in buffered:
+                    held_frame, gen = held_item
+                    marked = GateFrame(
+                        pcm=held_frame.pcm,
+                        opened=held_frame.opened,
+                        closed=held_frame.closed,
+                        barge_in=True,
+                        turn_id=getattr(held_frame, 'turn_id', 0) or (token[0] if token else 0),
+                    )
+                    await forwarded.put((marked, gen))
+            else:
+                self._waiting = self._reply_authorized = False
+                self._play_reply_notice('reply_unavailable')
+            return True
+
+        # Non-live routes dispatch to backend in parallel while audio plays
+        asyncio.create_task(
+            self._dispatch_subsystem_task(decision.route, text, decision, token, buffered, forwarded, session)
+        )
+        return True
+
+    async def _dispatch_subsystem_task(self, route, text, decision, token, buffered, forwarded, session):
+        """Dispatch task payload to target subsystem in parallel with audio playback."""
+        from orchestration.model_routes import dispatch_subsystem_route
+        try:
+            self._tools_in_flight += 1
+            self._active_tool = f"route:{route}"
+            result = await dispatch_subsystem_route(route, text, skills=self.skills, context={'token': token})
+            log.info("Dispatched subsystem route '%s' task: %s", route, result)
+        except Exception as error:
+            log.warning("Subsystem task dispatch failed for route '%s': %s", route, error)
+        finally:
+            self._tools_in_flight -= 1
+            self._active_tool = ''
+
     async def _send_frames(self, session, queue):
         if not self.local_speech.config.enabled:
             await self._send_frames_cloud(session, queue)
@@ -1863,7 +1945,10 @@ class LiveVoice:
                 if not frame.closed:
                     continue
                 token = (frame.turn_id or self.gate.accepted_turns, generation)
-                handled = await self._try_local_command(b''.join(f.pcm for f, _ in buffered), token)
+                pcm_data = b''.join(f.pcm for f, _ in buffered)
+                handled = await self._try_local_command(pcm_data, token)
+                if not handled:
+                    handled = await self._handle_decision_gate(pcm_data, token, buffered, forwarded, session)
                 if not handled:
                     if session is not None:
                         for held in buffered:
@@ -1893,11 +1978,12 @@ class LiveVoice:
                         blocked = True
                     else:
                         self._wake_confirmation_in_flight = False
-                if not self.barge_in_enabled and not self._listening_backchannel:
+                is_buffered = getattr(frame, 'barge_in', False)
+                if not self.barge_in_enabled and not self._listening_backchannel and not is_buffered:
                     blocked = blocked or self.player.is_playing(ECHO_TAIL_SECONDS)
                 if blocked:
                     chunk = bytes(len(chunk))
-                elif frame.opened or (self.gate.active and not activity_open):
+                if (frame.opened or (self.gate.active and not activity_open) or (is_buffered and not activity_open)) and not blocked:
                     self._reply_authorized = self._waiting = True
                     if activity_open:
                         await asyncio.wait_for(session.send_realtime_input(activity_end=types.ActivityEnd()), 3)
@@ -2203,7 +2289,7 @@ async def _run_voice(args, key: str, config, skills):
                 session_cfg = live_config(voice=voice_name, resume_handle=voice.resume_handle,
                                           barge_in=voice.barge_in_enabled, tools=tools,
                                           skills=skills, config=replace(config, model=model), memory_context=context)
-                async with genai.Client(api_key=key).aio as client:
+                async with genai.Client(api_key=key, http_options={'api_version': 'v1beta'}).aio as client:
                     async with connect_session(client, model=model, config=session_cfg) as session:
                         await stop_offline()
                         session_opened = True
@@ -2332,6 +2418,7 @@ async def _run_voice(args, key: str, config, skills):
         needle_worker.cancel()
         await asyncio.gather(needle_worker, return_exceptions=True)
         await voice.local_router.close()
+        await voice.decision_router.close()
         speak_worker.cancel()
         await asyncio.gather(speak_worker, return_exceptions=True)
         background_worker.cancel()

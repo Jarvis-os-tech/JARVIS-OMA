@@ -333,7 +333,7 @@ class NetworkProbe:
         dns_targets: Optional[List[str]] = None,
         wan_urls: Optional[List[str]] = None,
     ) -> None:
-        self.dns_targets = dns_targets or ["cloudflare.com", "google.com", "1.1.1.1"]
+        self.dns_targets = dns_targets or ["google.com", "1.1.1.1"]
         self.wan_urls = wan_urls or [
             "http://connectivitycheck.gstatic.com/generate_204",
             "https://1.1.1.1",

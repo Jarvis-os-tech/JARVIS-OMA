@@ -88,6 +88,8 @@ class EventClassifier:
         r'\b(?:issue resolved|auto-healed|healed|restored|normal)\b',
         r'\b(?:usb device connected|usb device disconnected|power cable connected)\b',
         r'\b(?:volume|brightness|song|track|playback|spotify)\b',
+        r'\b(?:thermal|temperature|overheating)\b',
+        r'\b(?:cloudflare)\b',
     ]
 
     # Critical triggers that JARVIS MUST tell the user
@@ -99,9 +101,8 @@ class EventClassifier:
         # High resource usage
         (r'(?:ram|memory)\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[0-9]|100)(?:\.[0-9]+)?\s*%', 'high_ram'),
         (r'cpu\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[5-9]|100)(?:\.[0-9]+)?\s*%', 'high_cpu'),
-        # Thermal & Storage
+        # Storage
         (r'\b(?:disk full|storage full|filesystem is full|no space left on device)\b', 'disk_full'),
-        (r'\b(?:thermal|critical temperature|temperature\s*(?:is\s*)?critical|cpu overheating|thermal throttling)\b', 'thermal'),
         # Network & Connectivity failures
         (r'\b(?:wi-?fi|network|internet)\s*(?:disconnected|dropped|down|lost|offline)\b', 'network_down'),
         # Low Battery (<= 20%)
@@ -119,7 +120,7 @@ class EventClassifier:
                 if not re.search(r'\b(?:issue resolved|auto-healed|healed|restored|normal)\b', lowered):
                     return True, category
 
-        # 2. Noise / routine events are strictly silent in context
+        # 2. Noise, routine, thermal and cloudflare events are strictly silent in context
         for pattern in cls.NOISE_PATTERNS:
             if re.search(pattern, lowered):
                 return False, "routine_noise"

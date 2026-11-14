@@ -15,6 +15,8 @@ def test_classifier_rejects_routine_noise():
         "Power cable connected. Charging battery.",
         "Volume set to 40 percent.",
         "Theme changed to Catppuccin Mocha.",
+        "[ALERT] Thermal (TCPU). Temperature critical: 95.0°C (limit 85.0°C).",
+        "[ALERT] HTTP https://cloudflare.com. HTTP request failed: handshake timed out.",
     ]
     for text in noise_samples:
         should_tell, category = EventClassifier.should_tell(text, source="notification")
@@ -55,7 +57,6 @@ def test_classifier_identifies_high_usage():
         ("Critical memory: RAM usage is 98%.", "high_ram"),
         ("CPU usage is at 99%.", "high_cpu"),
         ("No space left on device: disk full on root partition.", "disk_full"),
-        ("Thermal throttling detected: CPU temperature high.", "thermal"),
     ]
     for text, expected_cat in usage_samples:
         should_tell, category = EventClassifier.should_tell(text, source="os")
@@ -103,17 +104,38 @@ async def test_arbiter_deduplicates_sensor_bursts_by_category():
     arbiter = SpeechArbiter(client)
 
     burst = [
-        "[ALERT] Thermal (acpitz). Temperature critical: 86.0°C (limit 85.0°C).",
-        "[ALERT] Thermal (TCPU_PCI). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
-        "[ALERT] Thermal (x86_pkg_temp). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
-        "[ALERT] Thermal (TCPU). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
+        "Critical memory: RAM usage is 96%.",
+        "Critical memory: RAM usage is 97%.",
+        "Critical memory: RAM usage is 98%.",
     ]
 
     for item in burst:
         await arbiter.handle_event(item, source="notification", dedup_key=f"notif_{item[:20]}", urgency=2)
 
-    # All 4 are thermal alerts; only the FIRST should be dispatched to speak, the others rate-limited
+    # High RAM alerts: only the FIRST should be dispatched to speak, the others rate-limited
     assert client.speak.call_count == 1
     call_args = client.speak.call_args[1]
     assert call_args["priority"] == "critical"
-    assert call_args["dedup_key"] == "critical_thermal"
+    assert call_args["dedup_key"] == "critical_high_ram"
+
+
+@pytest.mark.asyncio
+async def test_arbiter_silences_thermal_and_cloudflare_alerts():
+    from unittest.mock import AsyncMock
+    client = SpeechClient()
+    client.speak = AsyncMock(return_value=True)
+    arbiter = SpeechArbiter(client)
+
+    suppressed = [
+        "[ALERT] Thermal (TCPU). Temperature critical: 95.0°C (limit 85.0°C).",
+        "[ALERT] HTTP https://cloudflare.com. HTTP request failed: <urlopen error handshake timed out>.",
+    ]
+
+    for item in suppressed:
+        await arbiter.handle_event(item, source="notification", dedup_key=f"notif_{item[:20]}", urgency=2)
+
+    # Both must be registered silently (silent=True, priority=normal)
+    assert client.speak.call_count == 2
+    for call in client.speak.call_args_list:
+        assert call[1]["silent"] is True
+        assert call[1]["priority"] != "critical"

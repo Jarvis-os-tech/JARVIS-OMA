@@ -2,7 +2,6 @@
   "network": {
     "check_gateway": true,
     "dns_targets": [
-      "cloudflare.com",
       "google.com",
       "1.1.1.1"
     ],
@@ -13,13 +12,7 @@
   },
   "servers": {
     "tcp": [],
-    "http": [
-      {
-        "url": "https://cloudflare.com",
-        "name": "Cloudflare Edge",
-        "expected_codes": [200, 301, 302]
-      }
-    ]
+    "http": []
   },
   "resources": {
     "cpu_threshold_percent": 85.0,
@@ -29,7 +22,7 @@
     "disks": [
       "/"
     ],
-    "thermal_threshold_celsius": 85.0,
+    "check_thermals": false,
     "battery_low_percent": 20.0,
     "battery_critical_percent": 10.0
   },

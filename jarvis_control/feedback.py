@@ -119,8 +119,6 @@ class Feedback:
             aplay.wait()
             piper.wait()
             return
-        if shutil.which("espeak-ng"):
-            subprocess.run(["espeak-ng", "-s", "165", "--", text], capture_output=True)
 
     # -- log ----------------------------------------------------------------
     def log(self, line: str) -> None:

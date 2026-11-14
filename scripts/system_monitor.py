@@ -60,7 +60,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     return {
         "network": {
             "check_gateway": True,
-            "dns_targets": ["cloudflare.com", "google.com", "1.1.1.1"],
+            "dns_targets": ["google.com", "1.1.1.1"],
             "wan_urls": [
                 "http://connectivitycheck.gstatic.com/generate_204",
                 "https://1.1.1.1",
@@ -68,13 +68,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         },
         "servers": {
             "tcp": [],
-            "http": [
-                {
-                    "url": "https://cloudflare.com",
-                    "name": "Cloudflare Edge",
-                    "expected_codes": [200, 301, 302],
-                }
-            ],
+            "http": [],
         },
         "resources": {
             "cpu_threshold_percent": 85.0,
@@ -82,7 +76,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             "memory_critical_percent": 90.0,
             "disk_threshold_percent": 85.0,
             "disks": ["/"],
-            "thermal_threshold_celsius": 85.0,
+            "check_thermals": False,
             "battery_low_percent": 20.0,
             "battery_critical_percent": 10.0,
         },
@@ -152,8 +146,9 @@ def run_checks(config: Dict[str, Any]) -> List[ProbeResult]:
     for mount in res_cfg.get("disks", ["/"]):
         results.append(res_probe.check_disk(mount_point=mount, threshold_percent=float(res_cfg.get("disk_threshold_percent", 90.0))))
 
-    thermal_results = res_probe.check_thermals(threshold_celsius=float(res_cfg.get("thermal_threshold_celsius", 85.0)))
-    results.extend(thermal_results)
+    if res_cfg.get("check_thermals", False):
+        thermal_results = res_probe.check_thermals(threshold_celsius=float(res_cfg.get("thermal_threshold_celsius", 85.0)))
+        results.extend(thermal_results)
 
     # 4. Service checks
     svc_cfg = config.get("services", {})
