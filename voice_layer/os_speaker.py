@@ -100,7 +100,7 @@ class EventClassifier:
         (r'(?:ram|memory)\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[0-9]|100)(?:\.[0-9]+)?\s*%', 'high_ram'),
         (r'cpu\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[5-9]|100)(?:\.[0-9]+)?\s*%', 'high_cpu'),
         (r'\b(?:disk full|storage full|filesystem is full|no space left on device)\b', 'disk_full'),
-        (r'\b(?:thermal throttling|critical temperature|cpu overheating)\b', 'thermal'),
+        (r'\b(?:thermal|critical temperature|temperature\s*(?:is\s*)?critical|cpu overheating|thermal throttling)\b', 'thermal'),
         # Low Battery (<= 20%)
         (r'\b(?:critical battery|low battery|time to recharge|battery\s*(?:level\s*)?low)\b|\bbattery\b.*?\b(?:20|1[0-9]|[1-9])\s*(?:%|percent)|\b(?:20|1[0-9]|[1-9])\s*(?:%|percent).*?\b(?:battery|remaining)', 'low_battery'),
     ]
@@ -189,10 +189,18 @@ class SpeechArbiter:
         return " ".join(words[:16]) + ("." if not text.endswith(".") else "")
 
     async def handle_event(self, text: str, priority: str = "normal", source: str = "os", dedup_key: str = "", urgency: int = 1, silent: Optional[bool] = None):
-        if self.is_rate_limited(dedup_key):
+        should_tell, category = EventClassifier.should_tell(text, source=source, urgency=urgency)
+
+        # Deduplicate critical categories globally (e.g. collapse multiple thermal or CPU sensors into one alert)
+        if should_tell and category not in ("non_critical", "routine_noise"):
+            effective_dedup = f"critical_{category}"
+        else:
+            effective_dedup = dedup_key
+
+        if self.is_rate_limited(effective_dedup):
+            log.info("Rate-limited duplicate event for key: %s (text: '%s')", effective_dedup, text[:50])
             return
 
-        should_tell, category = EventClassifier.should_tell(text, source=source, urgency=urgency)
         # If caller explicitly set silent, respect it; otherwise decide via classifier
         if silent is None:
             silent = not should_tell
@@ -204,7 +212,7 @@ class SpeechArbiter:
         human_text = await self.clean_and_humanize(text, source)
         if human_text:
             log.info("Event classified [category=%s, tell=%s, silent=%s]: '%s'", category, should_tell, silent, human_text)
-            await self.client.speak(human_text, priority=event_priority, source=source, dedup_key=dedup_key, silent=silent)
+            await self.client.speak(human_text, priority=event_priority, source=source, dedup_key=effective_dedup, silent=silent)
 
 
 # ============================================================================

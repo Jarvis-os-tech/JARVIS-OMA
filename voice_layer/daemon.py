@@ -957,6 +957,18 @@ class LiveVoice:
             log.info("Registered silent alert from %s in context: '%s'", source, text)
             return {"status": "ok", "queued": False, "silent": True, "text": text}
 
+        # Deduplicate spoken announcements to prevent repeating alerts in quick succession
+        now = time.monotonic()
+        if not hasattr(self, '_recent_announcements'):
+            self._recent_announcements = {}
+        # Prune entries older than 180 seconds
+        self._recent_announcements = {k: v for k, v in self._recent_announcements.items() if now - v < 180.0}
+        norm_key = re.sub(r'[^a-zA-Z0-9]+', ' ', text).strip().lower()[:32]
+        if norm_key in self._recent_announcements:
+            log.info("Suppressing repeated spoken announcement in voice daemon: '%s'", text)
+            return {"status": "ok", "queued": False, "suppressed": True, "text": text}
+        self._recent_announcements[norm_key] = now
+
         # 3. Enqueue for speech synthesis worker only if not silent
         fut = asyncio.get_running_loop().create_future()
         await self._speak_announcement_queue.put((payload, fut))

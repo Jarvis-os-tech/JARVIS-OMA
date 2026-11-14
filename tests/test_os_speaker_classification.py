@@ -93,3 +93,27 @@ async def test_speech_client_does_not_use_local_tts():
     res = await client.speak("Test alert", priority="critical", source="test", silent=False)
     # Result is a boolean, no exception raised
     assert isinstance(res, bool)
+
+
+@pytest.mark.asyncio
+async def test_arbiter_deduplicates_sensor_bursts_by_category():
+    from unittest.mock import AsyncMock
+    client = SpeechClient()
+    client.speak = AsyncMock(return_value=True)
+    arbiter = SpeechArbiter(client)
+
+    burst = [
+        "[ALERT] Thermal (acpitz). Temperature critical: 86.0°C (limit 85.0°C).",
+        "[ALERT] Thermal (TCPU_PCI). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
+        "[ALERT] Thermal (x86_pkg_temp). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
+        "[ALERT] Thermal (TCPU). [Persistent] Temperature critical: 91.0°C (limit 85.0°C).",
+    ]
+
+    for item in burst:
+        await arbiter.handle_event(item, source="notification", dedup_key=f"notif_{item[:20]}", urgency=2)
+
+    # All 4 are thermal alerts; only the FIRST should be dispatched to speak, the others rate-limited
+    assert client.speak.call_count == 1
+    call_args = client.speak.call_args[1]
+    assert call_args["priority"] == "critical"
+    assert call_args["dedup_key"] == "critical_thermal"
