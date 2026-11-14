@@ -68,11 +68,20 @@ def test_classifier_identifies_low_battery():
         ("Critical battery warning: 10 percent remaining.", "low_battery"),
         ("Battery is low at 15 percent.", "low_battery"),
         ("Time to recharge!. Battery down to 8%.", "low_battery"),
+        ("Battery Warning. Battery level low: 9% remaining", "low_battery"),
+        ("Battery level 12%", "low_battery"),
+        ("Low battery: 5% left", "low_battery"),
+        ("Battery at 20%", "low_battery"),
     ]
     for text, expected_cat in battery_samples:
         should_tell, category = EventClassifier.should_tell(text, source="power")
         assert should_tell is True, f"Expected '{text}' to be spoken"
         assert category == expected_cat
+
+    # Safe battery level should not be spoken
+    should_tell, category = EventClassifier.should_tell("Battery 85% charged", source="power")
+    assert should_tell is False
+    assert category == "non_critical"
 
 
 @pytest.mark.asyncio

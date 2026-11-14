@@ -101,8 +101,8 @@ class EventClassifier:
         (r'cpu\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[5-9]|100)(?:\.[0-9]+)?\s*%', 'high_cpu'),
         (r'\b(?:disk full|storage full|filesystem is full|no space left on device)\b', 'disk_full'),
         (r'\b(?:thermal throttling|critical temperature|cpu overheating)\b', 'thermal'),
-        # Low Battery
-        (r'\b(?:critical battery|battery is low|battery.*(?:down to|remaining|at)\s*(?:[1-9]|1[0-9]|20)\s*(?:%|percent)|time to recharge)\b', 'low_battery'),
+        # Low Battery (<= 20%)
+        (r'\b(?:critical battery|low battery|time to recharge|battery\s*(?:level\s*)?low)\b|\bbattery\b.*?\b(?:20|1[0-9]|[1-9])\s*(?:%|percent)|\b(?:20|1[0-9]|[1-9])\s*(?:%|percent).*?\b(?:battery|remaining)', 'low_battery'),
     ]
 
     @classmethod
