@@ -68,7 +68,6 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 * **Situational Conversational Acknowledgements**: Pre-rendered, affirmative spoken acknowledgements (`Sure`, `On it`, `Looking into that`) matched dynamically to task context (agent tasks, browser searches, file operations, system actions) to eliminate cloud latency without annoying empty vocal fillers ("Ah", "Haa").
 * **Duplex Cloud Streaming**: Resilient Gemini Live WebSocket session with automatic reconnection backoff, wake confirmation, and session resumption.
 * **Playback Fencing & Interruption**: Generation-tracked audio buffer instantly halts and flushes speaker queues whenever speech is detected.
-* **Voice Subsystem Lock**: The baseline voice engine is frozen at `audio/.voice_lock.json`. Enforced by automated checksum verification (`scripts/verify_voice_lock.py`).
 
 ### 2. Sovereign Desktop Actuation & Control (`jarvis_control`)
 * **Wayland Actuators**: Emulated input receipts via `wlr-virtual` / `uinput` for reliable Wayland keyboard typing, modifier chords, and pointer navigation.
@@ -97,25 +96,19 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 * **Task Event Lifecycle**: Standardized UI event contracts (`task_events.py`) dispatching start, progress, milestone, receipt, and completion notifications.
 * **Desktop Presentation Cards**: Rich Quickshell notification widgets rendering agent progress cards on the desktop.
 
-### 6. Universal Visual Learning Engine / Teaching Mode (`teaching_mode/`)
-* **Pedagogical Agent**: Voice-activated visual tutoring system observing screen contents via Wayland capture (`grim`) and generating real-time explanations.
-* **Interactive Diagram Compiler**: On-the-fly rendering of Graphviz DOT diagrams, algorithmic animations, AST call graphs, and code syntax walkthroughs.
-* **Synchronized Desktop HUD**: Dynamic visual cards and spotlight indicators embedded directly inside the desktop Quickshell HUD (`ui/jarvis_widgets`).
-* **Agency-Preserving Safety Guard**: Pedagogical policy guard that intercepts mutating desktop actuation during lessons to ensure the student learns by doing.
-
-### 7. Autonomous LinkedIn Department (`departments/linkedin/`)
+### 6. Autonomous LinkedIn Department (`departments/linkedin/`)
 * **12-Agent Autonomous Fleet**: Specialized multi-agent cluster powered by NVIDIA NIM for end-to-end B2B brand building, content scheduling, and profile optimization.
 * **Content Sprints & Post Generation**: Autonomous content planning, viral hook formulation, formatting, and hashtag clustering.
 * **Human-in-the-Loop Review Airlock**: Generated posts stage into a strict review queue (`linkedin_pending_reviews`) awaiting explicit user approval before publishing.
 * **Profile Optimization & Auditing**: Automated profile sync, headline generation, skill positioning, and SEO audits.
 
-### 8. Quickshell Sci-Fi Desktop Shell (`ui/jarvis_shell/`, `bin/jarvis-de`)
+### 7. Quickshell Sci-Fi Desktop Shell (`ui/jarvis_shell/`, `bin/jarvis-de`)
 * **Native Wayland Desktop Environment**: Custom Quickshell desktop environment tailored for Hyprland and Omarchy.
 * **Arc Reactor Core & Telemetry**: Dynamic CPU, GPU, memory, and network telemetry with ambient acoustic waveform visualization.
 * **CyberDock & LeftNav**: Quick action application dock, workspace pager, and system control dashboard.
 * **Agents Status Overview**: Real-time multi-agent activity monitors tracking active tasks, background workers, and fleet states.
 
-### 9. Multi-Agent Memory Department (`departments/memory/`)
+### 8. Multi-Agent Memory Department (`departments/memory/`)
 * **4-Layer Cognitive Hierarchy**: Strict separation across Working Memory (<5ms), Semantic Memory (<30ms), Episodic Memory (<50ms), and Procedural Memory (<10ms).
 * **Zero-RAM SQLite Graph Engine**: Serverless SQLite WAL with FTS5 BM25 search and recursive CTE graph traversal—eliminating heavy background daemon RAM footprint.
 * **Specialist Agent Cluster**: 6 dedicated memory agents handling extraction/redaction, 4-way consolidation (ADD, UPDATE, SUPERSEDE, NO-OP), procedural failure reflection, query routing, event-driven day rollover, and vault pruning.
@@ -178,11 +171,6 @@ JARVIS OS/
 │       ├── schema.sql         # SQLite schema (nodes, edges, FTS5, traces)
 │       └── department.py      # Department Lead & public API
 │
-├── teaching_mode/             # Universal Visual Learning & Tutoring Engine
-│   ├── domain/                # Pedagogical policies, curriculum, and safety gates
-│   ├── manifest/              # Teaching mode tools and skill manifests
-│   └── ui/                    # Quickshell learning cards and diagram overlays
-│
 ├── ui/                        # User Interface & Desktop Shells
 │   ├── jarvis_shell/          # Quickshell Sci-Fi Desktop Environment
 │   │   ├── Shell.qml          # Root Quickshell desktop wrapper
@@ -215,7 +203,6 @@ JARVIS OS/
 │
 ├── scripts/                   # System Maintenance & Verification Scripts
 │   ├── install.sh             # System package installer
-│   ├── verify_voice_lock.py   # Voice subsystem integrity checker
 │   ├── behavior_gate.py       # Behavior regression testing gate
 │   └── clean_memory_vault.py  # Memory vault maintenance utility
 │
@@ -299,18 +286,6 @@ jarvis-de
 jarvis-shell
 ```
 
-### Teaching Mode & Visual Learning
-```bash
-# Start an interactive visual learning session
-jarvis task "activate teaching mode and explain Dijkstra algorithm"
-
-# Check teaching session status
-jarvis task "what is our current teaching topic?"
-
-# Conclude lesson and restore standard desktop actuation
-jarvis task "exit teaching mode"
-```
-
 ### Autonomous LinkedIn Department
 ```bash
 # Plan a 7-day content sprint
@@ -375,18 +350,12 @@ journalctl --user -u jarvis-voice.service -f
 
 JARVIS OS includes an exhaustive regression suite with over 2,100 unit and integration tests.
 
-### 1. Verify Voice Baseline Freeze
-The voice subsystem is protected by explicit change-control manifests. Verify before and after modifying related code:
-```bash
-python scripts/verify_voice_lock.py
-```
-
-### 2. Run Full Python Test Suite
+### 1. Run Full Python Test Suite
 ```bash
 PYTHONPATH=. .venv/bin/pytest tests/ -q
 ```
 
-### 3. Run Behavior Gate Checks
+### 2. Run Behavior Gate Checks
 ```bash
 python scripts/behavior_gate.py --report
 ```
@@ -395,7 +364,6 @@ python scripts/behavior_gate.py --report
 
 ## 🔒 Security & Policy Boundaries
 
-1. **Voice Baseline Freezes**: Core audio processing and speech assets are locked against unintended modifications. Changes require explicit user authorization.
-2. **Execution Admission**: Destructive shell invocations (e.g., `rm -rf`, disk formatting, system reboot) require explicit confirmation gates.
+1. **Execution Admission**: Destructive shell invocations (e.g., `rm -rf`, disk formatting, system reboot) require explicit confirmation gates.
 3. **Data Protection**: Personal facts and transcripts remain in sovereign local storage (SQLite WAL + Obsidian markdown) without telemetry or third-party leakage.
 4. **Local Socket Permissions**: Control sockets in `$XDG_RUNTIME_DIR/jarvis/` are restricted to mode `0600` (user-only).

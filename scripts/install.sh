@@ -26,7 +26,7 @@ else
     FRESH_INSTALL=1
     for package in voice_layer jarvis_memory jarvis_control skills \
                    core connectors filesystem orchestration proactive audio ui \
-                   plugins skill_manifests quickshell scripts learning contracts configs departments teaching_mode packaging; do
+                   plugins skill_manifests quickshell scripts learning contracts configs departments packaging; do
         # Only copy existing directories to support both lean checkouts and legacy structures
         if [[ -e "$REPO_DIR/$package" ]]; then
             cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"

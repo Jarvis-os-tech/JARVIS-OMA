@@ -24,7 +24,6 @@ CORE_TOOLS = frozenset({
     'get_learning_status', 'list_research_lessons', 'record_research_feedback',
     'shutdown_system', 'restart_system', 'lock_screen', 'confirm_system_action', 'cancel_system_action', 'system_power', 'control_power',
     'linkedin_draft_post', 'linkedin_plan_sprint', 'linkedin_audit_profile', 'linkedin_pending_reviews', 'linkedin_approve_post', 'linkedin_sync_profile', 'linkedin_propose_tool',
-    'activate_teaching_mode', 'update_teaching_lesson', 'exit_teaching_mode', 'teaching_status',
     'reach_search', 'reach_read', 'reach_transcript', 'reach_status',
     'run_shell', 'run_in_terminal', 'read_terminal', 'watch_terminal',
     'hypr_dispatch', 'hypr_query', 'read_screen', 'click_text', 'file_operation', 'system_control',
@@ -32,7 +31,7 @@ CORE_TOOLS = frozenset({
 })
 META_TOOLS = frozenset({'discover_domain_tools', 'execute_domain_tool', 'parse_command_values'})
 DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
-           'gui', 'cli_anything', 'api_anything', 'integrations', 'orchestration', 'learning', 'phone', 'vision', 'composio', 'linkedin', 'teaching', 'agent_reach')
+           'gui', 'cli_anything', 'api_anything', 'integrations', 'orchestration', 'learning', 'phone', 'vision', 'composio', 'linkedin', 'agent_reach')
 
 _ORCHESTRATION = frozenset({
     'get_hermes_events',
@@ -94,7 +93,6 @@ def intent_domains(command):
         'learning': r'\b(harness|research feedback|refinement|learning)\b',
         'phone': r'\b(phone|call|contact|dtmf|hang up)\b',
         'vision': r'\b(camera|vision|video|webcam)\b',
-        'teaching': r'\b(teach|teaching|lesson|tutor|tutorial|learn|explain code|walk me through|exit teaching)\b',
         'agent_reach': r'\b(agent.reach|reach|bilibili|xiaohongshu|xhs|reddit|v2ex|xueqiu|transcript|subtitles)\b',
         'filesystem': r'\b(file|directory|folder|path|copy|append|trash)\b',
         'memory': r'\b(memory|remember|recall|forget|obsidian)\b',
