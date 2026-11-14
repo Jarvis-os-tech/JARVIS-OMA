@@ -120,7 +120,7 @@ class Config:
     # Allow breathing/thinking pauses before handing the turn to the provider.
     turn_silence_frames: int = 60  # 1.2 s; leaves room for thinking pauses
     language: str = 'en-US'
-    language_codes: list = field(default_factory=lambda: ['en-US', 'en-IN', 'en-GB'])
+    language_codes: list = field(default_factory=lambda: ['en-US', 'en-IN', 'te-IN', 'hi-IN'])
     api_key_env: str = 'GEMINI_API_KEY'
     enable_tools: bool = True
     allow_shell: bool = True

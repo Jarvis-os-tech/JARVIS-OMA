@@ -214,7 +214,8 @@ def live_config(voice: str = 'Aoede', resume_handle: str | None = None, barge_in
     if lang_codes:
         input_transcription_cfg['language_codes'] = list(lang_codes)
     input_transcription_cfg['custom_vocabulary'] = [
-        'Jarvis', 'JARVIS', 'Hey Jarvis', 'Omarchy', 'Hyprland', 'PipeWire', 'terminal', 'workspace', 'standby', 'volume'
+        'Jarvis', 'JARVIS', 'Hey Jarvis', 'Omarchy', 'Hyprland', 'PipeWire', 'terminal', 'workspace', 'standby', 'volume',
+        'widgets', 'Telugu', 'English', 'chadavala', 'cheppu', 'scroll', 'read'
     ]
 
     cfg = {
