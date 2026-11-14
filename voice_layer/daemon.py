@@ -926,6 +926,9 @@ class LiveVoice:
         """Enqueue OS alert for spoken delivery and register in recent conversational context."""
         if isinstance(payload, str):
             payload = {"text": payload, "priority": "normal", "source": "os"}
+        else:
+            payload = dict(payload)
+        payload["timestamp"] = time.time()
         text = str(payload.get("text", "")).strip()
         if not text:
             return {"status": "error", "message": "empty text"}
@@ -981,6 +984,7 @@ class LiveVoice:
                 payload, fut = await self._speak_announcement_queue.get()
                 text = str(payload.get("text", "")).strip()
                 priority = payload.get("priority", "normal")
+                enqueued_at = payload.get("timestamp", time.time())
                 silent = bool(payload.get("silent", False) or payload.get("speak") is False)
                 if not text or silent:
                     if not fut.done():
@@ -988,22 +992,41 @@ class LiveVoice:
                     self._speak_announcement_queue.task_done()
                     continue
 
-                # Wait if user is currently speaking or conversational turn is in progress
-                max_wait = 15.0 if priority == "normal" else 4.0
+                # Drop stale alerts if enqueued longer than 45s
+                if time.time() - enqueued_at > 45.0:
+                    log.info("Dropping stale spoken announcement (>45s): '%s'", text)
+                    if not fut.done():
+                        fut.set_result(False)
+                    self._speak_announcement_queue.task_done()
+                    continue
+
+                # Wait until channel is completely clear: user not talking, model not active, speaker idle.
+                # Under NO circumstances should an alert interrupt an active user speech turn!
                 start_w = time.monotonic()
-                while time.monotonic() - start_w < max_wait:
+                while time.monotonic() - start_w < 30.0:
                     user_talking = bool(self.gate and self.gate.active)
                     model_active = bool(self._reply_authorized or self._model_active or self._waiting)
-                    if not user_talking and (priority == "critical" or not model_active):
-                        if not self.player.is_playing(0.1):
+                    is_playing = bool(self.player and self.player.is_playing(0.1))
+                    if not user_talking and not model_active and not is_playing:
+                        # Extra cushion to ensure speech isn't mid-pause
+                        await asyncio.sleep(0.4)
+                        if not bool(self.gate and self.gate.active):
                             break
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.15)
+
+                # Re-check staleness after waiting
+                if time.time() - enqueued_at > 45.0:
+                    log.info("Dropping announcement after channel wait (>45s): '%s'", text)
+                    if not fut.done():
+                        fut.set_result(False)
+                    self._speak_announcement_queue.task_done()
+                    continue
 
                 # Route speech to Gemini Live natural voice when connected
                 spoken = False
                 if self.connected and self._session and not self.standby_active:
                     try:
-                        self.send_text(f"[System critical alert to speak to user: {text}]")
+                        self.send_text(f"[System alert to speak aloud to user (concise announcement only, do not merge with previous conversation): {text}]")
                         spoken = True
                         log.info("Dispatched spoken announcement to Gemini Live: '%s'", text)
                     except Exception as live_err:
@@ -1163,6 +1186,10 @@ class LiveVoice:
 
             if not parts:
                 continue
+
+            # If user is actively speaking into the microphone, wait for them to finish their turn
+            while self.gate and self.gate.active:
+                await asyncio.sleep(0.1)
 
             async with self.send_lock:
                 self._start_reply_watch()

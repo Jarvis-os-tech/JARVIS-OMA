@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 
 def test_installed_commands_and_distributed_config(tmp_path):

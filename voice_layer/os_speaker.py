@@ -139,10 +139,11 @@ class SpeechArbiter:
         if not dedup_key:
             return False
         now = time.monotonic()
-        last_time = self.cooldowns.get(dedup_key, 0.0)
-        if now - last_time < COOLDOWN_SECONDS:
-            log.debug("Rate-limited dedup_key: %s (%.1fs remaining)", dedup_key, COOLDOWN_SECONDS - (now - last_time))
-            return True
+        if dedup_key in self.cooldowns:
+            last_time = self.cooldowns[dedup_key]
+            if now - last_time < COOLDOWN_SECONDS:
+                log.debug("Rate-limited dedup_key: %s (%.1fs remaining)", dedup_key, COOLDOWN_SECONDS - (now - last_time))
+                return True
         self.cooldowns[dedup_key] = now
         return False
 
