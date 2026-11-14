@@ -1,5 +1,11 @@
 import pytest
 from ui.jarvis_widgets.backend import validate, make_widget, KINDS, FIELDS
+from ui.jarvis_widgets.three_compiler import is_three_live_available
+
+requires_three_live = pytest.mark.skipif(
+    not is_three_live_available(),
+    reason="three-live-cli not installed"
+)
 
 
 def test_3d_in_kinds():
@@ -9,6 +15,7 @@ def test_3d_in_kinds():
     assert "actions" in FIELDS["3d"]
 
 
+@requires_three_live
 def test_make_widget_3d_valid():
     script = (
         "const mesh = new THREE.Mesh("
@@ -41,6 +48,7 @@ def test_make_widget_3d_valid():
     assert export_action["primary"] is False
 
 
+@requires_three_live
 def test_make_widget_3d_invalid_script():
     with pytest.raises(ValueError, match="3D script error"):
         make_widget("3d", "Broken", {"script": "const m = ;;"})
@@ -59,6 +67,7 @@ def test_make_widget_3d_unexpected_field():
         make_widget("3d", "Unexpected", {"script": "const a = 1;", "unknown": 123})
 
 
+@requires_three_live
 def test_make_widget_3d_custom_actions():
     script = (
         "const mesh = new THREE.Mesh("

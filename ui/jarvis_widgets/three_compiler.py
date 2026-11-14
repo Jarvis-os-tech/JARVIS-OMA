@@ -34,6 +34,15 @@ def find_three_live_cli() -> Path:
     raise FileNotFoundError("three-live-cli executable not found in PATH or ~/.cache/three-live")
 
 
+def is_three_live_available() -> bool:
+    try:
+        find_three_live_cli()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+
 def get_3d_runtime_dir() -> Path:
     root = (
         Path(os.environ.get("XDG_RUNTIME_DIR") or Path.home() / ".local/state")

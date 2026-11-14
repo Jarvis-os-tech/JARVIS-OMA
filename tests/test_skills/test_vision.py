@@ -16,6 +16,7 @@ class VisionSkillsTests(unittest.IsolatedAsyncioTestCase):
         return skills
 
     async def test_control_vision_mode(self):
+        import shutil
         skills = self.make_desktop_skills()
         callback_called = []
 
@@ -24,36 +25,45 @@ class VisionSkillsTests(unittest.IsolatedAsyncioTestCase):
 
         skills.on_vision_mode_change = on_change
 
-        # 1. Turn on screen sharing
-        res = await skills.execute('control_vision_mode', {'mode': 'screen'})
-        self.assertEqual(res['status'], 'ok')
-        self.assertEqual(res['mode'], 'screen')
-        self.assertTrue(res['active'])
-        self.assertEqual(skills.vision_mode, 'screen')
-        self.assertEqual(callback_called, ['screen'])
+        orig_exists = Path.exists
+        orig_which = shutil.which
+        def fake_exists(self, *args, **kwargs):
+            if str(self) == '/dev/video0':
+                return True
+            return orig_exists(self, *args, **kwargs)
 
-        # 2. Switch to camera sharing
-        res = await skills.execute('control_vision_mode', {'mode': 'camera'})
-        self.assertEqual(res['status'], 'ok')
-        self.assertEqual(res['mode'], 'camera')
-        self.assertTrue(res['active'])
-        self.assertEqual(skills.vision_mode, 'camera')
-        self.assertEqual(callback_called, ['screen', 'camera'])
+        with patch.object(Path, 'exists', fake_exists), \
+             patch('shutil.which', side_effect=lambda cmd: '/usr/bin/' + cmd if cmd == 'ffmpeg' else orig_which(cmd)):
+            # 1. Turn on screen sharing
+            res = await skills.execute('control_vision_mode', {'mode': 'screen'})
+            self.assertEqual(res['status'], 'ok')
+            self.assertEqual(res['mode'], 'screen')
+            self.assertTrue(res['active'])
+            self.assertEqual(skills.vision_mode, 'screen')
+            self.assertEqual(callback_called, ['screen'])
 
-        # 3. Query status
-        res = await skills.execute('control_vision_mode', {'mode': 'camera', 'action': 'status'})
-        self.assertEqual(res['status'], 'ok')
-        self.assertEqual(res['mode'], 'camera')
-        self.assertEqual(res['action'], 'status')
-        self.assertTrue(res['active'])
+            # 2. Switch to camera sharing
+            res = await skills.execute('control_vision_mode', {'mode': 'camera'})
+            self.assertEqual(res['status'], 'ok')
+            self.assertEqual(res['mode'], 'camera')
+            self.assertTrue(res['active'])
+            self.assertEqual(skills.vision_mode, 'camera')
+            self.assertEqual(callback_called, ['screen', 'camera'])
 
-        # 4. Stop streaming
-        res = await skills.execute('control_vision_mode', {'mode': 'camera', 'action': 'stop'})
-        self.assertEqual(res['status'], 'ok')
-        self.assertEqual(res['mode'], 'off')
-        self.assertFalse(res['active'])
-        self.assertEqual(skills.vision_mode, 'off')
-        self.assertEqual(callback_called, ['screen', 'camera', 'off'])
+            # 3. Query status
+            res = await skills.execute('control_vision_mode', {'mode': 'camera', 'action': 'status'})
+            self.assertEqual(res['status'], 'ok')
+            self.assertEqual(res['mode'], 'camera')
+            self.assertEqual(res['action'], 'status')
+            self.assertTrue(res['active'])
+
+            # 4. Stop streaming
+            res = await skills.execute('control_vision_mode', {'mode': 'camera', 'action': 'stop'})
+            self.assertEqual(res['status'], 'ok')
+            self.assertEqual(res['mode'], 'off')
+            self.assertFalse(res['active'])
+            self.assertEqual(skills.vision_mode, 'off')
+            self.assertEqual(callback_called, ['screen', 'camera', 'off'])
 
     async def test_control_vision_mode_validation(self):
         skills = self.make_desktop_skills()

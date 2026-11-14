@@ -82,6 +82,7 @@ class VisionPipTests(unittest.TestCase):
     @patch("subprocess.Popen")
     def test_control_vision_mode_updates_mode_and_broadcasts(self, mock_popen):
         skills = DesktopSkills()
+        skills._commands['grim'] = '/usr/bin/grim'
         loop = asyncio.new_event_loop()
         try:
             # Start screen mode

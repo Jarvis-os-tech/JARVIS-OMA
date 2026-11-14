@@ -79,7 +79,8 @@ def test_installer_preserves_existing_runtime_pointer_and_release(tmp_path):
         entry = release / 'bin' / command
         entry.write_text('#!/bin/sh\nexit 0\n')
         entry.chmod(0o755)
-    (release / '.venv').symlink_to((root / '.venv').resolve(), target_is_directory=True)
+    target_venv = (root / '.venv').resolve() if (root / '.venv').is_dir() else Path(sys.prefix).resolve()
+    (release / '.venv').symlink_to(target_venv, target_is_directory=True)
     (release / 'release.json').write_text('{"commit":"existing","schema_version":1}')
     (release / 'user-state').write_text('keep')
     current.symlink_to(release)

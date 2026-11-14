@@ -6,9 +6,16 @@ from ui.jarvis_widgets.three_compiler import (
     get_3d_runtime_dir,
     validate_script,
     compile_3d,
+    is_three_live_available,
+)
+
+requires_three_live = pytest.mark.skipif(
+    not is_three_live_available(),
+    reason="three-live-cli executable not found in PATH or ~/.cache/three-live"
 )
 
 
+@requires_three_live
 def test_find_three_live_cli():
     cli = find_three_live_cli()
     assert cli.is_file()
@@ -42,6 +49,7 @@ def test_get_3d_runtime_dir(monkeypatch, tmp_path):
     assert mode == 0o700
 
 
+@requires_three_live
 def test_validate_valid_script():
     script = (
         "const mesh = new THREE.Mesh("
@@ -55,6 +63,7 @@ def test_validate_valid_script():
     assert result["summary"]["meshCount"] == 1
 
 
+@requires_three_live
 def test_validate_syntax_error():
     script = "const mesh = ;;"
     result = validate_script(script)
@@ -62,6 +71,7 @@ def test_validate_syntax_error():
     assert len(result["diagnostics"]) > 0
 
 
+@requires_three_live
 def test_compile_3d_success(tmp_path):
     script = (
         "const mesh = new THREE.Mesh("
@@ -87,6 +97,7 @@ def test_compile_3d_script_too_large(tmp_path):
         compile_3d(huge_script, "Too Large", output_dir=tmp_path)
 
 
+@requires_three_live
 def test_compile_3d_syntax_error(tmp_path):
     script = "const mesh = ;;"
     result = compile_3d(script, "Syntax Error", output_dir=tmp_path)

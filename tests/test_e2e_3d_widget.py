@@ -5,6 +5,10 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 from ui.jarvis_widgets.backend import make_widget
 from ui.jarvis_widgets.inspector_launcher import handle_widget_action
+from ui.jarvis_widgets.three_compiler import is_three_live_available
+
+pytestmark = pytest.mark.skipif(not is_three_live_available(), reason="three-live-cli not installed")
+
 
 
 def test_e2e_create_and_export_3d_widget(tmp_path, monkeypatch):

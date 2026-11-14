@@ -1,10 +1,12 @@
 """Tests for Agent-Reach Universal MCP Server."""
 import json
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
+import pytest
 
 MCP_BIN = Path.home() / ".local/bin/agent-reach-mcp"
+pytestmark = pytest.mark.skipif(not MCP_BIN.is_file(), reason="agent-reach-mcp not installed")
 
 def test_mcp_initialize():
     proc = subprocess.Popen(
