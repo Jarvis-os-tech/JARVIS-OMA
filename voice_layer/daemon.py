@@ -1032,7 +1032,19 @@ class LiveVoice:
                     except Exception as live_err:
                         log.debug("Failed sending announcement to Gemini Live: %s", live_err)
                 elif not self.connected:
-                    log.info("Gemini Live not connected; skipping spoken alert because local TTS is disabled: '%s'", text)
+                    log.info("Gemini Live not connected; falling back to offline speech for alert: '%s'", text)
+                    try:
+                        if not hasattr(self, '_offline_tts') or self._offline_tts is None:
+                            from .offline_speech import OfflineSpeech
+                            self._offline_tts = OfflineSpeech()
+                        pcm = self._offline_tts.synthesize(text[:160])
+                        if pcm and self.player:
+                            self.player.begin_reply()
+                            self.player.enqueue(pcm)
+                            self.player.finish_reply()
+                            spoken = True
+                    except Exception as err:
+                        log.warning("Offline TTS fallback failed: %s", err)
 
                 if not fut.done():
                     fut.set_result(True)

@@ -99,8 +99,11 @@ class EventClassifier:
         # High resource usage
         (r'(?:ram|memory)\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[0-9]|100)(?:\.[0-9]+)?\s*%', 'high_ram'),
         (r'cpu\s*(?:usage\s*)?(?:is\s*)?(?:at\s*)?(?:9[5-9]|100)(?:\.[0-9]+)?\s*%', 'high_cpu'),
+        # Thermal & Storage
         (r'\b(?:disk full|storage full|filesystem is full|no space left on device)\b', 'disk_full'),
         (r'\b(?:thermal|critical temperature|temperature\s*(?:is\s*)?critical|cpu overheating|thermal throttling)\b', 'thermal'),
+        # Network & Connectivity failures
+        (r'\b(?:wi-?fi|network|internet)\s*(?:disconnected|dropped|down|lost|offline)\b', 'network_down'),
         # Low Battery (<= 20%)
         (r'\b(?:critical battery|low battery|time to recharge|battery\s*(?:level\s*)?low)\b|\bbattery\b.*?\b(?:20|1[0-9]|[1-9])\s*(?:%|percent)|\b(?:20|1[0-9]|[1-9])\s*(?:%|percent).*?\b(?:battery|remaining)', 'low_battery'),
     ]
@@ -381,13 +384,70 @@ async def watch_upower_and_hardware(arbiter: SpeechArbiter):
                         await arbiter.handle_event("USB device connected.", priority="normal", source="hardware", dedup_key="udev_usb_add")
                     elif 'remove' in line and 'usb' in line:
                         await arbiter.handle_event("USB device disconnected.", priority="normal", source="hardware", dedup_key="udev_usb_rem")
+                    elif 'add' in line and 'sound' in line:
+                        await arbiter.handle_event("Audio device connected.", priority="normal", source="hardware", dedup_key="udev_sound_add")
+                    elif 'remove' in line and 'sound' in line:
+                        await arbiter.handle_event("Audio device disconnected.", priority="normal", source="hardware", dedup_key="udev_sound_rem")
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 log.debug("udev monitor error: %s", e)
                 await asyncio.sleep(4.0)
 
-    await asyncio.gather(_battery_power_loop(), _udev_loop())
+    async def _network_loop():
+        """Monitors network state changes via nmcli monitor."""
+        while True:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    'nmcli', 'monitor',
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                while True:
+                    line_bytes = await proc.stdout.readline()
+                    if not line_bytes:
+                        break
+                    line = line_bytes.decode('utf-8', errors='ignore').strip()
+                    if re.search(r'\b(?:wlan\d|wifi|wireless).*?:\s*connected\b', line, re.IGNORECASE) or "is now in the 'connected' state" in line:
+                        await arbiter.handle_event("Wi-Fi network connected.", priority="normal", source="network", dedup_key="wifi_state")
+                    elif re.search(r'\b(?:wlan\d|wifi|wireless).*?:\s*disconnected\b', line, re.IGNORECASE) or "is now in the 'disconnected' state" in line:
+                        await arbiter.handle_event("Wi-Fi network disconnected.", priority="critical", source="network", dedup_key="wifi_state")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.debug("network monitor error: %s", e)
+                await asyncio.sleep(5.0)
+
+    async def _bluetooth_loop():
+        """Monitors Bluetooth device connection states via dbus-monitor."""
+        while True:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    'dbus-monitor', '--system',
+                    "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                while True:
+                    line_bytes = await proc.stdout.readline()
+                    if not line_bytes:
+                        break
+                    line = line_bytes.decode('utf-8', errors='ignore')
+                    if 'string "Connected"' in line:
+                        val_line = await proc.stdout.readline()
+                        if val_line:
+                            val_str = val_line.decode('utf-8', errors='ignore')
+                            if 'boolean true' in val_str:
+                                await arbiter.handle_event("Bluetooth device connected.", priority="normal", source="hardware", dedup_key="bt_state")
+                            elif 'boolean false' in val_str:
+                                await arbiter.handle_event("Bluetooth device disconnected.", priority="normal", source="hardware", dedup_key="bt_state")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.debug("bluetooth monitor error: %s", e)
+                await asyncio.sleep(5.0)
+
+    await asyncio.gather(_battery_power_loop(), _udev_loop(), _network_loop(), _bluetooth_loop())
 
 
 # ============================================================================

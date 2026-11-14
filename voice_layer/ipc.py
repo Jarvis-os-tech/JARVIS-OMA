@@ -160,7 +160,7 @@ class ControlServer:
         return json.dumps({'result': result}) + '\n'
 
     async def _handle_json_command(self, req: dict) -> str:
-        cmd = req.get('command')
+        cmd = req.get('command') or req.get('action')
         if cmd == 'companion_memory':
             if not self.sync_companion_cb:
                 return json.dumps({'error': 'Continuous memory unavailable'}) + '\n'
