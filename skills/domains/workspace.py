@@ -1,5 +1,5 @@
 """Workspace adapters extracted from the registry facade."""
-from connectors import google_workspace
+from departments.google_workspace import google_workspace_department
 from skills.errors import SkillError
 
 
@@ -69,7 +69,7 @@ ADAPTER_COMMANDS = {
 class WorkspaceDomain:
     async def _google(self, tool, arguments):
         try:
-            result = await google_workspace.dispatch(tool, arguments)
+            result = await google_workspace_department.execute(tool, arguments)
             if isinstance(result, dict) and result.get('setup_required'):
                 result.setdefault('message', result.get('error') or
                                   "Say 'open Google authorization' to connect your Google account.")

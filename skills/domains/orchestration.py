@@ -120,7 +120,40 @@ class OrchestrationDomain:
             raise SkillError(str(error)) from None
 
     async def _adapter_list_system_agents(self):
-        return self._agent_orchestrator.discover()
+        result = self._agent_orchestrator.discover()
+        department_agents = {
+            'LinkedIn': ('ProfileOptimizer', 'ContentPlanner', 'PostWriter', 'ReplyHandler',
+                         'Repurposer', 'ThreadMonitor', 'EngagerAnalytics', 'EmployeeAdvocacy',
+                         'HookExtractor', 'Humanizer', 'Interviewer', 'ContentScheduler'),
+            'Memory': ('ExtractorGatekeeper', 'ConsolidationAgent', 'ReflectionAgent',
+                       'RetrievalRouter', 'DayRolloverCompactor', 'VaultPruner'),
+            'YouTube Brain': ('History Classifier', 'Transcript Fetcher', 'Video Summarizer',
+                              'Note Classifier', 'Final Reviewer'),
+            'Google Workspace': ('Gmail Agent', 'Calendar Agent', 'Tasks Agent', 'Drive Agent',
+                                 'Docs Agent', 'Sheets Agent'),
+        }
+        result['agents'].append({
+            'name': 'Update Agent',
+            'department': 'Automation',
+            'available': True,
+            'kind': 'automation',
+            'capabilities': ['apply_updates'],
+            'description': 'Checks system and developer packages and requests approval before applying updates.',
+        })
+        result['agents'].extend(
+            {'name': name, 'department': department, 'registered': True, 'available': None}
+            for department, names in department_agents.items()
+            for name in names
+        )
+        result['department_counts'] = {
+            department: len(names) for department, names in department_agents.items()
+        }
+        result['summary'] = (
+            f"JARVIS has {len(result['agents'])} registered agents. Always list registered "
+            'department agents even when runtime readiness is unverified. Local command '
+            'availability and registration do not verify provider sign-in.'
+        )
+        return result
 
     async def _adapter_model_job(self, prompt, route='background'):
         from orchestration.model_routes import ModelJobs
