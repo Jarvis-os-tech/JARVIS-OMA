@@ -36,7 +36,10 @@ EOF
 }
 
 is_drone_running() {
-    pgrep -f "[a]pp-path=.*ui/jarvis_drone" &>/dev/null || ss -tuln | grep -q ":${DRONE_PORT} "
+    pgrep -f "electron.*ui/jarvis_drone" &>/dev/null || \
+    pgrep -f "[a]pp-path=.*ui/jarvis_drone" &>/dev/null || \
+    systemctl --user is-active --quiet jarvis-drone.service 2>/dev/null || \
+    ss -tuln | grep -q ":${DRONE_PORT} "
 }
 
 cmd="${1:-start}"
@@ -76,12 +79,16 @@ case "$cmd" in
     stop)
         echo "Stopping JARVIS Drone Companion..."
         systemctl --user stop jarvis-drone.service 2>/dev/null || true
-        pkill -f "electron.*ui/jarvis_drone" 2>/dev/null || true
-        pkill -f "electron.*--port=${DRONE_PORT}" 2>/dev/null || true
-        pkill -f "[a]pp-path=.*ui/jarvis_drone" 2>/dev/null || true
-        pkill -f "[p]ython3.*bridge.py" 2>/dev/null || true
-        pkill -f "bridge\.py" 2>/dev/null || true
+        pkill -TERM -f "electron.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -TERM -f "electron.*--port=${DRONE_PORT}" 2>/dev/null || true
+        pkill -TERM -f "[a]pp-path=.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -TERM -f "[p]ython3.*bridge.py" 2>/dev/null || true
+        pkill -TERM -f "bridge\.py" 2>/dev/null || true
         sleep 0.5
+        pkill -9 -f "electron.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -9 -f "electron.*--port=${DRONE_PORT}" 2>/dev/null || true
+        pkill -9 -f "[a]pp-path=.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -9 -f "bridge\.py" 2>/dev/null || true
         echo "JARVIS Drone Companion stopped."
         ;;
 

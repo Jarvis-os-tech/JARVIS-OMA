@@ -73,6 +73,11 @@ else
 fi
 
 # 3. Launch Electron Overlay
+if pgrep -f "electron.*ui/jarvis_drone" &>/dev/null || pgrep -f "app-path=.*ui/jarvis_drone" &>/dev/null; then
+    echo "JARVIS Drone companion overlay is already running. Preventing duplicate instance."
+    exit 0
+fi
+
 if [ "$DRY_RUN" = true ]; then
     echo "[Dry-Run] Would execute: electron . --ozone-platform=x11 --port=\"${DRONE_PORT}\" ${PASS_ARGS[*]:-}"
     echo "[Dry-Run] Dry run completed successfully."

@@ -4,6 +4,24 @@ const path = require('path');
 // Explicitly align application name and Wayland app_id / window class to 'jarvis-drone'
 app.name = 'jarvis-drone';
 
+// Enforce single instance: terminate duplicate processes immediately
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  console.log('[Drone Main] Another instance of JARVIS Drone is already active. Exiting duplicate process.');
+  app.exit(0);
+}
+
+app.on('second-instance', () => {
+  // Reveal existing drone if another launch is attempted
+  if (win && !win.isDestroyed()) {
+    win.show();
+    win.setAlwaysOnTop(true, 'screen-saver');
+    if (win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.send('drone-focus');
+    }
+  }
+});
+
 // Linux transparency switches
 app.commandLine.appendSwitch('enable-transparent-visuals');
 
