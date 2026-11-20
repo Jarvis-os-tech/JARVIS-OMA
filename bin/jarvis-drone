@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# bin/jarvis-drone — Primary controller for JARVIS Visual Drone Companion
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+DRONE_DIR="${SCRIPT_DIR}/ui/jarvis_drone"
+DRONE_PORT="${JARVIS_DRONE_PORT:-8768}"
+
+# Select Python environment
+if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
+    PYTHON="${SCRIPT_DIR}/.venv/bin/python"
+elif [[ -x "${HOME}/.local/share/jarvis-runtime/venv/bin/python" ]]; then
+    PYTHON="${HOME}/.local/share/jarvis-runtime/venv/bin/python"
+else
+    PYTHON="python3"
+fi
+
+show_help() {
+    cat << EOF
+JARVIS Visual Drone Companion CLI
+
+Usage:
+  jarvis drone [start]       Launch the visual drone companion and bridge
+  jarvis drone stop          Close the visual drone companion
+  jarvis drone restart       Restart the visual drone companion
+  jarvis drone status        Check if the drone companion is active
+  jarvis drone appear        Make drone companion appear / de-cloak (or: show)
+  jarvis drone disappear     Make drone companion disappear / cloak (or: hide)
+  jarvis drone toggle        Toggle drone visibility (appear/disappear)
+  jarvis drone state [s]     Manually set drone state (idle|listening|thinking|speaking|complete|alert)
+  jarvis drone gesture [g]   Trigger one-shot gesture (nod|gyroRoll|recoil)
+  jarvis drone tap           Simulate physical tap on the drone (wakes/toggles voice listening)
+
+EOF
+}
+
+is_drone_running() {
+    pgrep -f "[a]pp-path=.*ui/jarvis_drone" &>/dev/null || ss -tuln | grep -q ":${DRONE_PORT} "
+}
+
+cmd="${1:-start}"
+
+case "$cmd" in
+    start)
+        shift || true
+        # Check if already running
+        if is_drone_running; then
+            echo "JARVIS Drone Companion is already active."
+            exit 0
+        fi
+
+        echo "Launching JARVIS Drone Companion..."
+        setsid "${DRONE_DIR}/launch.sh" "$@" >/tmp/jarvis_drone_launch.log 2>&1 &
+        sleep 1
+
+        if is_drone_running; then
+            echo "JARVIS Drone Companion launched successfully (Bridge: ws://127.0.0.1:${DRONE_PORT})."
+        else
+            echo "Drone failed to start. Recent logs:" >&2
+            tail -n 15 /tmp/jarvis_drone_launch.log >&2 || true
+            exit 1
+        fi
+        ;;
+
+    stop)
+        echo "Stopping JARVIS Drone Companion..."
+        pkill -f "electron.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -f "electron.*--port=${DRONE_PORT}" 2>/dev/null || true
+        pkill -f "[a]pp-path=.*ui/jarvis_drone" 2>/dev/null || true
+        pkill -f "[p]ython3.*bridge.py" 2>/dev/null || true
+        pkill -f "bridge\.py" 2>/dev/null || true
+        sleep 0.5
+        echo "JARVIS Drone Companion stopped."
+        ;;
+
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+
+    status)
+        echo "JARVIS Visual Drone Companion Status:"
+        if pgrep -f "[a]pp-path=.*ui/jarvis_drone" &>/dev/null; then
+            echo "  Overlay Window: ACTIVE (PID: $(pgrep -f '[a]pp-path=.*ui/jarvis_drone' | head -n1))"
+        else
+            echo "  Overlay Window: INACTIVE"
+        fi
+
+        if ss -tuln | grep -q ":${DRONE_PORT} "; then
+            echo "  WebSocket Bridge: LISTENING on ws://127.0.0.1:${DRONE_PORT}"
+        else
+            echo "  WebSocket Bridge: INACTIVE"
+        fi
+
+        RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/jarvis"
+        if [[ -f "${RUNTIME_DIR}/state.json" ]]; then
+            STATE=$(python3 -c "import json; d=json.load(open('${RUNTIME_DIR}/state.json')); print(f\"{d.get('state', 'unknown')} (tools={d.get('tools_in_flight', 0)})\")" 2>/dev/null || echo "unknown")
+            echo "  JARVIS Voice Core Link: CONNECTED (Daemon state: ${STATE})"
+        else
+            echo "  JARVIS Voice Core Link: WAITING (Daemon state file not found)"
+        fi
+        ;;
+
+    appear|show)
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --appear
+        ;;
+
+    disappear|hide|disapper)
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --disappear
+        ;;
+
+    toggle|toggle-visibility)
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --toggle-visibility
+        ;;
+
+    state)
+        shift || true
+        if [[ -z "${1:-}" ]]; then
+            echo "Error: state required (idle|listening|thinking|speaking|complete|alert)" >&2
+            exit 1
+        fi
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --state "$1"
+        ;;
+
+    gesture)
+        shift || true
+        if [[ -z "${1:-}" ]]; then
+            echo "Error: gesture required (nod|gyroRoll|recoil)" >&2
+            exit 1
+        fi
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --gesture "$1"
+        ;;
+
+    tap)
+        exec "$PYTHON" "${DRONE_DIR}/bridge.py" --tap
+        ;;
+
+    help|--help|-h)
+        show_help
+        ;;
+
+    *)
+        echo "Unknown command: $cmd" >&2
+        show_help >&2
+        exit 1
+        ;;
+esac

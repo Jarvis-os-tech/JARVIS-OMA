@@ -1,0 +1,1642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS Visual Drone Companion</title>
+  <style>
+    :root {
+      /* State Color Schemes */
+      --color-idle: #22d3ee;
+      --glow-idle: rgba(34, 211, 238, 0.45);
+      --thruster-idle: rgba(34, 211, 238, 0.85);
+
+      --color-listening: #3b82f6;
+      --glow-listening: rgba(59, 130, 246, 0.55);
+      --thruster-listening: rgba(59, 130, 246, 0.9);
+
+      --color-thinking: #8b5cf6;
+      --glow-thinking: rgba(139, 92, 246, 0.55);
+      --thruster-thinking: rgba(139, 92, 246, 0.9);
+
+      --color-speaking: #06b6d4;
+      --glow-speaking: rgba(6, 182, 212, 0.55);
+      --thruster-speaking: rgba(6, 182, 212, 0.9);
+
+      --color-complete: #10b981;
+      --glow-complete: rgba(16, 185, 129, 0.6);
+      --thruster-complete: rgba(16, 185, 129, 0.95);
+
+      --color-alert: #f59e0b;
+      --glow-alert: rgba(245, 158, 11, 0.6);
+      --thruster-alert: rgba(245, 158, 11, 0.95);
+
+      /* Active State Variables */
+      --accent: var(--color-idle);
+      --accent-glow: var(--glow-idle);
+      --thruster-glow: var(--thruster-idle);
+      --core-bg: radial-gradient(circle at 35% 30%, #334155 0%, #1e293b 50%, #0f172a 90%);
+      --chassis-border: rgba(255, 255, 255, 0.18);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      pointer-events: none;
+    }
+
+    body.is-electron,
+    body.is-electron html {
+      width: 220px;
+      height: 220px;
+      overflow: hidden;
+    }
+
+    #jarvis-stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    body.is-electron #jarvis-stage {
+      width: 220px;
+      height: 220px;
+      overflow: hidden;
+    }
+
+    /* =========================================================================
+       Drone Spatial Anchor & Hitbox
+       ========================================================================= */
+    #drone-anchor {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+      z-index: 1000;
+      will-change: transform;
+    }
+
+    body.is-electron #drone-anchor {
+      position: absolute;
+      left: 110px;
+      top: 110px;
+      transform: none !important;
+    }
+
+    body.is-electron #control-bar {
+      display: none !important;
+    }
+
+    /* Compact 84x84 px interactive boundary */
+    #drone-hitbox {
+      position: absolute;
+      left: -42px;
+      top: -42px;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      pointer-events: auto;
+      cursor: grab;
+      z-index: 100;
+      background: transparent;
+      touch-action: none;
+    }
+
+    #drone-hitbox.is-dragging {
+      cursor: grabbing;
+    }
+
+    /* 3D Scene Root */
+    .drone-scene {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      perspective: 900px;
+      transform-style: preserve-3d;
+      pointer-events: none;
+      transition: transform 0.38s cubic-bezier(0.2, 0.8, 0.25, 1), opacity 0.38s ease, filter 0.38s ease;
+    }
+
+    /* Cloaked / Disappeared State */
+    .drone-scene.is-cloaked {
+      transform: scale(0.02) rotateZ(180deg) translateZ(-40px) !important;
+      opacity: 0 !important;
+      filter: blur(12px) brightness(2.5) !important;
+      pointer-events: none !important;
+    }
+
+    /* Isolated Transform Layer for Web Animations API (composite: "add") */
+    #drone-gesture-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-style: preserve-3d;
+      will-change: transform;
+    }
+
+    /* Continuous Posture Layer */
+    #drone-posture-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-style: preserve-3d;
+      transition: filter 0.4s ease;
+      will-change: transform;
+    }
+
+    /* =========================================================================
+       3D Micro-Drone Anatomy
+       ========================================================================= */
+
+    /* 1. Ambient Aura Glow */
+    .ambient-aura {
+      position: absolute;
+      left: -65px;
+      top: -65px;
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent-glow) 0%, rgba(0, 0, 0, 0) 70%);
+      filter: blur(12px);
+      pointer-events: none;
+      transform: translateZ(-20px);
+      transition: background 0.4s ease;
+      animation: auraPulse 3.6s ease-in-out infinite alternate;
+    }
+
+    @keyframes auraPulse {
+      0% { transform: translateZ(-20px) scale(0.92); opacity: 0.65; }
+      100% { transform: translateZ(-20px) scale(1.08); opacity: 0.95; }
+    }
+
+    /* 2. Gimbal Halo Ring (68deg inclined 360 spin) */
+    .gimbal-system {
+      position: absolute;
+      left: -48px;
+      top: -48px;
+      width: 96px;
+      height: 96px;
+      transform-style: preserve-3d;
+      transform: rotateX(68deg);
+      pointer-events: none;
+    }
+
+    .gimbal-ring {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 1.8px solid var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow), inset 0 0 8px var(--accent-glow);
+      position: relative;
+      transform-style: preserve-3d;
+      animation: gimbalSpin 4.2s linear infinite;
+      transition: border-color 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    .gimbal-node {
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 6px var(--accent);
+      top: 50%;
+      left: 50%;
+    }
+
+    .gimbal-node.node-1 { transform: rotate(0deg) translate(47px) rotate(0deg); }
+    .gimbal-node.node-2 { transform: rotate(120deg) translate(47px) rotate(-120deg); }
+    .gimbal-node.node-3 { transform: rotate(240deg) translate(47px) rotate(-240deg); }
+
+    @keyframes gimbalSpin {
+      0% { transform: rotateZ(0deg); }
+      100% { transform: rotateZ(360deg); }
+    }
+
+    /* 3. Articulated Stabilizer Wings (Left & Right) */
+    .stabilizer-system {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-style: preserve-3d;
+      pointer-events: none;
+    }
+
+    .wing {
+      position: absolute;
+      top: -12px;
+      width: 24px;
+      height: 28px;
+      transform-style: preserve-3d;
+      transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+
+    .wing.left {
+      left: -42px;
+      transform-origin: 38px 14px;
+      transform: rotateY(12deg) rotateZ(4deg);
+    }
+
+    .wing.right {
+      right: -42px;
+      transform-origin: -14px 14px;
+      transform: rotateY(-12deg) rotateZ(-4deg);
+    }
+
+    .wing-fin {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid var(--chassis-border);
+      border-bottom: 2px solid var(--accent);
+      border-radius: 4px 10px 4px 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 6px var(--accent-glow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .wing.right .wing-fin {
+      border-radius: 10px 4px 12px 4px;
+    }
+
+    .wing-tip {
+      position: absolute;
+      bottom: 2px;
+      width: 100%;
+      height: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 4px var(--accent);
+      transition: background 0.4s ease;
+    }
+
+    /* 4. Armored Spherical Core Chassis */
+    .core-body {
+      position: absolute;
+      left: -28px;
+      top: -28px;
+      width: 56px;
+      height: 56px;
+      transform-style: preserve-3d;
+      pointer-events: none;
+    }
+
+    .core-chassis {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--core-bg);
+      border: 1px solid var(--chassis-border);
+      box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.7),
+        inset 0 2px 4px rgba(255, 255, 255, 0.25),
+        inset 0 -3px 8px rgba(0, 0, 0, 0.8),
+        0 0 14px var(--accent-glow);
+      overflow: hidden;
+      transform-style: preserve-3d;
+      transition: box-shadow 0.4s ease;
+    }
+
+    /* Metallic Specular Gleam */
+    .core-specular {
+      position: absolute;
+      top: 3px;
+      left: 10px;
+      width: 28px;
+      height: 14px;
+      border-radius: 50%;
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 0.35), transparent);
+      pointer-events: none;
+    }
+
+    /* Top Crest Sensor Antenna */
+    .crest-sensor {
+      position: absolute;
+      top: -12px;
+      left: 26px;
+      width: 4px;
+      height: 14px;
+      transform-style: preserve-3d;
+      transform: translateZ(4px);
+    }
+
+    .crest-fin {
+      width: 100%;
+      height: 100%;
+      background: #334155;
+      border: 1px solid var(--chassis-border);
+      border-radius: 3px 3px 0 0;
+    }
+
+    .crest-beacon {
+      position: absolute;
+      top: -3px;
+      left: -1px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 8px var(--accent);
+      animation: beaconBlink 2.2s ease-in-out infinite alternate;
+      transition: box-shadow 0.4s ease;
+    }
+
+    @keyframes beaconBlink {
+      0% { opacity: 0.4; }
+      100% { opacity: 1; }
+    }
+
+    /* Optic Visor Display */
+    .visor {
+      position: absolute;
+      top: 14px;
+      left: 7px;
+      width: 42px;
+      height: 22px;
+      border-radius: 11px;
+      background: #030712;
+      border: 1.2px solid rgba(255, 255, 255, 0.2);
+      box-shadow:
+        inset 0 1px 3px rgba(255, 255, 255, 0.3),
+        inset 0 0 8px rgba(0, 0, 0, 0.95),
+        0 0 10px rgba(0, 0, 0, 0.8);
+      overflow: hidden;
+      transform: translateZ(16px);
+      transform-style: preserve-3d;
+    }
+
+    .visor-glass {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 50%;
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 0.18), transparent);
+      pointer-events: none;
+    }
+
+    /* Visor Scan Beam (thinking state) */
+    .scan-beam {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: linear-gradient(to right, transparent, var(--accent), transparent);
+      box-shadow: 0 0 8px var(--accent);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateZ(1px);
+    }
+
+    /* Eyes Track Container */
+    .eyes-track {
+      position: absolute;
+      top: 4px;
+      left: 8px;
+      width: 26px;
+      height: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transform-style: preserve-3d;
+      will-change: transform;
+    }
+
+    /* Dual Optic Eyes / Pupils */
+    .eye {
+      position: relative;
+      width: 9px;
+      height: 11px;
+      border-radius: 4.5px;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent), 0 0 12px var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: center center;
+      transition: background 0.4s ease, box-shadow 0.4s ease, transform 0.12s ease;
+      will-change: transform;
+    }
+
+    .pupil-glint {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 2.5px;
+      height: 2.5px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 3px #ffffff;
+    }
+
+    /* Under-Thruster Emitter */
+    .under-thruster {
+      position: absolute;
+      bottom: -16px;
+      left: 17px;
+      width: 22px;
+      height: 22px;
+      transform-style: preserve-3d;
+      transform: rotateX(80deg);
+      pointer-events: none;
+    }
+
+    .thruster-nozzle {
+      position: absolute;
+      top: 0;
+      left: 2px;
+      width: 18px;
+      height: 6px;
+      border-radius: 3px;
+      background: #1e293b;
+      border: 1px solid var(--chassis-border);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    .thruster-plume {
+      position: absolute;
+      top: 5px;
+      left: 4px;
+      width: 14px;
+      height: 22px;
+      border-radius: 50% 50% 70% 70%;
+      background: linear-gradient(to bottom, #ffffff 0%, var(--accent) 30%, transparent 95%);
+      box-shadow: 0 4px 14px var(--thruster-glow);
+      filter: blur(1px);
+      animation: thrusterFlicker 0.14s ease-in-out infinite alternate;
+      transition: box-shadow 0.4s ease, transform 0.4s ease;
+    }
+
+    @keyframes thrusterFlicker {
+      0% { transform: scale(0.9, 0.92); opacity: 0.85; }
+      100% { transform: scale(1.08, 1.15); opacity: 1; }
+    }
+
+    /* =========================================================================
+       State Continuous Posture Loops
+       ========================================================================= */
+
+    /* IDLE State: Zero-G gentle drift */
+    .state-idle {
+      --accent: var(--color-idle);
+      --accent-glow: var(--glow-idle);
+      --thruster-glow: var(--thruster-idle);
+      animation: postureIdle 3.6s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureIdle {
+      0% { transform: translateY(-7px) rotateX(3deg) rotateY(-2deg) rotateZ(1deg); }
+      50% { transform: translateY(4px) rotateX(-2deg) rotateY(2deg) rotateZ(-1deg); }
+      100% { transform: translateY(-7px) rotateX(3deg) rotateY(-2deg) rotateZ(1deg); }
+    }
+
+    /* LISTENING State: Attentive forward lean, wings flare */
+    .state-listening {
+      --accent: var(--color-listening);
+      --accent-glow: var(--glow-listening);
+      --thruster-glow: var(--thruster-listening);
+      transform: rotateX(18deg) translateY(-4px) translateZ(8px);
+      animation: postureListening 1.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureListening {
+      0% { transform: rotateX(16deg) translateY(-5px) translateZ(8px); }
+      100% { transform: rotateX(20deg) translateY(-2px) translateZ(10px); }
+    }
+
+    .state-listening .wing.left {
+      transform: rotateY(-24deg) rotateZ(-12deg) scale(1.1);
+    }
+    .state-listening .wing.right {
+      transform: rotateY(24deg) rotateZ(12deg) scale(1.1);
+    }
+    .state-listening .eye {
+      transform: scale(1.22);
+    }
+
+    /* THINKING State: Fast gimbal, side-to-side scan, visor sweep, wings tucked */
+    .state-thinking {
+      --accent: var(--color-thinking);
+      --accent-glow: var(--glow-thinking);
+      --thruster-glow: var(--thruster-thinking);
+      animation: postureThinking 0.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureThinking {
+      0% { transform: translateX(-8px) rotateY(-14deg) rotateZ(-2deg); }
+      100% { transform: translateX(8px) rotateY(14deg) rotateZ(2deg); }
+    }
+
+    .state-thinking .gimbal-ring {
+      animation-duration: 1.8s;
+    }
+
+    .state-thinking .wing.left {
+      transform: rotateY(38deg) rotateZ(8deg) scale(0.92) translateX(4px);
+    }
+    .state-thinking .wing.right {
+      transform: rotateY(-38deg) rotateZ(-8deg) scale(0.92) translateX(-4px);
+    }
+
+    .state-thinking .scan-beam {
+      opacity: 1;
+      animation: beamSweep 0.8s ease-in-out infinite alternate;
+    }
+
+    @keyframes beamSweep {
+      0% { left: -2px; }
+      100% { left: 36px; }
+    }
+
+    /* SPEAKING State: Rhythmic vocal bounce, pupil height pulse */
+    .state-speaking {
+      --accent: var(--color-speaking);
+      --accent-glow: var(--glow-speaking);
+      --thruster-glow: var(--thruster-speaking);
+      animation: postureSpeaking 0.42s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureSpeaking {
+      0% { transform: translateY(-5px) scale(0.98, 1.02); }
+      100% { transform: translateY(3px) scale(1.02, 0.98); }
+    }
+
+    .state-speaking .eye {
+      animation: pupilSpeechPulse 0.42s ease-in-out infinite alternate;
+    }
+
+    @keyframes pupilSpeechPulse {
+      0% { transform: scale(0.95, 0.8); }
+      100% { transform: scale(1.05, 1.38); }
+    }
+
+    /* COMPLETE State: Emerald flare, upward float */
+    .state-complete {
+      --accent: var(--color-complete);
+      --accent-glow: var(--glow-complete);
+      --thruster-glow: var(--thruster-complete);
+      animation: postureComplete 2.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureComplete {
+      0% { transform: translateY(-8px) rotateX(4deg); }
+      100% { transform: translateY(0px) rotateX(-2deg); }
+    }
+
+    .state-complete .thruster-plume {
+      transform: scale(1.6);
+      box-shadow: 0 8px 24px var(--thruster-glow);
+    }
+
+    /* ALERT State: Warning posture, defensive pitch, narrow eye slits */
+    .state-alert {
+      --accent: var(--color-alert);
+      --accent-glow: var(--glow-alert);
+      --thruster-glow: var(--thruster-alert);
+      transform: rotateX(-16deg) translateY(-6px) translateZ(-8px);
+      animation: postureAlert 0.25s ease-in-out infinite alternate;
+    }
+
+    @keyframes postureAlert {
+      0% { transform: rotateX(-16deg) translateY(-6px) translateZ(-8px) translateX(-1px); }
+      100% { transform: rotateX(-16deg) translateY(-6px) translateZ(-8px) translateX(1px); }
+    }
+
+    .state-alert .wing.left {
+      transform: rotateY(-32deg) rotateZ(-18deg) scale(1.15);
+    }
+    .state-alert .wing.right {
+      transform: rotateY(32deg) rotateZ(18deg) scale(1.15);
+    }
+
+    .state-alert .eye {
+      transform: scale(1.3, 0.35);
+    }
+
+    /* =========================================================================
+       Bottom Test / Demo Control Dock
+       ========================================================================= */
+    #control-bar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 18px;
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 9999px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(34, 211, 238, 0.15);
+      z-index: 5000;
+      pointer-events: auto;
+      transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+
+    #control-bar.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(40px);
+      pointer-events: none;
+    }
+
+    .bar-left, .bar-center, .bar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding-right: 10px;
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 6px #ef4444;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .status-dot.connected {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+
+    .status-label {
+      font-size: 11px;
+      font-family: monospace;
+      color: #94a3b8;
+    }
+
+    .state-badge {
+      font-size: 11px;
+      font-weight: 700;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      padding: 2px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: color 0.3s ease;
+    }
+
+    .btn-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .ctrl-btn {
+      background: rgba(30, 41, 59, 0.8);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 5px 11px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .ctrl-btn:hover {
+      background: rgba(51, 65, 85, 0.9);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .ctrl-btn:active {
+      transform: translateY(0);
+    }
+
+    .ctrl-btn.active {
+      background: var(--accent);
+      color: #020617;
+      border-color: var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .gesture-btn {
+      background: rgba(15, 23, 42, 0.9);
+      border-color: rgba(34, 211, 238, 0.3);
+      color: #38bdf8;
+    }
+
+    .gesture-btn:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+
+    .shortcut-hint {
+      font-size: 10px;
+      color: #64748b;
+      padding-left: 6px;
+    }
+
+    .shortcut-hint b {
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div id="jarvis-stage">
+    <!-- Floating 3D Micro-Drone -->
+    <div id="drone-anchor">
+      <!-- 84x84 Hitbox for Grab, Fling, and Click-Through Filtering -->
+      <div id="drone-hitbox" class="drone-hitbox" title="Drag to fling / Tap to interact"></div>
+
+      <!-- 3D Scene Assembly -->
+      <div class="drone-scene">
+        <div id="drone-gesture-layer">
+          <div id="drone-posture-layer" class="state-idle">
+            
+            <!-- Layer 1: Ambient Radial Aura -->
+            <div class="ambient-aura"></div>
+
+            <!-- Layer 2: Gimbal Halo Ring (68deg inclined 360 spin) -->
+            <div class="gimbal-system">
+              <div class="gimbal-ring">
+                <div class="gimbal-node node-1"></div>
+                <div class="gimbal-node node-2"></div>
+                <div class="gimbal-node node-3"></div>
+              </div>
+            </div>
+
+            <!-- Layer 3: Articulated Stabilizer Wings -->
+            <div class="stabilizer-system">
+              <div class="wing left">
+                <div class="wing-fin">
+                  <div class="wing-tip"></div>
+                </div>
+              </div>
+              <div class="wing right">
+                <div class="wing-fin">
+                  <div class="wing-tip"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Layer 4: Armored Spherical Core Chassis -->
+            <div class="core-body">
+              <!-- Top Sensor Crest Antenna -->
+              <div class="crest-sensor">
+                <div class="crest-fin"></div>
+                <div class="crest-beacon"></div>
+              </div>
+
+              <!-- Main Chassis Shell -->
+              <div class="core-chassis">
+                <div class="core-specular"></div>
+              </div>
+
+              <!-- Optic OLED Visor -->
+              <div class="visor">
+                <div class="visor-glass"></div>
+                <div class="scan-beam"></div>
+                <!-- Eyes Track Container -->
+                <div class="eyes-track" id="eyes-track">
+                  <div class="eye left-eye" id="left-eye">
+                    <div class="pupil-glint"></div>
+                  </div>
+                  <div class="eye right-eye" id="right-eye">
+                    <div class="pupil-glint"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ventral Under-Thruster Emitter -->
+              <div class="under-thruster">
+                <div class="thruster-nozzle"></div>
+                <div class="thruster-plume"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Demo Control Dock -->
+    <div id="control-bar">
+      <div class="bar-left">
+        <div class="status-indicator">
+          <span class="status-dot" id="ws-dot"></span>
+          <span class="status-label" id="ws-label">WS: Connecting</span>
+        </div>
+        <div class="state-badge" id="state-badge">IDLE</div>
+      </div>
+      <div class="bar-center">
+        <div class="btn-group">
+          <button class="ctrl-btn active" data-state="idle" title="[1] Idle">Idle</button>
+          <button class="ctrl-btn" data-state="listening" title="[2] Listening">Listen</button>
+          <button class="ctrl-btn" data-state="thinking" title="[3] Thinking">Think</button>
+          <button class="ctrl-btn" data-state="speaking" title="[4] Speaking">Speak</button>
+          <button class="ctrl-btn" data-state="complete" title="[5] Complete">Done</button>
+          <button class="ctrl-btn" data-state="alert" title="[6] Alert">Alert</button>
+        </div>
+        <div class="btn-group">
+          <button class="ctrl-btn gesture-btn" data-gesture="nod" title="[N] Nod">Nod</button>
+          <button class="ctrl-btn gesture-btn" data-gesture="gyroRoll" title="[G] GyroRoll">Roll</button>
+          <button class="ctrl-btn gesture-btn" data-gesture="recoil" title="[R] Recoil">Recoil</button>
+        </div>
+      </div>
+      <div class="bar-right">
+        <span class="shortcut-hint">Press <b>H</b> to hide dock</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // =======================================================================
+      // DOM Elements
+      // =======================================================================
+      const anchor = document.getElementById('drone-anchor');
+      const hitbox = document.getElementById('drone-hitbox');
+      const gestureLayer = document.getElementById('drone-gesture-layer');
+      const postureLayer = document.getElementById('drone-posture-layer');
+      const eyesTrack = document.getElementById('eyes-track');
+      const leftEye = document.getElementById('left-eye');
+      const rightEye = document.getElementById('right-eye');
+      const controlBar = document.getElementById('control-bar');
+      const wsDot = document.getElementById('ws-dot');
+      const wsLabel = document.getElementById('ws-label');
+      const stateBadge = document.getElementById('state-badge');
+      const stateButtons = document.querySelectorAll('.ctrl-btn[data-state]');
+      const gestureButtons = document.querySelectorAll('.ctrl-btn[data-gesture]');
+      const droneScene = document.querySelector('.drone-scene');
+      let isCloaked = false;
+
+      function disappearDrone() {
+        if (isCloaked) return;
+        isCloaked = true;
+        if (droneScene) {
+          droneScene.classList.add('is-cloaked');
+        }
+        hitbox.style.pointerEvents = 'none';
+        if (isElectron && window.electronAPI && typeof window.electronAPI.disappear === 'function') {
+          setTimeout(() => {
+            if (isCloaked) {
+              window.electronAPI.disappear();
+            }
+          }, 380);
+        }
+      }
+
+      function appearDrone() {
+        if (isElectron && window.electronAPI && typeof window.electronAPI.appear === 'function') {
+          window.electronAPI.appear();
+        }
+        isCloaked = false;
+        hitbox.style.pointerEvents = 'auto';
+        if (droneScene) {
+          droneScene.classList.remove('is-cloaked');
+        }
+        triggerGesture('nod');
+      }
+
+      // =======================================================================
+      // State & Coordinates
+      // =======================================================================
+      const VALID_STATES = ['idle', 'listening', 'thinking', 'speaking', 'complete', 'alert'];
+      let currentState = 'idle';
+
+      // Detect Electron environment
+      const isElectron = Boolean(window.electronAPI && typeof window.electronAPI.setWindowPosition === 'function');
+      if (isElectron) {
+        document.body.classList.add('is-electron');
+      }
+
+      // Screen boundary clamping with symmetric drone margin (half-extent + padding = 56px)
+      const DRONE_MARGIN = 56;
+      let minX = DRONE_MARGIN;
+      let maxX = Math.max(DRONE_MARGIN, window.innerWidth - DRONE_MARGIN);
+      let minY = DRONE_MARGIN;
+      let maxY = Math.max(DRONE_MARGIN, window.innerHeight - DRONE_MARGIN);
+
+      // Initial drone position
+      let posX = Math.round(window.innerWidth * 0.75);
+      let posY = Math.round(window.innerHeight * 0.22);
+
+      if (isElectron) {
+        // Default safe desktop bounds for floating window before IPC resolution
+        minX = 20;
+        maxX = 1920 - 240;
+        minY = 20;
+        maxY = 1080 - 240;
+        posX = maxX - 40;
+        posY = 60;
+
+        if (window.electronAPI.getScreenBounds) {
+          window.electronAPI.getScreenBounds().then((bounds) => {
+            if (bounds) {
+              minX = bounds.x + 20;
+              maxX = bounds.x + bounds.width - 240;
+              minY = bounds.y + 20;
+              maxY = bounds.y + bounds.height - 240;
+              if (!isDragging && !isFlinging) {
+                posX = Math.max(minX, Math.min(maxX, posX));
+                posY = Math.max(minY, Math.min(maxY, posY));
+                updateDroneTransform();
+              }
+            }
+          }).catch(() => {});
+        }
+      } else {
+        posX = Math.max(minX, Math.min(maxX, posX));
+        posY = Math.max(minY, Math.min(maxY, posY));
+      }
+
+      let velocityX = 0;
+      let velocityY = 0;
+      let isDragging = false;
+      let isFlinging = false;
+      let flingAnimId = null;
+
+      // Drag tracking
+      let dragStartX = 0;
+      let dragStartY = 0;
+      let droneStartX = 0;
+      let droneStartY = 0;
+      let velocityHistory = [];
+
+      // Idle patrol & Auto-dodge
+      let lastInteractionTime = performance.now();
+      let isPatrolling = false;
+      let patrolTargetX = posX;
+      let patrolTargetY = posY;
+      let nextPatrolTime = performance.now() + 15000;
+
+      // Cursor tracking & Eye physics
+      let cursorX = window.innerWidth / 2;
+      let cursorY = window.innerHeight / 2;
+      let currentEyeX = 0;
+      let currentEyeY = 0;
+      let targetEyeX = 0;
+      let targetEyeY = 0;
+
+      // Complete state timer
+      let completeTimeoutId = null;
+
+      // =======================================================================
+      // Position & Transform Rendering
+      // =======================================================================
+      function updateDroneTransform() {
+        if (isElectron) {
+          window.electronAPI.setWindowPosition(Math.round(posX), Math.round(posY));
+        } else {
+          anchor.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
+        }
+      }
+
+      function updateBounds() {
+        if (isElectron) return; // In electron, screen bounds come from getScreenBounds()
+        minX = DRONE_MARGIN;
+        maxX = Math.max(DRONE_MARGIN, window.innerWidth - DRONE_MARGIN);
+        minY = DRONE_MARGIN;
+        maxY = Math.max(DRONE_MARGIN, window.innerHeight - DRONE_MARGIN);
+        posX = Math.max(minX, Math.min(maxX, posX));
+        posY = Math.max(minY, Math.min(maxY, posY));
+        updateDroneTransform();
+      }
+
+      window.addEventListener('resize', updateBounds);
+      updateBounds();
+
+      // =======================================================================
+      // State Machine
+      // =======================================================================
+      function setState(newState) {
+        if (!VALID_STATES.includes(newState)) {
+          console.warn(`[Drone] Invalid state requested: ${newState}`);
+          return;
+        }
+
+        currentState = newState;
+        postureLayer.className = `state-${newState}`;
+        stateBadge.textContent = newState.toUpperCase();
+
+        // Update control bar button highlighting
+        stateButtons.forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-state') === newState);
+        });
+
+        if (completeTimeoutId) {
+          clearTimeout(completeTimeoutId);
+          completeTimeoutId = null;
+        }
+
+        // State-specific autonomous triggers
+        if (newState === 'listening') {
+          triggerGesture('nod');
+        } else if (newState === 'complete') {
+          triggerGesture('gyroRoll');
+          // Auto-settle back to idle after celebratory sequence
+          completeTimeoutId = setTimeout(() => {
+            if (currentState === 'complete') {
+              setState('idle');
+            }
+          }, 3200);
+        } else if (newState === 'alert') {
+          triggerGesture('recoil');
+        }
+      }
+
+      // =======================================================================
+      // One-Shot Kinematic Gestures via Web Animations API (composite: "add")
+      // =======================================================================
+      const GESTURES = {
+        nod: function () {
+          // Affirmative double forward pitch-nod (480ms)
+          return gestureLayer.animate([
+            { transform: 'rotateX(0deg) translateY(0px)' },
+            { transform: 'rotateX(22deg) translateY(4px)', offset: 0.25 },
+            { transform: 'rotateX(4deg) translateY(-1px)', offset: 0.5 },
+            { transform: 'rotateX(18deg) translateY(3px)', offset: 0.75 },
+            { transform: 'rotateX(0deg) translateY(0px)' }
+          ], {
+            duration: 480,
+            easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+            composite: 'add'
+          });
+        },
+
+        gyroRoll: function () {
+          // 360-degree barrel roll along pitch/roll (680ms)
+          return gestureLayer.animate([
+            { transform: 'rotateZ(0deg) rotateX(0deg) translateY(0px) scale(1)' },
+            { transform: 'rotateZ(120deg) rotateX(25deg) translateY(-16px) scale(1.12)', offset: 0.3 },
+            { transform: 'rotateZ(260deg) rotateX(-20deg) translateY(-8px) scale(1.06)', offset: 0.7 },
+            { transform: 'rotateZ(360deg) rotateX(0deg) translateY(0px) scale(1)' }
+          ], {
+            duration: 680,
+            easing: 'cubic-bezier(0.34, 1.25, 0.64, 1)',
+            composite: 'add'
+          });
+        },
+
+        recoil: function () {
+          // Startled backward recoil + horizontal double-wobble (540ms)
+          return gestureLayer.animate([
+            { transform: 'translate3d(0, 0, 0) rotateZ(0deg) rotateX(0deg)' },
+            { transform: 'translate3d(0, -18px, -26px) rotateX(-24deg) rotateZ(-12deg)', offset: 0.18 },
+            { transform: 'translate3d(8px, 4px, -10px) rotateX(8deg) rotateZ(8deg)', offset: 0.38 },
+            { transform: 'translate3d(-6px, -2px, 0px) rotateX(-5deg) rotateZ(-6deg)', offset: 0.62 },
+            { transform: 'translate3d(2px, 1px, 0px) rotateX(2deg) rotateZ(3deg)', offset: 0.82 },
+            { transform: 'translate3d(0, 0, 0) rotateZ(0deg) rotateX(0deg)' }
+          ], {
+            duration: 540,
+            easing: 'cubic-bezier(0.2, 0.8, 0.3, 1)',
+            composite: 'add'
+          });
+        }
+      };
+
+      function triggerGesture(name) {
+        if (typeof GESTURES[name] === 'function') {
+          return GESTURES[name]();
+        } else {
+          console.warn(`[Drone] Unknown gesture: ${name}`);
+        }
+      }
+
+      // =======================================================================
+      // Natural Eye Blinking & Cursor Tracking
+      // =======================================================================
+      function scheduleNextBlink() {
+        const interval = 2000 + Math.random() * 3000; // 2 to 5 seconds
+        setTimeout(() => {
+          performBlink();
+          scheduleNextBlink();
+        }, interval);
+      }
+
+      function performBlink() {
+        const blinkKeyframes = [
+          { transform: 'scaleY(1)' },
+          { transform: 'scaleY(0.08)', offset: 0.45 },
+          { transform: 'scaleY(1)' }
+        ];
+        const blinkTiming = {
+          duration: 150,
+          easing: 'ease-in-out'
+        };
+
+        leftEye.animate(blinkKeyframes, blinkTiming);
+        rightEye.animate(blinkKeyframes, blinkTiming);
+
+        // 25% chance of double blink
+        if (Math.random() < 0.25) {
+          setTimeout(() => {
+            leftEye.animate(blinkKeyframes, blinkTiming);
+            rightEye.animate(blinkKeyframes, blinkTiming);
+          }, 220);
+        }
+      }
+
+      scheduleNextBlink();
+
+      function handleCursorMove(e) {
+        if (isElectron) return;
+        cursorX = e.clientX;
+        cursorY = e.clientY;
+
+        // Reset idle timer on active user cursor movement
+        lastInteractionTime = performance.now();
+        isPatrolling = false;
+        nextPatrolTime = performance.now() + 15000;
+
+        // Eye tracking within visor bounds
+        const droneCenterX = posX;
+        const droneCenterY = posY;
+        const dx = cursorX - droneCenterX;
+        const dy = cursorY - droneCenterY;
+
+        const maxEyeX = 7;
+        const maxEyeY = 4;
+        targetEyeX = Math.max(-maxEyeX, Math.min(maxEyeX, dx * 0.02));
+        targetEyeY = Math.max(-maxEyeY, Math.min(maxEyeY, dy * 0.02));
+      }
+
+      window.addEventListener('pointermove', handleCursorMove);
+
+      // In Electron, track global desktop cursor for wide-angle eye tracking
+      if (isElectron && window.electronAPI && typeof window.electronAPI.onGlobalCursor === 'function') {
+        window.electronAPI.onGlobalCursor((data) => {
+          cursorX = data.globalX;
+          cursorY = data.globalY;
+
+          const maxEyeX = 7;
+          const maxEyeY = 4;
+          targetEyeX = Math.max(-maxEyeX, Math.min(maxEyeX, data.dx * 0.02));
+          targetEyeY = Math.max(-maxEyeY, Math.min(maxEyeY, data.dy * 0.02));
+
+          const now = performance.now();
+          lastInteractionTime = now;
+          if (isPatrolling) {
+            const dist = Math.hypot(data.dx, data.dy);
+            if (dist < 150) {
+              isPatrolling = false;
+              nextPatrolTime = now + 15000;
+            }
+          }
+        });
+      }
+
+      // =======================================================================
+      // Physics: Dragging, Inertial Fling, Boundary Bounce & Idle Patrol
+      // =======================================================================
+      function cancelFling() {
+        if (flingAnimId) {
+          cancelAnimationFrame(flingAnimId);
+          flingAnimId = null;
+        }
+        isFlinging = false;
+        velocityX = 0;
+        velocityY = 0;
+      }
+
+      hitbox.addEventListener('pointerdown', (e) => {
+        hitbox.setPointerCapture(e.pointerId);
+        isDragging = true;
+        cancelFling();
+        isPatrolling = false;
+
+        const startPtX = isElectron ? e.screenX : e.clientX;
+        const startPtY = isElectron ? e.screenY : e.clientY;
+
+        dragStartX = startPtX;
+        dragStartY = startPtY;
+        droneStartX = posX;
+        droneStartY = posY;
+
+        lastInteractionTime = performance.now();
+        nextPatrolTime = performance.now() + 15000;
+
+        velocityHistory = [{
+          x: startPtX,
+          y: startPtY,
+          t: performance.now()
+        }];
+
+        hitbox.classList.add('is-dragging');
+      });
+
+      hitbox.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+
+        const currentPtX = isElectron ? e.screenX : e.clientX;
+        const currentPtY = isElectron ? e.screenY : e.clientY;
+
+        const deltaX = currentPtX - dragStartX;
+        const deltaY = currentPtY - dragStartY;
+
+        posX = Math.max(minX - 20, Math.min(maxX + 20, droneStartX + deltaX));
+        posY = Math.max(minY - 20, Math.min(maxY + 20, droneStartY + deltaY));
+        updateDroneTransform();
+
+        const now = performance.now();
+        velocityHistory.push({ x: currentPtX, y: currentPtY, t: now });
+
+        // Maintain small 100ms window of samples
+        while (velocityHistory.length > 6 || (velocityHistory.length > 2 && now - velocityHistory[0].t > 120)) {
+          velocityHistory.shift();
+        }
+
+        lastInteractionTime = now;
+        nextPatrolTime = now + 15000;
+      });
+
+      function handlePointerUpOrCancel(e) {
+        if (!isDragging) return;
+        if (hitbox.hasPointerCapture && hitbox.hasPointerCapture(e.pointerId)) {
+          try { hitbox.releasePointerCapture(e.pointerId); } catch (_) {}
+        }
+        isDragging = false;
+        hitbox.classList.remove('is-dragging');
+
+        const endPtX = isElectron ? e.screenX : e.clientX;
+        const endPtY = isElectron ? e.screenY : e.clientY;
+        const moveDistance = Math.hypot(endPtX - dragStartX, endPtY - dragStartY);
+
+        if (moveDistance < 5) {
+          // Treated as TAP!
+          handleTap();
+        } else {
+          // Calculate release velocity from sample window
+          const now = performance.now();
+          if (velocityHistory.length >= 2) {
+            const first = velocityHistory[0];
+            const last = velocityHistory[velocityHistory.length - 1];
+            const dt = Math.max(10, last.t - first.t);
+            // Convert to px/frame assuming ~16.67ms frame
+            velocityX = ((last.x - first.x) / dt) * 16.67;
+            velocityY = ((last.y - first.y) / dt) * 16.67;
+
+            // Cap extreme fling speeds
+            const maxSpeed = 48;
+            velocityX = Math.max(-maxSpeed, Math.min(maxSpeed, velocityX));
+            velocityY = Math.max(-maxSpeed, Math.min(maxSpeed, velocityY));
+
+            startFling();
+          } else {
+            // Settle inside bounds
+            clampPositionToBounds();
+          }
+        }
+      }
+
+      hitbox.addEventListener('pointerup', handlePointerUpOrCancel);
+      hitbox.addEventListener('pointercancel', handlePointerUpOrCancel);
+
+      function clampPositionToBounds() {
+        posX = Math.max(minX, Math.min(maxX, posX));
+        posY = Math.max(minY, Math.min(maxY, posY));
+        updateDroneTransform();
+      }
+
+      // Inertial Fling Loop: v(t+1) = v(t) * 0.92
+      function startFling() {
+        isFlinging = true;
+
+        function flingStep() {
+          if (!isFlinging) return;
+
+          velocityX *= 0.92;
+          velocityY *= 0.92;
+
+          posX += velocityX;
+          posY += velocityY;
+
+          // Boundary bounce with soft elasticity (0.6)
+          if (posX < minX) {
+            posX = minX;
+            velocityX = -velocityX * 0.6;
+          } else if (posX > maxX) {
+            posX = maxX;
+            velocityX = -velocityX * 0.6;
+          }
+
+          if (posY < minY) {
+            posY = minY;
+            velocityY = -velocityY * 0.6;
+          } else if (posY > maxY) {
+            posY = maxY;
+            velocityY = -velocityY * 0.6;
+          }
+
+          updateDroneTransform();
+
+          const speed = Math.hypot(velocityX, velocityY);
+          if (speed < 0.5) {
+            // Settle into hover
+            isFlinging = false;
+            velocityX = 0;
+            velocityY = 0;
+            clampPositionToBounds();
+          } else {
+            flingAnimId = requestAnimationFrame(flingStep);
+          }
+        }
+
+        cancelFling();
+        isFlinging = true;
+        flingAnimId = requestAnimationFrame(flingStep);
+      }
+
+      // Tap handling: Sends DRONE_TAP via WebSocket and toggles state
+      function handleTap() {
+        sendWsMessage({
+          version: '1.0',
+          event: 'DRONE_TAP',
+          action: 'TOGGLE_VOICE_LISTENING'
+        });
+
+        // Local state toggle/cycle for responsive visual feedback
+        const stateCycle = {
+          idle: 'listening',
+          listening: 'thinking',
+          thinking: 'speaking',
+          speaking: 'complete',
+          complete: 'idle',
+          alert: 'idle'
+        };
+
+        const next = stateCycle[currentState] || 'idle';
+        setState(next);
+      }
+
+      // Main Animation / Physics RAF Loop (Patrol, Eye Lerp, Auto-Dodge)
+      function physicsLoop(timestamp) {
+        // 1. Smooth eye pupil interpolation
+        currentEyeX += (targetEyeX - currentEyeX) * 0.16;
+        currentEyeY += (targetEyeY - currentEyeY) * 0.16;
+        eyesTrack.style.transform = `translate3d(${currentEyeX.toFixed(2)}px, ${currentEyeY.toFixed(2)}px, 0)`;
+
+        // 2. Autonomous Patrol (if idle > 15 seconds)
+        const now = performance.now();
+        if (currentState === 'idle' && !isDragging && !isFlinging) {
+          if (now > nextPatrolTime && !isPatrolling) {
+            isPatrolling = true;
+            patrolTargetX = minX + Math.random() * (maxX - minX);
+            patrolTargetY = minY + Math.random() * (maxY - minY);
+          }
+
+          if (isPatrolling) {
+            const pDx = patrolTargetX - posX;
+            const pDy = patrolTargetY - posY;
+            const pDist = Math.hypot(pDx, pDy);
+
+            if (pDist > 4) {
+              // Drift smoothly at ~35-45 px/s (approx 0.65 px/frame)
+              const patrolSpeed = 0.65;
+              posX += (pDx / pDist) * patrolSpeed;
+              posY += (pDy / pDist) * patrolSpeed;
+              updateDroneTransform();
+            } else {
+              // Reached waypoint, rest before next drift
+              isPatrolling = false;
+              nextPatrolTime = now + 9000 + Math.random() * 8000;
+            }
+          }
+
+          // 3. Auto-Dodge: Gentle repulsive vector if cursor approaches too close
+          const dCenterX = isElectron ? (posX + 110) : posX;
+          const dCenterY = isElectron ? (posY + 110) : posY;
+          const dCenterDx = dCenterX - cursorX;
+          const dCenterDy = dCenterY - cursorY;
+          const cursorDist = Math.hypot(dCenterDx, dCenterDy);
+
+          if (cursorDist < 120 && cursorDist > 2) {
+            const dodgeForce = (120 - cursorDist) * 0.035;
+            posX = Math.max(minX, Math.min(maxX, posX + (dCenterDx / cursorDist) * dodgeForce));
+            posY = Math.max(minY, Math.min(maxY, posY + (dCenterDy / cursorDist) * dodgeForce));
+            updateDroneTransform();
+          }
+        }
+
+        requestAnimationFrame(physicsLoop);
+      }
+
+      requestAnimationFrame(physicsLoop);
+
+      // =======================================================================
+      // Element Hover Reporting
+      // =======================================================================
+      function setupPassthroughElement(el) {
+        if (!el) return;
+        el.addEventListener('mouseenter', () => {
+          window.dispatchEvent(new CustomEvent('drone-hover', { detail: { hovering: true, element: el.id } }));
+        });
+
+        el.addEventListener('mouseleave', () => {
+          window.dispatchEvent(new CustomEvent('drone-hover', { detail: { hovering: false, element: el.id } }));
+        });
+      }
+
+      setupPassthroughElement(hitbox);
+      setupPassthroughElement(controlBar);
+
+      setupPassthroughElement(hitbox);
+      setupPassthroughElement(controlBar);
+
+      // =======================================================================
+      // Bi-directional WebSocket Client (with Auto-Reconnect)
+      // =======================================================================
+      const urlParams = new URLSearchParams(window.location.search);
+      const specifiedPort = urlParams.get('port');
+      const CANDIDATE_PORTS = specifiedPort ? [parseInt(specifiedPort, 10)] : [8768, 8765];
+      let currentPortIdx = 0;
+      let socket = null;
+      let reconnectTimer = null;
+
+      function connectWebSocket() {
+        if (socket) {
+          try { socket.close(); } catch (_) {}
+          socket = null;
+        }
+
+        const port = CANDIDATE_PORTS[currentPortIdx % CANDIDATE_PORTS.length];
+        const wsUrl = `ws://127.0.0.1:${port}`;
+        wsLabel.textContent = `WS: :${port}...`;
+
+        try {
+          socket = new WebSocket(wsUrl);
+
+          socket.onopen = () => {
+            console.log(`[Drone WS] Connected to ${wsUrl}`);
+            wsDot.className = 'status-dot connected';
+            wsLabel.textContent = `WS: :${port} OK`;
+            if (reconnectTimer) {
+              clearTimeout(reconnectTimer);
+              reconnectTimer = null;
+            }
+          };
+
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'STATE' && msg.state) {
+                setState(msg.state);
+              } else if (msg.type === 'GESTURE' && msg.name) {
+                triggerGesture(msg.name);
+              } else if (msg.type === 'VISIBILITY' && msg.action) {
+                if (msg.action === 'hide' || msg.action === 'disappear') {
+                  disappearDrone();
+                } else if (msg.action === 'show' || msg.action === 'appear') {
+                  appearDrone();
+                } else if (msg.action === 'toggle') {
+                  if (isCloaked) {
+                    appearDrone();
+                  } else {
+                    disappearDrone();
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('[Drone WS] Error parsing message:', err, event.data);
+            }
+          };
+
+          socket.onerror = (err) => {
+            console.warn(`[Drone WS] Connection error on :${port}`);
+          };
+
+          socket.onclose = () => {
+            wsDot.className = 'status-dot';
+            wsLabel.textContent = 'WS: Disconnected';
+            scheduleReconnect();
+          };
+        } catch (e) {
+          console.warn('[Drone WS] Setup exception:', e);
+          scheduleReconnect();
+        }
+      }
+
+      function scheduleReconnect() {
+        if (reconnectTimer) return;
+        currentPortIdx = (currentPortIdx + 1) % CANDIDATE_PORTS.length;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connectWebSocket();
+        }, 2500);
+      }
+
+      function sendWsMessage(obj) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify(obj));
+          } catch (e) {
+            console.warn('[Drone WS] Failed to send message:', e);
+          }
+        }
+      }
+
+      connectWebSocket();
+
+      // =======================================================================
+      // Demo Controls & Keyboard Shortcuts
+      // =======================================================================
+      stateButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetState = btn.getAttribute('data-state');
+          setState(targetState);
+        });
+      });
+
+      gestureButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetGesture = btn.getAttribute('data-gesture');
+          triggerGesture(targetGesture);
+        });
+      });
+
+      window.addEventListener('keydown', (e) => {
+        const key = e.key.toLowerCase();
+        if (key === 'h') {
+          controlBar.classList.toggle('hidden');
+        } else if (key === '1') {
+          setState('idle');
+        } else if (key === '2') {
+          setState('listening');
+        } else if (key === '3') {
+          setState('thinking');
+        } else if (key === '4') {
+          setState('speaking');
+        } else if (key === '5') {
+          setState('complete');
+        } else if (key === '6') {
+          setState('alert');
+        } else if (key === 'n') {
+          triggerGesture('nod');
+        } else if (key === 'g') {
+          triggerGesture('gyroRoll');
+        } else if (key === 'r') {
+          triggerGesture('recoil');
+        } else if (key === 'v') {
+          if (isCloaked) {
+            appearDrone();
+          } else {
+            disappearDrone();
+          }
+        } else if (e.code === 'Space') {
+          handleTap();
+        }
+      });
+
+      // =======================================================================
+      // Global Export API
+      // =======================================================================
+      window.jarvisDrone = {
+        setState: (state) => setState(state),
+        gesture: (name) => triggerGesture(name),
+        setPosition: (x, y) => {
+          posX = Math.max(minX, Math.min(maxX, x));
+          posY = Math.max(minY, Math.min(maxY, y));
+          updateDroneTransform();
+        },
+        getState: () => currentState,
+        getPosition: () => ({ x: posX, y: posY }),
+        triggerTap: () => handleTap(),
+        disappear: () => disappearDrone(),
+        appear: () => appearDrone(),
+        toggleVisibility: () => (isCloaked ? appearDrone() : disappearDrone()),
+        isDisappeared: () => isCloaked
+      };
+
+    })();
+  </script>
+</body>
+</html>

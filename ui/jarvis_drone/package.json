@@ -1,0 +1,12 @@
+{
+  "name": "jarvis-drone-companion",
+  "version": "1.0.0",
+  "description": "JARVIS Visual Drone Companion for Hyprland",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^34.0.0"
+  }
+}

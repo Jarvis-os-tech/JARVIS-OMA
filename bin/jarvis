@@ -7,6 +7,13 @@ MONITOR_SERVICE="jarvis-monitor.service"
 SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/.env"
+    set +a
+fi
+
 show_help() {
     cat << 'EOF'
 JARVIS OS System Control CLI
@@ -24,6 +31,7 @@ Usage:
   jarvis standby       Enter private local standby (Hey Jarvis wakes)
   jarvis send [text]   Send typed query or command directly to live JARVIS session
   jarvis widgets [cmd] Canvas, QR, PiP and input widgets in the existing shell
+  jarvis drone [cmd]   Visual holographic drone companion (start|stop|status|restart|appear|disappear|toggle|state|gesture)
   jarvis control [cmd] Desktop controlling & information retrieval (list|map|call)
   jarvis task [cmd]    Submit, inspect, read, cancel or resume durable work
   jarvis vision [cmd]  Camera start, inspect, status or stop
@@ -41,7 +49,7 @@ Usage:
   jarvis shutdown [-y] Shut down / power off the PC with confirmation
   jarvis reboot [-y]   Restart / reboot the PC with confirmation
   jarvis power [cmd]   System power & session lifecycle (shutdown|restart|lock|status|confirm|cancel)
-  jarvis doctor       Check JARVIS dependencies and enabled features
+  jarvis doctor [flags] Check and auto-repair JARVIS issues (temp & long-term)
 
 EOF
 }
@@ -49,6 +57,10 @@ EOF
 cmd="${1:-}"
 
 case "$cmd" in
+    drone)
+        shift || true
+        exec "${SCRIPT_DIR}/bin/jarvis-drone" "$@"
+        ;;
     widgets)
         shift || true
         exec "${SCRIPT_DIR}/bin/jarvis-widgets" "$@"
