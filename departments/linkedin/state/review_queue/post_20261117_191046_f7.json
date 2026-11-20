@@ -1,0 +1,17 @@
+{
+  "post_id": "post_20261117_191046_f7",
+  "created_at": "2026-11-17T19:10:46.778305",
+  "target_schedule": "2026-11-17 08:30",
+  "pillar": "Founder Story & Vulnerability",
+  "formula_code": "F7",
+  "char_count": 541,
+  "media_prompt": "Technical illustration / visual diagram illustrating: Winning second prize in the AWS Builders Club hackathon",
+  "humanizer_audit": {
+    "authenticity_pass": true,
+    "flagged_markers": [],
+    "char_count": 541,
+    "full_audit_report": "Walked away from the AWS Builders Club hackathon with second place.  \nLast month my teammate and I signed up for the 48‑hour challenge and built a serverless app from scratch.  \nWe had 48 hours, a ticking clock, and a stack that kept changing.  \nPicked the right services, debugged live, kept the app stable under pressure.  \nWhen the demo ran flawless, the judges handed us second prize.  \nTight collaboration and rapid prototyping paid off.  \nWhat’s the most daring serverless project you’ve built under a deadline? Share your story below."
+  },
+  "status": "PENDING_JARVIS_USER_REVIEW",
+  "content": "Walked away from the AWS Builders Club hackathon with second place.  \nLast month my teammate and I signed up for the 48‑hour challenge and built a serverless app from scratch.  \nWe had 48 hours, a ticking clock, and a stack that kept changing.  \nPicked the right services, debugged live, kept the app stable under pressure.  \nWhen the demo ran flawless, the judges handed us second prize.  \nTight collaboration and rapid prototyping paid off.  \nWhat’s the most daring serverless project you’ve built under a deadline? Share your story below."
+}

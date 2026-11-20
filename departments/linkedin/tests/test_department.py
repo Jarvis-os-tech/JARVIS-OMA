@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 import unittest
+from tempfile import TemporaryDirectory
+from unittest.mock import Mock, patch
 
 from departments.linkedin.config import LinkedInConfig
 from departments.linkedin.agents import AGENT_REGISTRY
@@ -25,6 +27,45 @@ class TestLinkedInDepartment(unittest.TestCase):
         for i in range(1, 13):
             key = f"A{i}"
             self.assertIn(key, AGENT_REGISTRY)
+
+    def test_approved_image_publishes_through_scheduler_once(self):
+        from departments.linkedin.tools import LinkedInTools
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            image = root / "certificate.png"
+            image.touch()
+            tools = LinkedInTools()
+            tools._author_urn = "urn:li:person:fixture"
+            dept = LinkedInDepartment(LinkedInConfig(base_dir=root), tools=tools)
+            draft = dept.a12_scheduler.execute({"post_draft": "Approved text", "formula_code": "F7"})
+            post_id = draft.output["post_id"]
+            uploaded = {"name": image.name, "mimetype": "image/png", "s3key": "fixture-key"}
+            with patch("connectors.composio.get_client"), patch(
+                "composio.core.models._files.FileUploadable.from_path",
+                return_value=Mock(model_dump=Mock(return_value=uploaded)),
+            ) as upload, patch("connectors.composio.execute_tool", return_value={
+                "success": True, "data": {"x_restli_id": "urn:li:share:fixture"},
+            }) as execute:
+                result = dept.publish_post(post_id, image_path=str(image))
+                self.assertEqual(result["status"], "PUBLISHED_LIVE")
+                self.assertFalse(dept.publish_post(post_id, image_path=str(image))["success"])
+                upload.assert_called_once()
+                execute.assert_called_once_with("LINKEDIN_CREATE_LINKED_IN_POST", {
+                    "author": tools._author_urn, "commentary": "Approved text",
+                    "visibility": "PUBLIC", "images": [uploaded],
+                })
+
+    def test_custom_client_config_and_auth_failure_stop_fallback(self):
+        cfg = LinkedInConfig(api_key="test-key", max_retries=3)
+        client = LinkedInDepartment(cfg).a3_writer.client
+        self.assertIs(client.cfg, cfg)
+        with patch("departments.linkedin.nim_client.requests.post",
+                   return_value=Mock(status_code=401)) as post:
+            result = client.generate([{"role": "user", "content": "test"}])
+        self.assertFalse(result.success)
+        self.assertIn("401", result.error)
+        post.assert_called_once()
 
     def test_tools_integration_and_author_urn(self):
         self.assertIsNotNone(self.dept.tools)

@@ -153,9 +153,11 @@ class ActivityLedger:
             raise ValueError("activity_id must be a non-empty string of at most 128 characters")
         timestamp = _now()
         with self._lock, self._session() as connection:
-            connection.execute("INSERT INTO proactive_activity VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                               (identifier, event_id, kind, summary, encoded,
-                                normalized_status.value, timestamp, timestamp))
+            connection.execute(
+                "INSERT INTO proactive_activity (id, event_id, kind, summary, details, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (identifier, event_id, kind, summary, encoded,
+                 normalized_status.value, timestamp, timestamp))
             return self._row(connection.execute("SELECT * FROM proactive_activity WHERE id=?", (identifier,)).fetchone())
 
     def get(self, activity_id: str) -> Activity | None:

@@ -2,6 +2,7 @@
 Exposes the 12-agent LinkedIn Department to Jarvis orchestrator and handles review gates.
 """
 
+import re
 from typing import Any, Dict, Optional
 from departments.linkedin import linkedin_dept
 
@@ -10,6 +11,7 @@ ADAPTERS = {
     "linkedin.plan_sprint": "_adapter_linkedin_plan_sprint",
     "linkedin.audit_profile": "_adapter_linkedin_audit_profile",
     "linkedin.pending_reviews": "_adapter_linkedin_pending_reviews",
+    "linkedin.get_post": "_adapter_linkedin_get_post",
     "linkedin.approve_post": "_adapter_linkedin_approve_post",
     "linkedin.sync_profile": "_adapter_linkedin_sync_profile",
     "linkedin.propose_tool": "_adapter_linkedin_propose_tool",
@@ -20,6 +22,7 @@ ADAPTER_COMMANDS = {
     "linkedin.plan_sprint": (),
     "linkedin.audit_profile": (),
     "linkedin.pending_reviews": (),
+    "linkedin.get_post": (),
     "linkedin.approve_post": (),
     "linkedin.sync_profile": (),
     "linkedin.propose_tool": (),
@@ -38,7 +41,8 @@ class LinkedInDomain:
         scheduled_slot: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Draft a post, pass through humanizer, and stage in review queue."""
-        pkg = linkedin_dept.draft_and_stage_post(
+        pkg = await self._linkedin_worker.run(
+            linkedin_dept.draft_and_stage_post,
             topic=topic,
             angle=angle,
             formula_code=formula_code,
@@ -62,25 +66,37 @@ class LinkedInDomain:
         self, days: int = 7, focus_topic: str = "Autonomous AI Systems"
     ) -> Dict[str, Any]:
         """Generate a strategic sprint calendar via A2 Content Planner."""
-        return linkedin_dept.plan_sprint(days=days, focus_topic=focus_topic)
+        return await self._linkedin_worker.run(linkedin_dept.plan_sprint, days=days, focus_topic=focus_topic)
 
     async def _adapter_linkedin_audit_profile(
         self, current_profile: str, goal: str = "Client acquisition & technical authority"
     ) -> Dict[str, Any]:
         """Audit 9 profile elements via A1 Profile Optimizer."""
-        return linkedin_dept.audit_profile(current_profile=current_profile, goal=goal)
+        return await self._linkedin_worker.run(linkedin_dept.audit_profile, current_profile=current_profile, goal=goal)
 
     async def _adapter_linkedin_pending_reviews(self) -> Dict[str, Any]:
         """List all staged posts awaiting user sign-off."""
-        pending = linkedin_dept.get_pending_reviews()
+        pending = await self._linkedin_worker.run(linkedin_dept.get_pending_reviews)
         return {
             "pending_count": len(pending),
             "posts": pending,
         }
 
-    async def _adapter_linkedin_approve_post(self, post_id: str, publish_now: bool = False) -> Dict[str, Any]:
+    async def _adapter_linkedin_get_post(self, post_urn: str) -> Dict[str, Any]:
+        if not re.fullmatch(r"urn:li:(share|ugcPost):[0-9]+", post_urn):
+            return {"ok": False, "error": "Provide a LinkedIn share or ugcPost URN."}
+        result = await self._linkedin_worker.run(linkedin_dept.tools.get_post_content, post_urn)
+        if not result.success:
+            return {"ok": False, "error": result.error or "LinkedIn post could not be retrieved."}
+        return {"ok": True, "post": result.data}
+
+    async def _adapter_linkedin_approve_post(
+        self, post_id: str, publish_now: bool = False, image_path: str | None = None
+    ) -> Dict[str, Any]:
         """Approve a post for publishing, optionally publishing live immediately."""
-        res = linkedin_dept.approve_post(post_id, publish_now=publish_now)
+        res = await self._linkedin_worker.run(
+            linkedin_dept.approve_post, post_id, publish_now=publish_now, image_path=image_path,
+        )
         if res.get("success", False):
             return {
                 "ok": True,
@@ -97,7 +113,7 @@ class LinkedInDomain:
 
     async def _adapter_linkedin_sync_profile(self) -> Dict[str, Any]:
         """Synchronize live profile from LinkedIn into department state."""
-        return linkedin_dept.sync_live_profile()
+        return await self._linkedin_worker.run(linkedin_dept.sync_live_profile)
 
     async def _adapter_linkedin_propose_tool(self, problem: str) -> Dict[str, Any]:
         """Use the API Agent to reverse-engineer and propose an endpoint for missing LinkedIn operations."""

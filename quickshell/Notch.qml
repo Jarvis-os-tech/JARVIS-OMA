@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Shapes
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import qs.components
 import qs.panels
 
@@ -23,6 +24,41 @@ PanelWindow {
     property bool contentRevealed: false
     property bool clockRevealed: true
     property string displayedPanel: "control"
+
+    property string jarvisState: "unavailable"
+
+    FileView {
+        id: jarvisStateFile
+        path: (Quickshell.env("XDG_RUNTIME_DIR") || Quickshell.env("XDG_STATE_HOME")
+               || (Quickshell.env("HOME") + "/.local/state")) + "/jarvis/state.json"
+        watchChanges: true
+        onFileChanged: reload()
+        onLoadFailed: window.jarvisState = "unavailable"
+        onLoaded: {
+            try {
+                var d = JSON.parse(text());
+                if (!d || typeof d.state !== "string" ||
+                    (typeof d.status_written_at === "number" && Date.now() - d.status_written_at * 1000 >= voiceStatusExpiry.interval)) {
+                    window.jarvisState = "unavailable";
+                    return;
+                }
+                var st = d.state;
+                if (d.connection_state === "listening" && st !== "speaking" && st !== "thinking") {
+                    st = "listening";
+                }
+                window.jarvisState = st;
+                voiceStatusExpiry.restart();
+            } catch (e) {
+                window.jarvisState = "unavailable";
+            }
+        }
+    }
+
+    Timer {
+        id: voiceStatusExpiry
+        interval: 2500
+        onTriggered: window.jarvisState = "unavailable"
+    }
     readonly property Item activePanel: {
         const panels = {
             "control": controlPanel,
@@ -217,23 +253,56 @@ PanelWindow {
             opacity: window.clockRevealed ? 1 : 0
 
             ShellText {
-                width: parent.width / 2
+                width: (parent.width - 24) / 2
                 height: parent.height
                 horizontalAlignment: Text.AlignRight
                 verticalAlignment: Text.AlignVCenter
-                rightPadding: 6
+                rightPadding: 4
                 text: Qt.formatDateTime(clock.date, "HH:mm")
                 color: Theme.shellForeground
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
             }
 
+            // JARVIS Dynamic Core Indicator
+            Item {
+                width: 24
+                height: parent.height
+                anchors.verticalCenter: parent.verticalCenter
+
+                Rectangle {
+                    id: jarvisCore
+                    anchors.centerIn: parent
+                    width: window.jarvisState === "listening" || window.jarvisState === "speaking" ? 14 : 7
+                    height: 7
+                    radius: 3.5
+                    color: window.jarvisState === "unavailable" ? "#7f849c"
+                         : window.jarvisState === "thinking" ? "#f9e2af"
+                         : window.jarvisState === "speaking" ? "#94e2d5"
+                         : "#89dceb"
+
+                    SequentialAnimation on opacity {
+                        running: !ShellState.expanded
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 0.35; to: 1.0; duration: window.jarvisState === "thinking" ? 400 : 1200; easing.type: Easing.InOutQuad }
+                        NumberAnimation { from: 1.0; to: 0.35; duration: window.jarvisState === "thinking" ? 400 : 1200; easing.type: Easing.InOutQuad }
+                    }
+
+                    Behavior on width {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on color {
+                        ColorAnimation { duration: 200 }
+                    }
+                }
+            }
+
             ShellText {
-                width: parent.width / 2
+                width: (parent.width - 24) / 2
                 height: parent.height
                 horizontalAlignment: Text.AlignLeft
                 verticalAlignment: Text.AlignVCenter
-                leftPadding: 6
+                leftPadding: 4
                 text: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][clock.date.getDay()] + " " + Qt.formatDateTime(clock.date, "d/M")
                 color: Theme.shellForeground
                 font.pixelSize: 12

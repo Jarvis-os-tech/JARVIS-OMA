@@ -56,10 +56,9 @@ class NIMClient:
     ) -> NIMResponse:
         """Generate a chat completion using NVIDIA NIM with automatic model fallback."""
         target_model = model or self.cfg.model_primary
-        fallback_models = [
-            m for m in [self.cfg.model_deep_reasoning, self.cfg.model_flagship] if m != target_model
-        ]
-        candidate_models = [target_model] + fallback_models
+        candidate_models = dict.fromkeys(
+            (target_model, self.cfg.model_deep_reasoning, self.cfg.model_flagship)
+        )
 
         full_messages = []
         if system_prompt:
@@ -112,6 +111,9 @@ class NIMClient:
                         )
 
                     # Non-200 status code
+                    if resp.status_code in (401, 403):
+                        return NIMResponse(content="", model=current_model, success=False,
+                                           error=f"NVIDIA NIM rejected access (HTTP {resp.status_code}).")
                     err_text = resp.text
                     last_error = f"HTTP {resp.status_code} ({current_model}): {err_text[:300]}"
                     logger.warning("NIM call attempt %d failed: %s", attempt, last_error)

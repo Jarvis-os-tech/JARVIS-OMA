@@ -55,21 +55,31 @@ class LinkedInConfig:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.review_queue_dir.mkdir(parents=True, exist_ok=True)
 
-        if not self.api_key:
-            # 1. Environment variable
-            self.api_key = os.getenv("NVIDIA_NIM_API_KEY")
+        def _clean_key(k: Optional[str]) -> Optional[str]:
+            if not k or k.startswith("PASTE_YOUR_") or k.startswith("<") or k.startswith("YOUR_"):
+                return None
+            return k.strip()
 
-        if not self.api_key:
+        # Always preload root .env variables into environment if not present
+        root_env = self.base_dir.parent.parent / ".env"
+        loaded_root = _load_env_file(root_env)
+        for k, v in loaded_root.items():
+            if k not in os.environ and not v.startswith("PASTE_YOUR_"):
+                os.environ[k] = v
+
+        if not _clean_key(self.api_key):
+            # 1. Environment variables
+            self.api_key = _clean_key(os.getenv("NVIDIA_NIM_API_KEY")) or _clean_key(os.getenv("NVIDIA_API_KEY"))
+
+        if not _clean_key(self.api_key):
             # 2. Look in JARVIS OS root .env
-            root_env = self.base_dir.parent.parent / ".env"
-            loaded = _load_env_file(root_env)
-            self.api_key = loaded.get("NVIDIA_NIM_API_KEY")
+            self.api_key = _clean_key(loaded_root.get("NVIDIA_NIM_API_KEY")) or _clean_key(loaded_root.get("NVIDIA_API_KEY"))
 
-        if not self.api_key:
+        if not _clean_key(self.api_key):
             # 3. Look in local .env
             local_env = self.base_dir / ".env"
             loaded = _load_env_file(local_env)
-            self.api_key = loaded.get("NVIDIA_NIM_API_KEY")
+            self.api_key = _clean_key(loaded.get("NVIDIA_NIM_API_KEY")) or _clean_key(loaded.get("NVIDIA_API_KEY"))
 
 
 # Global default configuration instance

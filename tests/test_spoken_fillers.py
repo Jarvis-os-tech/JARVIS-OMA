@@ -70,7 +70,7 @@ def test_fillers_respect_input_privacy_and_preferences(state):
 
 
 @pytest.mark.asyncio
-async def test_long_wait_gets_one_ack_and_no_processing_notice(monkeypatch):
+async def test_long_wait_has_no_speculative_speech(monkeypatch):
     instance = voice()
     instance._start_reply_watch()
     instance._last_progress = 10
@@ -87,13 +87,12 @@ async def test_long_wait_gets_one_ack_and_no_processing_notice(monkeypatch):
     monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
-    assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
+    assert instance.player.queue.empty()
     assert instance._last_progress == 10
 
 
 @pytest.mark.asyncio
-async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypatch):
+async def test_closed_user_turn_waits_for_reply_or_admitted_work(monkeypatch):
     instance = voice()
     instance._start_reply_watch()
     instance._reply_wait_started_at = 10
@@ -110,8 +109,7 @@ async def test_closed_user_turn_gets_ack_without_waiting_for_cloud_tool(monkeypa
     monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', cycle)
     with pytest.raises(asyncio.CancelledError):
         await instance.monitor_response()
-    assert instance.player.queue.qsize() == 1
-    assert instance.player.queue.get_nowait()[1] == instance._reply_notices['filler_hmm']
+    assert instance.player.queue.empty()
     assert not instance._reply_started
 
 

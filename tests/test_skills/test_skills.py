@@ -347,6 +347,15 @@ class DynamicManifestTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(SkillError):
                 await skills.execute('open_application', {'name': 'firefox; shutdown'})
 
+    async def test_file_manager_alias_launches_catalogued_nautilus(self):
+        skills = self.make_desktop_skills()
+        with patch.object(skills, '_applications', return_value={'org.gnome.Nautilus.desktop': 'Files'}), \
+             patch.object(skills, '_launch', new=AsyncMock()) as launch:
+            result = await skills.execute('open_application', {'name': 'file manager'})
+            self.assertEqual(result['application'], 'Files')
+            launch.assert_awaited_once_with(
+                skills._commands['gtk-launch'], 'org.gnome.Nautilus.desktop')
+
     async def test_notification_uses_custom_app_name(self):
         skills = self.make_desktop_skills(app_name='Friday')
         skills._run = AsyncMock(return_value='')

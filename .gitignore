@@ -25,5 +25,7 @@ local.properties
 *.sqlite
 *.sqlite3
 memory/data/
+graphify-out/
+*.bak
 
 

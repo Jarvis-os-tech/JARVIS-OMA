@@ -75,7 +75,7 @@ arming_delay = 0.1                       # Brief delay (seconds) before arming t
 
 [fillers]
 # Enable instant local reflex loops bypassing cloud round-trip times
-enable_local_fillers = true
+enable_local_fillers = false
 
 # The directory holding pre-rendered or cached PCM snippets of your specific voice model
 filler_audio_dir = "~/.local/share/jarvis-oma/audio/fillers/"

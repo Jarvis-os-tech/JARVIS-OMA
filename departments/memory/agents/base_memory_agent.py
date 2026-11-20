@@ -5,9 +5,13 @@ Provides secret redacting, database handles, and Obsidian vault access.
 from abc import ABC
 from dataclasses import dataclass, field
 import logging
+import os
 from pathlib import Path
 import re
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
+
+from core.secret_env import is_secret_name
 
 from ..config import config, MemoryConfig
 from ..db import MemoryDatabase
@@ -24,6 +28,19 @@ SECRET_PATTERNS = [
     re.compile(r"(Bearer\s+[A-Za-z0-9\._\-]{20,})", re.IGNORECASE), # Bearer tokens
     re.compile(r"((?:password|secret|token)\s*[:=]\s*['\"][^'\"]{4,}['\"])", re.IGNORECASE),
 ]
+
+
+def write_private_text(path: Path, content: str) -> None:
+    """Replace a complete private file while preserving the previous version on write failure."""
+    with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as staged:
+        temporary = Path(staged.name)
+        try:
+            staged.write(content)
+            staged.flush()
+            os.fsync(staged.fileno())
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 @dataclass
@@ -58,6 +75,16 @@ class BaseMemoryAgent(ABC):
         for pattern in SECRET_PATTERNS:
             sanitized = pattern.sub("[REDACTED_SECRET]", sanitized)
         return sanitized
+
+    def redact_diagnostics(self, value):
+        if isinstance(value, dict):
+            return {str(key): "[REDACTED_SECRET]" if is_secret_name(str(key)) or str(key).lower() == "authorization"
+                    else self.redact_diagnostics(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self.redact_diagnostics(item) for item in value]
+        if isinstance(value, str):
+            return self.mask_secrets(value)
+        return value
 
     def ensure_obsidian_subfolder(self, layer_folder: str) -> Path:
         """Ensure an Obsidian layer directory exists."""

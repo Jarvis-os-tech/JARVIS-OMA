@@ -1,11 +1,42 @@
 import QtQuick
+import Quickshell.Io
 
 SciFiPanel {
     id: agentsPanel
     title: "AI AGENTS STATUS"
     titleColor: "#00e5ff"
     implicitWidth: 320
-    implicitHeight: 180
+    implicitHeight: 204
+    property string updateAgentStatus: "Scheduled"
+
+    function updateStatusLabel(raw) {
+        var status = String(raw || "scheduled")
+        if (status === "awaiting_approval") return "Waiting"
+        if (status === "timed_out") return "Timed out"
+        if (status === "approved") return "Approved"
+        if (status === "denied") return "Denied"
+        return "Scheduled"
+    }
+
+    FileView {
+        id: agentRegistry
+        path: "/home/g0pi/.local/state/jarvis/agents.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                var data = JSON.parse(text())
+                var records = Array.isArray(data.agents) ? data.agents : []
+                for (var i = 0; i < records.length; i++) {
+                    if (records[i].id === "omarchy-update-agent") {
+                        agentsPanel.updateAgentStatus = agentsPanel.updateStatusLabel(records[i].status)
+                        break
+                    }
+                }
+            } catch (e) {}
+        }
+    }
 
     Row {
         anchors.fill: parent
@@ -60,6 +91,15 @@ SciFiPanel {
                 Text { text: "✦"; color: "#38bdf8"; font.pixelSize: 11; width: 14 }
                 Text { text: "Antigravity"; color: "#8aa2b3"; font.pixelSize: 10; font.weight: Font.Medium; width: 90 }
                 Text { text: "Idle"; color: "#4f7285"; font.pixelSize: 9 }
+            }
+
+            // 6. Update Agent
+            Row {
+                width: parent.width
+                spacing: 8
+                Text { text: "󰚰"; color: "#f59e0b"; font.pixelSize: 11; width: 14; font.family: "JetBrainsMono Nerd Font" }
+                Text { text: "Update Agent"; color: "#d8f6ff"; font.pixelSize: 10; font.weight: Font.DemiBold; width: 90 }
+                Text { text: agentsPanel.updateAgentStatus; color: "#f59e0b"; font.pixelSize: 9; font.weight: Font.Bold }
             }
         }
 

@@ -23,12 +23,18 @@ CONTRACT = ROOT / "tests/behavior/contracts.json"
 def source_digest():
     """Fingerprint covered source and test inputs, excluding collected upstreams."""
     digest = hashlib.sha256()
-    directories = ('core', 'connectors', 'jarvis_control', 'jarvis_memory',
-                   'voice_layer', 'orchestration', 'skills', 'ui', 'scripts',
+    directories = ('audio', 'bin', 'core', 'connectors', 'departments', 'filesystem',
+                   'jarvis_control', 'jarvis_memory', 'learning', 'voice_layer',
+                   'orchestration', 'packaging', 'plugins', 'proactive', 'quickshell',
+                   'skills', 'systemd', 'ui', 'widget_engine', 'scripts',
                    'skill_manifests', 'configs', 'contracts', 'tests')
+    ignored_parts = {'__pycache__', '.pytest_cache', '.venv', '.git', 'state'}
     paths = [path for directory in directories for path in (ROOT / directory).rglob('*')
-             if path.is_file() and '__pycache__' not in path.parts
-             and path.suffix in {'.py', '.json', '.toml', '.qml', '.html', '.js'}]
+             if path.is_file() and not ignored_parts.intersection(path.relative_to(ROOT).parts)
+             and not path.name.startswith('.env')
+             and path.suffix not in {'.bak', '.pyc', '.db', '.db-shm', '.db-wal', '.sqlite', '.sqlite3', '.log'}]
+    paths.extend(path for pattern in ('*.py', '*.sh', '*.toml', '*.toml.example')
+                 for path in ROOT.glob(pattern) if path.is_file())
     paths.extend(ROOT.glob('requirements*.txt'))
     for path in sorted(paths):
         digest.update(str(path.relative_to(ROOT)).encode() + b'\0')

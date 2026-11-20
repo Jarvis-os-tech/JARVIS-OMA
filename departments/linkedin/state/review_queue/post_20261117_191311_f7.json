@@ -1,0 +1,17 @@
+{
+  "post_id": "post_20261117_191311_f7",
+  "created_at": "2026-11-17T19:13:11.829966",
+  "target_schedule": "2026-11-17 08:30",
+  "pillar": "Founder Story & Vulnerability",
+  "formula_code": "F7",
+  "char_count": 577,
+  "media_prompt": "Technical illustration / visual diagram illustrating: Winning second prize in the AWS Builders Club hackathon",
+  "humanizer_audit": {
+    "authenticity_pass": true,
+    "flagged_markers": [],
+    "char_count": 577,
+    "full_audit_report": "48 hours. One teammate. Second place at the AWS Builders Club hackathon.  \nWe teamed up with a colleague—had a vague idea and a ticking clock, and every minute counted.  \nLearning AWS services on the fly while syncing our vision was tougher than we expected.  \nPressure mounted as the clock ticked down.  \nAt the final hour we delivered a working prototype.  \nWe walked away with second prize and hands‑on AWS experience.  \n48‑hour sprint • Second place in the AWS Builders Club hackathon • Team of two  \nWhat’s the toughest deadline you’ve ever met, and what did it teach you?"
+  },
+  "status": "PENDING_JARVIS_USER_REVIEW",
+  "content": "48 hours. One teammate. Second place at the AWS Builders Club hackathon.  \nWe teamed up with a colleague—had a vague idea and a ticking clock, and every minute counted.  \nLearning AWS services on the fly while syncing our vision was tougher than we expected.  \nPressure mounted as the clock ticked down.  \nAt the final hour we delivered a working prototype.  \nWe walked away with second prize and hands‑on AWS experience.  \n48‑hour sprint • Second place in the AWS Builders Club hackathon • Team of two  \nWhat’s the toughest deadline you’ve ever met, and what did it teach you?"
+}

@@ -16,6 +16,20 @@ from typing import Any, Dict, List, Optional, Union
 from .paths import DEFAULT_CONFIG_DIR
 
 
+_MESSAGE_TABLE = """
+    CREATE TABLE IF NOT EXISTS session_messages (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        role       TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        channel    TEXT DEFAULT '',
+        timestamp  REAL,
+        metadata   TEXT DEFAULT '{}',
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+    )
+"""
+
+
 @dataclass(slots=True)
 class SessionIdentity:
     """Canonical user identity across channels."""
@@ -90,25 +104,34 @@ class SessionStore:
                 last_activity REAL,
                 metadata      TEXT DEFAULT '{}'
             );
-            CREATE TABLE IF NOT EXISTS session_messages (
-                id         INTEGER PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                role       TEXT NOT NULL,
-                content    TEXT NOT NULL,
-                channel    TEXT DEFAULT '',
-                timestamp  REAL,
-                metadata   TEXT DEFAULT '{}',
-                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_messages_session
-                ON session_messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_user
                 ON sessions(user_id);
             CREATE TABLE IF NOT EXISTS companion_message_ids (
                 external_id TEXT PRIMARY KEY
             );
         """)
-        self._conn.commit()
+        with self._conn:
+            self._conn.execute("BEGIN IMMEDIATE")
+            schema = self._conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'session_messages'"
+            ).fetchone()
+            if schema and 'AUTOINCREMENT' not in schema[0].upper():
+                self._conn.execute("ALTER TABLE session_messages RENAME TO session_messages_legacy")
+                self._conn.execute(_MESSAGE_TABLE)
+                self._conn.execute("""
+                    INSERT INTO session_messages (id, session_id, role, content, channel, timestamp, metadata)
+                    SELECT id, session_id, role, content, channel, timestamp, metadata
+                    FROM session_messages_legacy
+                """)
+                self._conn.execute("CREATE TABLE session_message_migration (last_legacy_id INTEGER NOT NULL)")
+                self._conn.execute("""
+                    INSERT INTO session_message_migration
+                    SELECT coalesce(max(id), 0) FROM session_messages_legacy
+                """)
+                self._conn.execute("DROP TABLE session_messages_legacy")
+            else:
+                self._conn.execute(_MESSAGE_TABLE)
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON session_messages(session_id)")
 
     def count_messages(self, user_id: Optional[str] = None) -> int:
         """Count total conversation messages across continuous history."""

@@ -9,7 +9,7 @@ import re
 
 
 CORE_TOOLS = frozenset({
-    'get_assistant_status', 'list_capabilities', 'enter_standby', 'pause_jarvis',
+    'get_assistant_status', 'list_capabilities', 'list_system_agents', 'enter_standby', 'pause_jarvis',
     'parse_command_values',
     'resume_jarvis', 'stop_all_jarvis_work', 'open_application', 'list_applications',
     'open_website', 'list_windows', 'focus_window', 'list_workspaces',
@@ -25,13 +25,14 @@ CORE_TOOLS = frozenset({
     'shutdown_system', 'restart_system', 'lock_screen', 'confirm_system_action', 'cancel_system_action', 'system_power', 'control_power',
     'linkedin_draft_post', 'linkedin_plan_sprint', 'linkedin_audit_profile', 'linkedin_pending_reviews', 'linkedin_approve_post', 'linkedin_sync_profile', 'linkedin_propose_tool',
     'reach_search', 'reach_read', 'reach_transcript', 'reach_status',
+    'yt_brain_search', 'yt_brain_get', 'yt_brain_topics', 'yt_brain_status',
     'run_shell', 'run_in_terminal', 'read_terminal', 'watch_terminal',
     'hypr_dispatch', 'hypr_query', 'read_screen', 'click_text', 'file_operation', 'system_control',
     'omarchy_cli', 'omarchy_help',
 })
 META_TOOLS = frozenset({'discover_domain_tools', 'execute_domain_tool', 'parse_command_values'})
 DOMAINS = ('core', 'desktop', 'filesystem', 'memory', 'workspace', 'github',
-           'gui', 'cli_anything', 'api_anything', 'integrations', 'orchestration', 'learning', 'phone', 'vision', 'composio', 'linkedin', 'agent_reach')
+           'gui', 'cli_anything', 'api_anything', 'integrations', 'orchestration', 'learning', 'phone', 'vision', 'composio', 'linkedin', 'agent_reach', 'yt_brain')
 
 _ORCHESTRATION = frozenset({
     'get_hermes_events',
@@ -59,7 +60,8 @@ def domain_for_tool(name):
     for prefix, domain in (('github_', 'github'), ('gui_', 'gui'), ('cli_hub_', 'cli_anything'),
                            ('api_anything_', 'api_anything'), ('integration_', 'integrations'),
                            ('phone_', 'phone'), ('composio_', 'composio'), ('disconnect_platform', 'composio'),
-                           ('linkedin_', 'linkedin'), ('reach_', 'agent_reach'), ('agent_reach_', 'agent_reach')):
+                           ('linkedin_', 'linkedin'), ('reach_', 'agent_reach'), ('agent_reach_', 'agent_reach'),
+                           ('yt_brain_', 'yt_brain'), ('yt_', 'yt_brain')):
         if name.startswith(prefix):
             return domain
     if name in _ORCHESTRATION:
@@ -89,11 +91,12 @@ def intent_domains(command):
         'integrations': r'\b(integration|integrations|service health|connector status)\b',
         'composio': r'\b(composio|connector|connectors|oauth)\b',
         'linkedin': r'\b(linkedin|linkedin post|linkedin profile|linkedin hook|linkedin draft)\b',
-        'orchestration': r'\b(delegate|agent|codex|claude|hermes|kanban|kanboard|cron|cronjob|development|background job)\b',
+        'orchestration': r'\b(delegate|agents?|codex|claude|hermes|kanban|kanboard|cron|cronjob|development|background job)\b',
         'learning': r'\b(harness|research feedback|refinement|learning)\b',
         'phone': r'\b(phone|call|contact|dtmf|hang up)\b',
         'vision': r'\b(camera|vision|video|webcam)\b',
         'agent_reach': r'\b(agent.reach|reach|bilibili|xiaohongshu|xhs|reddit|v2ex|xueqiu|transcript|subtitles)\b',
+        'yt_brain': r'\b(yt|youtube|yt.brain|youtube.brain|video notes|video brain)\b',
         'filesystem': r'\b(file|directory|folder|path|copy|append|trash)\b',
         'memory': r'\b(memory|remember|recall|forget|obsidian)\b',
         'desktop': r'\b(volume|brightness|wifi|bluetooth|remind|reminder|todo|theme|desktop|notification|shutdown|shut down|restart|reboot|power|lock screen|screen lock)\b',

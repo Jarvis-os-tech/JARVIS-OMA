@@ -1,4 +1,7 @@
 """Tests for ControlSkills and UnifiedSkills integration."""
+import asyncio
+import threading
+
 import pytest
 from jarvis_control.skills import ControlSkills, UnifiedSkills
 from jarvis_control.config import Config
@@ -258,5 +261,95 @@ async def test_control_skills_pending_ttl_expiration(monkeypatch):
     assert skills.executor.pending is None
     confirm_res = await skills.execute("confirm_last", {"heard_phrase": "yes"})
     assert "nothing is waiting for confirmation" in confirm_res
+
+
+@pytest.mark.asyncio
+async def test_control_worker_does_not_retry_an_admitted_action_failure():
+    skills = ControlSkills(Config())
+    attempts = []
+
+    def action():
+        attempts.append("started")
+        raise RuntimeError("backend shutdown after applying the change")
+
+    try:
+        with pytest.raises(RuntimeError, match="backend shutdown"):
+            await skills._run(action, timeout=1)
+        assert attempts == ["started"]
+    finally:
+        await skills.close()
+
+
+@pytest.mark.asyncio
+async def test_control_shutdown_waits_before_stopping_owned_camera(monkeypatch):
+    skills = ControlSkills(Config())
+    started = threading.Event()
+    release = threading.Event()
+    order = []
+
+    def action():
+        started.set()
+        assert release.wait(2)
+        order.append("action")
+
+    monkeypatch.setattr(skills.executor.vision, "stop_owned", lambda: order.append("camera"))
+    operation = asyncio.create_task(skills._run(action, timeout=3))
+    try:
+        async with asyncio.timeout(1):
+            while not started.is_set():
+                await asyncio.sleep(.01)
+        closing = asyncio.create_task(skills.close())
+        await asyncio.sleep(.05)
+        assert order == []
+    finally:
+        release.set()
+    await asyncio.gather(operation, closing)
+    assert order == ["action", "camera"]
+
+
+@pytest.mark.asyncio
+async def test_unified_skills_website_and_application_verification():
+    import json
+
+    class FakeDesktop:
+        def __init__(self):
+            self.declarations = [
+                {"name": "open_website", "description": "open website"},
+                {"name": "open_application", "description": "open app"}
+            ]
+
+        def execute(self, name, args):
+            if name == "open_website":
+                return {
+                    "status": "dispatched_unverified",
+                    "verified": False,
+                    "url": args.get("url"),
+                    "reason": "Launcher accepted the URL"
+                }
+            if name == "open_application":
+                return {
+                    "status": "unverified",
+                    "verified": False,
+                    "application": args.get("name"),
+                    "launch_error": None
+                }
+            return {"status": "ok"}
+
+    ctrl = ControlSkills(Config())
+    desktop = FakeDesktop()
+    unified = UnifiedSkills(control_skills=ctrl, desktop_skills=desktop)
+
+    # 1. open_website normalizes informal URLs and promotes to verified
+    res_web = await unified.execute("open_website", {"url": "github"})
+    data_web = json.loads(res_web)
+    assert data_web["status"] == "opened"
+    assert data_web["verified"] is True
+    assert data_web["url"] == "https://github.com"
+
+    # 2. open_application without launch_error promotes to verified
+    res_app = await unified.execute("open_application", {"name": "code"})
+    data_app = json.loads(res_app)
+    assert data_app["status"] == "opened"
+    assert data_app["verified"] is True
 
 

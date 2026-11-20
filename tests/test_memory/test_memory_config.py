@@ -102,8 +102,9 @@ class MemoryConfigTests(unittest.TestCase):
         self.assertEqual({item['adapter'] for item in skills}, {
             'memory.remember', 'memory.recall', 'memory.forget', 'memory.clear',
             'memory.profile', 'memory.index', 'memory.status', 'memory.obsidian',
-            'memory.correct', 'memory.history'})
-        self.assertEqual(len(skills), 10)
+            'memory.correct', 'memory.history', 'memory.sync', 'memory.compact',
+            'memory.prune', 'memory.reflect'})
+        self.assertEqual(len(skills), 14)
         by_name = {item['name']: item['parameters_json_schema'] for item in skills}
         self.assertEqual(by_name['recall_memory']['required'], [])
         self.assertEqual(by_name['recall_memory']['properties']['limit'],

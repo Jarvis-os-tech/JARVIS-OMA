@@ -25,9 +25,10 @@ def dir_is_private(path: Path) -> bool:
 def load_env(api_key_env="GEMINI_API_KEY"):
     config_home = Path(os.environ.get('XDG_CONFIG_HOME', CONFIG_HOME))
     env_file = config_home / 'jarvis-voice' / 'env'
+    cfg_dot_env = config_home / 'jarvis-voice' / '.env'
     project_env = Path(__file__).resolve().parents[1] / '.env'
     
-    for f in (env_file, project_env):
+    for f in (env_file, cfg_dot_env, project_env):
         if f.is_file():
             for line in f.read_text(encoding='utf-8').splitlines():
                 line = line.strip()
@@ -38,16 +39,35 @@ def load_env(api_key_env="GEMINI_API_KEY"):
                 name, value = line.split('=', 1)
                 name = name.strip()
                 val = value.strip().strip('"\'')
-                if name and val and name not in os.environ:
-                    os.environ[name] = val
+                if name and val:
+                    curr = os.environ.get(name, "")
+                    if name not in os.environ or curr.startswith("PASTE_"):
+                        os.environ[name] = val
 
     # If GEMINI_API_KEY is not set directly, check numbered keys (e.g. GEMINI_API_KEY_1, GEMINI_API_KEY_4)
-    if 'GEMINI_API_KEY' not in os.environ:
-        for suffix in ('_1', '_4', '_3', '_5', '_2'):
+    if 'GEMINI_API_KEY' not in os.environ or os.environ.get('GEMINI_API_KEY', '').startswith('PASTE_'):
+        for suffix in ('_1', '_2', '_3', '_4', '_5', '_6', '_7'):
             alt = f"GEMINI_API_KEY{suffix}"
-            if alt in os.environ and os.environ[alt]:
+            if alt in os.environ and os.environ[alt] and not os.environ[alt].startswith('PASTE_'):
                 os.environ['GEMINI_API_KEY'] = os.environ[alt]
                 break
+
+    if 'GEMINI_API_KEY' in os.environ and not os.environ.get('GOOGLE_API_KEY'):
+        os.environ['GOOGLE_API_KEY'] = os.environ['GEMINI_API_KEY']
+
+    if not os.environ.get('GROQ_API_KEY'):
+        for suffix in ('_1', '_2', '_3'):
+            alt = f"GROQ_API_KEY{suffix}"
+            if alt in os.environ and os.environ[alt]:
+                os.environ['GROQ_API_KEY'] = os.environ[alt]
+                break
+
+    nim_key = os.environ.get('NVIDIA_NIM_API_KEY', '')
+    nv_key = os.environ.get('NVIDIA_API_KEY', '')
+    if (not nim_key or nim_key.startswith('PASTE_')) and nv_key and not nv_key.startswith('PASTE_'):
+        os.environ['NVIDIA_NIM_API_KEY'] = nv_key
+    elif (not nv_key or nv_key.startswith('PASTE_')) and nim_key and not nim_key.startswith('PASTE_'):
+        os.environ['NVIDIA_API_KEY'] = nim_key
 
 
 @dataclass
@@ -106,14 +126,30 @@ class FillerConfig:
 
 
 @dataclass
+class DecisionConfig:
+    enabled: bool = True
+    model: str = 'gemini-decision-1'
+    timeout_seconds: float = 2.5
+
+    def validate(self):
+        if not isinstance(self.enabled, bool):
+            raise ValueError('decision.enabled must be a boolean')
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ValueError('decision.model must be a nonempty string')
+        if not isinstance(self.timeout_seconds, (int, float)) or isinstance(self.timeout_seconds, bool) or self.timeout_seconds <= 0:
+            raise ValueError('decision.timeout_seconds must be a positive number')
+        return self
+
+
+@dataclass
 class Config:
     model: str = 'gemini-3.8-live'
     voice: str = 'Aoede'
     device: str = ''  # Microphone source only
     output_device: str = ''  # Speaker sink; empty uses the system default
     barge_in: bool = False
-    barge_in_min_rms: float = 0.004
-    barge_in_echo_threshold: float = 0.45
+    barge_in_min_rms: float = 0.018
+    barge_in_echo_threshold: float = 0.40
     barge_in_vad_threshold: float = 0.50
     autostart_listening: bool = True
     greet_on_start: bool = True
@@ -127,15 +163,17 @@ class Config:
     dry_run: bool = False
     tasks_enabled: bool = True
     vision_enabled: bool = False
+    auto_vad: bool = True
     control: dict = field(default_factory=dict)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     standby: StandbyConfig = field(default_factory=StandbyConfig)
     fillers: FillerConfig = field(default_factory=FillerConfig)
     local_speech: LocalSpeechConfig = field(default_factory=LocalSpeechConfig)
+    decision: DecisionConfig = field(default_factory=DecisionConfig)
 
     def validate(self):
         for name in ('barge_in', 'autostart_listening', 'greet_on_start', 'enable_tools',
-                     'allow_shell', 'dry_run', 'tasks_enabled', 'vision_enabled'):
+                     'allow_shell', 'dry_run', 'tasks_enabled', 'vision_enabled', 'auto_vad'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'{name} must be a boolean')
         for name in ('model', 'voice', 'device', 'output_device', 'api_key_env', 'language'):
@@ -156,6 +194,7 @@ class Config:
         self.standby.validate()
         self.fillers.validate()
         self.local_speech.validate()
+        self.decision.validate()
         return self
 
 
@@ -184,12 +223,14 @@ def load() -> Config:
             raise ValueError('Unsupported jarvis-voice setting: ' + ', '.join(sorted(unknown)))
         standby_data = data.pop('standby', {})
         speech_data = data.pop('local_speech', {})
+        decision = DecisionConfig(**data.pop('decision', {}))
         needle_root = Path(os.environ.get('JARVIS_NEEDLE_HOME', Path.home() / '.local/share/jarvis-runtime/needle'))
         speech_data.setdefault('needle_enabled', (needle_root / 'enabled').is_file())
         local_speech = LocalSpeechConfig(**speech_data)
         standby_cfg = StandbyConfig(**standby_data) if isinstance(standby_data, dict) else StandbyConfig()
         data.pop('memory', None)
-        return Config(**data, standby=standby_cfg, fillers=fillers_cfg, local_speech=local_speech, memory=load_memory_config(path).memory).validate()
+        return Config(**data, standby=standby_cfg, fillers=fillers_cfg, local_speech=local_speech,
+                      decision=decision, memory=load_memory_config(path).memory).validate()
     return Config(memory=load_memory_config().memory).validate()
 
 

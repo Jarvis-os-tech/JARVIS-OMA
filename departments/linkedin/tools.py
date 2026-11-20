@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("departments.linkedin.tools")
@@ -70,6 +71,7 @@ class LinkedInTools:
         commentary: str,
         visibility: str = "PUBLIC",
         asset_urn: Optional[str] = None,
+        image_path: Optional[str] = None,
     ) -> ToolExecutionResult:
         """Create a new post on LinkedIn for the authenticated user."""
         author_urn = self.resolve_author_urn()
@@ -88,6 +90,27 @@ class LinkedInTools:
         if asset_urn:
             args["media"] = {"id": asset_urn}
 
+        if image_path is not None:
+            from composio.core.models._files import FileUploadable
+            from connectors import composio
+
+            image = Path(image_path).expanduser()
+            if not image.is_absolute() or not image.is_file() or image.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+                return ToolExecutionResult(success=False, error="Provide an existing local PNG or JPEG image.")
+            slug = "LINKEDIN_CREATE_LINKED_IN_POST"
+            try:
+                upload = FileUploadable.from_path(
+                    client=composio.get_client().client, file=image, tool=slug, toolkit="linkedin",
+                )
+            except Exception as error:
+                return ToolExecutionResult(success=False, error=f"Image upload failed ({type(error).__name__}).")
+            args["images"] = [upload.model_dump()]
+            receipt = composio.execute_tool(slug, args)
+            data = receipt.get("data")
+            if receipt["success"] and isinstance(data, dict) and data.get("x_restli_id"):
+                return ToolExecutionResult(success=True, data=data)
+            return ToolExecutionResult(success=False, error=receipt.get("error") or "LinkedIn returned no post ID.")
+
         return self._execute_composio("create post", args)
 
     def register_image_upload(self, recipe: str = "urn:li:digitalmediaRecipe:feedshare-image") -> ToolExecutionResult:
@@ -103,7 +126,7 @@ class LinkedInTools:
 
     def get_post_content(self, post_urn: str) -> ToolExecutionResult:
         """Retrieve post content and metrics."""
-        return self._execute_composio("get post content", {"post_urn": post_urn})
+        return self._execute_composio("get post content", {"post_id": post_urn})
 
     def delete_post(self, post_urn: str) -> ToolExecutionResult:
         """Delete a post by URN."""

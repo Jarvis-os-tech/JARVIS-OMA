@@ -51,6 +51,14 @@ def test_live_setup_preserves_model_protocol_and_voice(model, expected):
     assert validated.speech_config.voice_config.prebuilt_voice_config.voice_name == 'Aoede'
 
 
+def test_linkedin_department_routing_does_not_require_hermes():
+    prompt = system_persona({'discover_domain_tools', 'execute_domain_tool'})
+    assert 'The LinkedIn Department owns requests to work on LinkedIn' in prompt
+    assert 'discover the linkedin domain' in prompt
+    assert 'Use API Anything for operations on online services other than LinkedIn and\nGoogle Workspace' in prompt
+    assert 'Google Workspace Department' in prompt
+
+
 def test_system_contract_uses_evidence_and_scoped_execution():
     prompt = system_persona()
     for rule in ('system voice and interaction layer', 'Think privately',

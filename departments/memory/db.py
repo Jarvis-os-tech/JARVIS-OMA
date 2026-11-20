@@ -9,9 +9,21 @@ import logging
 from pathlib import Path
 import sqlite3
 import time
+from threading import local
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 logger = logging.getLogger("departments.memory.db")
+
+
+ACTIVE_NODE = """
+    (n.ttl_expires_at IS NULL OR n.ttl_expires_at > unixepoch())
+    AND NOT EXISTS (
+        SELECT 1 FROM memory_edges e
+        JOIN memory_nodes newer ON newer.id = e.source_id
+        WHERE e.relation = 'supersedes' AND e.target_id = n.id
+        AND (newer.ttl_expires_at IS NULL OR newer.ttl_expires_at > unixepoch())
+    )
+"""
 
 
 class MemoryDatabase:
@@ -21,6 +33,7 @@ class MemoryDatabase:
         self.db_path = Path(db_path).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.schema_path = schema_path or (Path(__file__).resolve().parent / "schema.sql")
+        self._transaction = local()
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -40,11 +53,26 @@ class MemoryDatabase:
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Context manager for thread-safe scoped connections."""
+        current = getattr(self._transaction, "connection", None)
+        if current is not None:
+            yield current
+            return
         conn = self._get_connection()
         try:
             yield conn
         finally:
             conn.close()
+
+    @contextmanager
+    def write_transaction(self):
+        with self.connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._transaction.connection = conn
+            try:
+                with conn:
+                    yield conn
+            finally:
+                del self._transaction.connection
 
     def _init_db(self) -> None:
         """Execute schema.sql if database tables are not yet initialized."""
@@ -232,6 +260,7 @@ class MemoryDatabase:
             mg.depth
         FROM memory_graph mg
         JOIN memory_nodes n ON mg.target_id = n.id
+        WHERE {ACTIVE_NODE}
         ORDER BY mg.depth ASC, n.importance DESC;
         """
 
@@ -255,6 +284,7 @@ class MemoryDatabase:
         query: str,
         limit: int = 5,
         layer: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search memory nodes using SQLite FTS5 with BM25 ranking."""
         clean_query = "".join(c for c in query if c.isalnum() or c in (" ", "-", "_", "*")).strip()
@@ -272,6 +302,9 @@ class MemoryDatabase:
         if layer:
             layer_clause = "AND n.layer = ?"
             params.append(layer)
+        if category is not None:
+            layer_clause += " AND n.category = ?"
+            params.append(category)
         params.append(limit)
 
         sql = f"""
@@ -284,12 +317,13 @@ class MemoryDatabase:
             n.importance,
             n.provenance,
             n.obsidian_path,
+            n.ttl_expires_at,
             n.updated_at,
             bm25(memory_fts) AS rank_score
         FROM memory_fts f
         JOIN memory_nodes n ON f.id = n.id
-        WHERE memory_fts MATCH ? {layer_clause}
-        ORDER BY rank_score ASC, n.importance DESC
+        WHERE memory_fts MATCH ? {layer_clause} AND {ACTIVE_NODE}
+        ORDER BY rank_score ASC, n.importance DESC, n.id
         LIMIT ?;
         """
 
@@ -298,8 +332,15 @@ class MemoryDatabase:
                 rows = conn.execute(sql, params).fetchall()
                 return [dict(r) for r in rows]
             except sqlite3.OperationalError as e:
-                logger.warning("FTS search error for query '%s': %s", fts_expr, e)
+                logger.warning("FTS search failed: %s", type(e).__name__)
                 return []
+
+    def nodes_for_note(self, path: str) -> List[Dict[str, Any]]:
+        with self.connection() as conn:
+            return [dict(row) for row in conn.execute(
+                f"SELECT n.* FROM memory_nodes n WHERE n.obsidian_path = ? AND {ACTIVE_NODE} ORDER BY n.id",
+                (path,),
+            )]
 
     # -------------------------------------------------------------------------
     # Replayable Execution Traces (for evolution.py self-improvement)
@@ -347,7 +388,7 @@ class MemoryDatabase:
         sql = """
         SELECT * FROM episodic_traces
         WHERE exit_code != 0
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, rowid DESC
         LIMIT ?;
         """
         with self.connection() as conn:

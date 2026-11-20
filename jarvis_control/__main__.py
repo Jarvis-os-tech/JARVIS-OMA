@@ -39,8 +39,12 @@ def main(argv: list[str] | None = None) -> int:
     ground_parser.add_argument("query", help="Query to ground with search")
 
     # doctor
-    doctor = subparsers.add_parser("doctor", help="Check JARVIS dependencies without using providers or devices")
-    doctor.add_argument('--json', action='store_true')
+    doctor = subparsers.add_parser("doctor", help="Check and auto-repair JARVIS issues (temp & long-term)")
+    doctor.add_argument('--json', action='store_true', help="Output diagnostics report in JSON format")
+    doctor.add_argument('--fix', action='store_true', default=True, help="Auto-fix detected issues (default: True)")
+    doctor.add_argument('--check-only', '--no-fix', dest='fix', action='store_false', help="Check only without fixing")
+    doctor.add_argument('--temp-only', action='store_true', help="Fix only temporary/runtime issues")
+    doctor.add_argument('--long-only', action='store_true', help="Fix only long-term/structural issues")
 
     vision = subparsers.add_parser('vision', help='On-demand physical camera preview and inspection')
     vision.add_argument('action', choices=['start', 'inspect', 'status', 'stop', 'quit'])
@@ -116,15 +120,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res.get("ok") else 1
 
     elif args.command == "doctor":
-        from .diagnostics import report
-        result = report(voice_config, config)
-        if args.json:
-            print(json.dumps(result, indent=2))
-        else:
-            print('JARVIS diagnostics (no audio, camera or model calls)')
-            for name, check in result['checks'].items():
-                print(f"{'PASS' if check['ok'] else 'MISSING'}: {name}: {check['detail']}")
-        return 0 if result['ok'] else 1
+        from .diagnostics import run_doctor
+        return run_doctor(
+            voice_config,
+            config,
+            fix=args.fix,
+            json_output=args.json,
+            temp_only=getattr(args, 'temp_only', False),
+            long_only=getattr(args, 'long_only', False),
+        )
 
     elif args.command == 'vision':
         from .vision import VisionClient

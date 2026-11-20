@@ -42,6 +42,9 @@ def test_installed_commands_and_distributed_config(tmp_path):
     assert (installed / 'jarvis_control/web_text.py').is_file()
     assert (installed / 'voice_layer/background.py').is_file()
     assert (installed / 'skill_manifests/vision.json').is_file()
+    assert (installed / 'departments/memory/schema.sql').is_file()
+    assert not (installed / 'departments/memory/state').exists()
+    assert not (installed / 'scripts/jarvis-shell-hook.sh.jarvis.bak').exists()
     interpreter = installed / '.venv/bin/python'
     run(str(interpreter), '-c',
         'import sys; sys.path.insert(0, ' + repr(str(installed)) + '); '

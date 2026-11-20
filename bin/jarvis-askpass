@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 "exec" "/home/g0pi/JARVIS OS/.venv/bin/python" "$0" "$@"
+import getpass
 import os
 import sys
 import tkinter as tk
+from tkinter import font as tkfont
+
 
 def main():
     reason = os.environ.get("JARVIS_SUDO_REASON", "Administrative privileges required for this system action.")
@@ -21,89 +24,206 @@ def main():
         sys.exit(1)
 
     root.title("JARVIS Privileged Action")
-    root.geometry("480x240")
+    W, H = 560, 350
+    root.geometry(f"{W}x{H}")
     root.resizable(False, False)
-    root.configure(bg="#181825")
 
-    # Dark Palette (Catppuccin Mocha themed)
-    BG = "#181825"
-    CARD_BG = "#1e1e2e"
-    TEXT_MAIN = "#cdd6f4"
-    ACCENT = "#89b4fa"
-    CMD_BG = "#11111b"
-    BORDER = "#313244"
-    BTN_BG = "#89b4fa"
-    BTN_FG = "#11111b"
-    BTN_CANCEL_BG = "#313244"
+    # Catppuccin Mocha Theme Palette (Look B)
+    BG_BASE = "#1e1e2e"       # Base
+    BG_MANTLE = "#181825"     # Mantle
+    BG_CRUST = "#11111b"      # Crust
+    SURFACE_0 = "#313244"     # Border / separator
+    SURFACE_1 = "#45475a"     # Surface / hover
+    TEXT_MAIN = "#cdd6f4"     # Main foreground
+    TEXT_SUB = "#a6adc8"      # Subtext
+    TEXT_MUTED = "#6c7086"    # Muted / overlay
+    ACCENT_BLUE = "#89b4fa"   # Sapphire / Accent blue
+    ACCENT_GREEN = "#a6e3a1"  # Success green
+    ACCENT_HOVER = "#b4befe"  # Lavender hover
 
-    # Container
-    frame = tk.Frame(root, bg=BG, padx=16, pady=12)
-    frame.pack(fill=tk.BOTH, expand=True)
+    root.configure(bg=BG_BASE)
 
-    # Header
-    hdr_frame = tk.Frame(frame, bg=BG)
-    hdr_frame.pack(fill=tk.X, pady=(0, 6))
+    # Detect optimal fonts
+    families = set(tkfont.families())
+    mono_font = "JetBrainsMono Nerd Font" if "JetBrainsMono Nerd Font" in families else "Monospace"
+    sans_font = "Noto Sans" if "Noto Sans" in families else "Sans"
 
-    icon_label = tk.Label(hdr_frame, text="🛡️", font=("Sans", 13), bg=BG, fg=ACCENT)
-    icon_label.pack(side=tk.LEFT, padx=(0, 8))
+    current_user = getpass.getuser()
 
-    title_label = tk.Label(
-        hdr_frame,
-        text="JARVIS Privileged Action",
-        font=("Sans", 12, "bold"),
-        bg=BG,
-        fg=ACCENT
+    # Outer Container Frame with consistent margins
+    outer = tk.Frame(root, bg=BG_BASE, padx=20, pady=16)
+    outer.pack(fill=tk.BOTH, expand=True)
+
+    # 1. Header Row
+    hdr_row = tk.Frame(outer, bg=BG_BASE)
+    hdr_row.pack(fill=tk.X, pady=(0, 10))
+
+    hdr_left = tk.Frame(hdr_row, bg=BG_BASE)
+    hdr_left.pack(side=tk.LEFT)
+
+    title_badge = tk.Label(
+        hdr_left,
+        text="JARVIS",
+        font=(sans_font, 9, "bold"),
+        bg=BG_MANTLE,
+        fg=ACCENT_BLUE,
+        highlightbackground=SURFACE_0,
+        highlightthickness=1,
+        padx=6,
+        pady=2
     )
-    title_label.pack(side=tk.LEFT)
+    title_badge.pack(side=tk.LEFT, padx=(0, 8))
 
-    # Reason (Why it is needed)
-    reason_label = tk.Label(
-        frame,
+    title_lbl = tk.Label(
+        hdr_left,
+        text="Privileged Action Request",
+        font=(sans_font, 11, "bold"),
+        bg=BG_BASE,
+        fg=ACCENT_BLUE
+    )
+    title_lbl.pack(side=tk.LEFT)
+
+    # User Pill Badge (Right-aligned)
+    user_pill = tk.Frame(hdr_row, bg=BG_MANTLE, highlightbackground=SURFACE_0, highlightthickness=1, padx=8, pady=2)
+    user_pill.pack(side=tk.RIGHT)
+
+    user_dot = tk.Label(user_pill, text="●", font=(sans_font, 7), bg=BG_MANTLE, fg=ACCENT_GREEN)
+    user_dot.pack(side=tk.LEFT, padx=(0, 4))
+
+    user_lbl = tk.Label(
+        user_pill,
+        text=f"user: {current_user}",
+        font=(mono_font, 8),
+        bg=BG_MANTLE,
+        fg=TEXT_SUB
+    )
+    user_lbl.pack(side=tk.LEFT)
+
+    # 2. Spoken Aloud Notification Banner
+    voice_banner = tk.Frame(outer, bg=BG_MANTLE, highlightbackground=SURFACE_0, highlightthickness=1, padx=8, pady=4)
+    voice_banner.pack(fill=tk.X, pady=(0, 10))
+
+    v_icon = tk.Label(voice_banner, text="📢", font=(sans_font, 9), bg=BG_MANTLE, fg=ACCENT_BLUE)
+    v_icon.pack(side=tk.LEFT, padx=(0, 6))
+
+    v_lbl = tk.Label(
+        voice_banner,
+        text="Audio explanation dispatched aloud to speakers via JARVIS voice synthesis",
+        font=(sans_font, 8, "italic"),
+        bg=BG_MANTLE,
+        fg=TEXT_SUB
+    )
+    v_lbl.pack(side=tk.LEFT)
+
+    # 3. Reason Section
+    reason_sec = tk.Frame(outer, bg=BG_BASE)
+    reason_sec.pack(fill=tk.X, pady=(0, 8))
+
+    reason_tag = tk.Label(
+        reason_sec,
+        text="REASON FOR ELEVATION",
+        font=(sans_font, 8, "bold"),
+        bg=BG_BASE,
+        fg=TEXT_MUTED,
+        anchor="w"
+    )
+    reason_tag.pack(fill=tk.X, pady=(0, 2))
+
+    reason_txt = tk.Label(
+        reason_sec,
         text=reason,
-        font=("Sans", 10),
-        bg=BG,
+        font=(sans_font, 10),
+        bg=BG_BASE,
         fg=TEXT_MAIN,
-        wraplength=440,
-        justify=tk.LEFT
+        wraplength=515,
+        justify=tk.LEFT,
+        anchor="w"
     )
-    reason_label.pack(fill=tk.X, pady=(0, 6), anchor="w")
+    reason_txt.pack(fill=tk.X)
 
-    # Command preview (dark monospaced box)
-    cmd_frame = tk.Frame(frame, bg=CMD_BG, highlightbackground=BORDER, highlightthickness=1, padx=6, pady=4)
-    cmd_frame.pack(fill=tk.X, pady=(0, 10))
+    # 4. Command Preview Section
+    cmd_sec = tk.Frame(outer, bg=BG_BASE)
+    cmd_sec.pack(fill=tk.X, pady=(0, 10))
 
-    cmd_preview = f"$ {cmd}"
+    cmd_tag = tk.Label(
+        cmd_sec,
+        text="TARGET COMMAND",
+        font=(sans_font, 8, "bold"),
+        bg=BG_BASE,
+        fg=TEXT_MUTED,
+        anchor="w"
+    )
+    cmd_tag.pack(fill=tk.X, pady=(0, 2))
+
+    cmd_box = tk.Frame(cmd_sec, bg=BG_CRUST, highlightbackground=SURFACE_0, highlightthickness=1, padx=8, pady=5)
+    cmd_box.pack(fill=tk.X)
+
+    cmd_preview = f"$ sudo {cmd}" if not cmd.startswith("sudo") else f"$ {cmd}"
     if len(cmd_preview) > 65:
         cmd_preview = cmd_preview[:62] + "..."
 
-    cmd_label = tk.Label(
-        cmd_frame,
+    cmd_lbl = tk.Label(
+        cmd_box,
         text=cmd_preview,
-        font=("Monospace", 9),
-        bg=CMD_BG,
-        fg="#a6e3a1",
+        font=(mono_font, 9),
+        bg=BG_CRUST,
+        fg=ACCENT_GREEN,
         anchor="w"
     )
-    cmd_label.pack(fill=tk.X)
+    cmd_lbl.pack(fill=tk.X)
 
-    # Password input row
-    input_frame = tk.Frame(frame, bg=BG)
-    input_frame.pack(fill=tk.X, pady=(0, 10))
+    # 5. Password Section
+    pwd_sec = tk.Frame(outer, bg=BG_BASE)
+    pwd_sec.pack(fill=tk.X, pady=(0, 12))
+
+    pwd_tag = tk.Label(
+        pwd_sec,
+        text="ADMINISTRATOR PASSWORD",
+        font=(sans_font, 8, "bold"),
+        bg=BG_BASE,
+        fg=TEXT_MUTED,
+        anchor="w"
+    )
+    pwd_tag.pack(fill=tk.X, pady=(0, 3))
+
+    entry_wrap = tk.Frame(pwd_sec, bg=BG_MANTLE, highlightbackground=SURFACE_0, highlightthickness=1)
+    entry_wrap.pack(fill=tk.X)
 
     pwd_entry = tk.Entry(
-        input_frame,
+        entry_wrap,
         show="•",
-        font=("Sans", 11),
-        bg=CARD_BG,
+        font=(sans_font, 11),
+        bg=BG_MANTLE,
         fg=TEXT_MAIN,
-        insertbackground=ACCENT,
-        highlightbackground=BORDER,
-        highlightcolor=ACCENT,
-        highlightthickness=1,
-        relief=tk.FLAT
+        insertbackground=ACCENT_BLUE,
+        relief=tk.FLAT,
+        highlightthickness=0
     )
-    pwd_entry.pack(fill=tk.X, ipady=4)
+    pwd_entry.pack(fill=tk.X, padx=8, ipady=4)
+
+    def on_entry_focus_in(event):
+        entry_wrap.configure(highlightbackground=ACCENT_BLUE, highlightthickness=1)
+
+    def on_entry_focus_out(event):
+        entry_wrap.configure(highlightbackground=SURFACE_0, highlightthickness=1)
+
+    pwd_entry.bind("<FocusIn>", on_entry_focus_in)
+    pwd_entry.bind("<FocusOut>", on_entry_focus_out)
     pwd_entry.focus_set()
+
+    hint_lbl = tk.Label(
+        pwd_sec,
+        text="Press Enter to authorize • Escape to cancel",
+        font=(sans_font, 8),
+        bg=BG_BASE,
+        fg=TEXT_MUTED,
+        anchor="w"
+    )
+    hint_lbl.pack(fill=tk.X, pady=(3, 0))
+
+    # 6. Action Buttons Row
+    btn_row = tk.Frame(outer, bg=BG_BASE)
+    btn_row.pack(fill=tk.X, side=tk.BOTTOM)
 
     def on_submit(event=None):
         nonlocal password
@@ -116,49 +236,47 @@ def main():
         pwd_entry.delete(0, tk.END)
         root.destroy()
 
-    # Buttons frame
-    btn_frame = tk.Frame(frame, bg=BG)
-    btn_frame.pack(fill=tk.X)
-
-    cancel_btn = tk.Button(
-        btn_frame,
-        text="Cancel",
-        font=("Sans", 9),
-        bg=BTN_CANCEL_BG,
-        fg=TEXT_MAIN,
-        activebackground="#45475a",
-        activeforeground=TEXT_MAIN,
-        relief=tk.FLAT,
-        padx=12,
-        pady=3,
-        command=on_cancel,
-        cursor="hand2"
-    )
-    cancel_btn.pack(side=tk.RIGHT, padx=(6, 0))
-
+    # Authorize Button (Right side)
     ok_btn = tk.Button(
-        btn_frame,
+        btn_row,
         text="Authorize",
-        font=("Sans", 9, "bold"),
-        bg=BTN_BG,
-        fg=BTN_FG,
-        activebackground="#b4befe",
-        activeforeground=BTN_FG,
+        font=(sans_font, 9, "bold"),
+        bg=ACCENT_BLUE,
+        fg=BG_CRUST,
+        activebackground=ACCENT_HOVER,
+        activeforeground=BG_CRUST,
         relief=tk.FLAT,
-        padx=16,
-        pady=3,
+        padx=20,
+        pady=5,
         command=on_submit,
         cursor="hand2"
     )
     ok_btn.pack(side=tk.RIGHT)
 
-    # Key bindings
+    # Cancel Button (Left of Authorize)
+    cancel_btn = tk.Button(
+        btn_row,
+        text="Cancel",
+        font=(sans_font, 9),
+        bg=SURFACE_0,
+        fg=TEXT_MAIN,
+        activebackground=SURFACE_1,
+        activeforeground=TEXT_MAIN,
+        relief=tk.FLAT,
+        padx=16,
+        pady=5,
+        command=on_cancel,
+        cursor="hand2"
+    )
+    cancel_btn.pack(side=tk.RIGHT, padx=(0, 10))
+
+    # Keybindings
     root.bind("<Return>", on_submit)
     root.bind("<KP_Enter>", on_submit)
     root.bind("<Escape>", on_cancel)
     root.protocol("WM_DELETE_WINDOW", on_cancel)
 
-    # Force keyboard grab and focus
+    # Window management
     root.lift()
     root.attributes("-topmost", True)
 
@@ -170,6 +288,7 @@ def main():
         sys.exit(0)
     else:
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

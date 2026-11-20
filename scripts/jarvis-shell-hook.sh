@@ -48,7 +48,7 @@ __jarvis_evaluate_command() {
     base_cmd="${base_cmd##*/}"
 
     # Filter out empty or internal commands
-    if [[ -z "$base_cmd" || "$base_cmd" == "__jarvis"* || "$base_cmd" == "history"* || "$base_cmd" == "clear" || "$base_cmd" == "ls" ]]; then
+    if [[ -z "$base_cmd" || "$base_cmd" == "__jarvis"* || "$base_cmd" == "history"* || "$base_cmd" == "clear" || "$base_cmd" == "ls" || "$base_cmd" == "starship_precmd" ]]; then
         return
     fi
 

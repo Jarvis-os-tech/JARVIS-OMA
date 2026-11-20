@@ -203,8 +203,22 @@ def test_health_requires_sustained_activity(tmp_path):
     rm = ReleaseManager(tmp_path)
     with patch('orchestration.release_manager.subprocess.run',
                return_value=subprocess.CompletedProcess([], 0, 'active\nactive\n')) as run, \
+         patch.object(rm, '_voice_ready', return_value=True) as voice, \
          patch('orchestration.release_manager.time.sleep'), \
-         patch('orchestration.release_manager.time.monotonic', side_effect=[0, 0, 0, 0, 0.5, 0.5, 1.1]):
+         patch('orchestration.release_manager.time.monotonic', side_effect=[0, 0, 0, 0, 0, 0.5, 0.5, 0.5, 1.1]):
         assert rm.verify_health(timeout=2)
     assert run.call_count == 2
+    assert voice.call_count == 2
     assert 'jarvis-device-bridge.service' in run.call_args.args[0]
+
+
+def test_active_services_without_responding_voice_are_unhealthy(tmp_path):
+    import subprocess
+    rm = ReleaseManager(tmp_path)
+    with patch('orchestration.release_manager.subprocess.run',
+               return_value=subprocess.CompletedProcess([], 0, 'active\nactive\n')), \
+         patch.object(rm, '_voice_ready', return_value=False) as voice, \
+         patch('orchestration.release_manager.time.sleep'), \
+         patch('orchestration.release_manager.time.monotonic', side_effect=[0, 0, 0, 0, 0.1, 0.1, 2]):
+        assert not rm.verify_health(timeout=1)
+    voice.assert_called_once()

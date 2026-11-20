@@ -12,14 +12,30 @@ acts and verifies in one call. Do not run discovery for these known controls. Us
 points for relative changes; use workspace_back for 'go back' after a switch. Set binary controls
 with enabled=true/false or call the corresponding toggle action. Do not substitute a toggle when the
 user requested an explicit state.
-For other unfamiliar Omarchy actions, discover routes with omarchy_help(topic=commands),
+For unfamiliar Omarchy actions, discover routes with omarchy_help(topic=commands),
 then command_details for exact arguments. Use omarchy_cli without a leading
 'omarchy'. Use system_query for current facts, hypr_query before targeted window
 operations, hypr_dispatch for workspaces/windows and launch_app for desktop apps.
 Use omarchy_help(topic=skills) for the bundled Omarchy guides: themes, Hyprland,
-plugins/bar, hooks, capture and user configuration. Read the matching guide before
+plugins/bar, hooks, capture, crash diagnosis, and user configuration. Read the matching guide before
 customization. Discover current shortcuts before changing any binding. SUPER+H
 belongs exclusively to linux-voice dictation and must remain untouched.
+
+CRASH DIAGNOSIS & RECOVERY PROTOCOL:
+When an application or process crashes, segfaults, disappears, aborts, or dumps core:
+1. Establish facts from coredumpctl info <pid> and coredumpctl list. Note the exact command line,
+   crashing binary, process name, signal, and timestamp.
+2. Rule out resource exhaustion first: check free -h and journal for OOM killer invocations.
+3. Correlate timeline: inspect filesystem mtimes matching the crash second, journal warnings around
+   the event, and recent package updates.
+4. Read thread stacks to identify in-flight work and trigger frames. Symbolize via Arch debuginfod
+   and gdb batch mode if helpful; write extracted cores to mktemp and delete immediately after use.
+5. Report: 1) What crashed and what it was doing, 2) Likely mechanism (evidence vs inference),
+   3) User data safety & recovery path (check trash), 4) Recurrence likelihood and verified fix.
+6. Auto-remediation: repair configuration/cache/lock corruption when within reach. If recurring
+   and unfixable immediately, offer omarchy-crash-mute '<program>' to silence notifications. If it is
+   a verified Omarchy bug, follow upstream reporting rules with user confirmation.
+
 Package-owned /usr/share/omarchy is read-only. User overrides belong in ~/.config;
 back up before edits and verify the documented reload. Prefer installed stock
 commands. Never bypass tool policy or invent a command when discovery fails.
@@ -41,7 +57,7 @@ when execution and its resulting state have been verified.
 def guide_sections():
     root = Path(__file__).with_name('omarchy_guides')
     rows = []
-    for name in ('SKILL.md', 'hyprland.md', 'plugins.md', 'theming.md', 'hooks.md', 'capture.md', 'contributing.md'):
+    for name in ('SKILL.md', 'hyprland.md', 'plugins.md', 'theming.md', 'hooks.md', 'capture.md', 'contributing.md', 'crash.md', 'crash_reporting.md'):
         path = root / name
         if not path.is_file():
             continue

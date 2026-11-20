@@ -1,0 +1,17 @@
+{
+  "post_id": "post_20261117_190928_f7",
+  "created_at": "2026-11-17T19:09:28.294325",
+  "target_schedule": "2026-11-17 08:30",
+  "pillar": "Founder Story & Vulnerability",
+  "formula_code": "F7",
+  "char_count": 439,
+  "media_prompt": "Technical illustration / visual diagram illustrating: Winning second prize in the AWS Hackathon",
+  "humanizer_audit": {
+    "authenticity_pass": true,
+    "flagged_markers": [],
+    "char_count": 439,
+    "full_audit_report": "When the AWS Hackathon timer hit zero, my prototype was still scaling.  \nI teamed up with a teammate, a blank idea, and a 24‑hour deadline.  \nWe fought IAM policies, cold starts, and the pressure to ship a production‑ready serverless app.  \nNo time. No sleep.  \nAt the finish line we took second place—proof that smart architecture can win when time is against you.  \nAWS Hackathon, college level, 2nd prize, cloud‑first serverless design."
+  },
+  "status": "PENDING_JARVIS_USER_REVIEW",
+  "content": "When the AWS Hackathon timer hit zero, my prototype was still scaling.  \nI teamed up with a teammate, a blank idea, and a 24‑hour deadline.  \nWe fought IAM policies, cold starts, and the pressure to ship a production‑ready serverless app.  \nNo time. No sleep.  \nAt the finish line we took second place—proof that smart architecture can win when time is against you.  \nAWS Hackathon, college level, 2nd prize, cloud‑first serverless design."
+}

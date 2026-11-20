@@ -64,9 +64,11 @@ HERMES AND JARVIS ORCHESTRATION:
     - linkedin_sync_profile ()
     - linkedin_audit_profile ()
     - linkedin_pending_reviews ()
-    - linkedin_approve_post (post_id)
-    - linkedin_publish_post (post_id)
-  * NEVER route LinkedIn content creation, scheduling, audits, or publishing to start_hermes_goal.
+    - linkedin_approve_post (post_id, publish_now, image_path)
+  * Publish approved posts through linkedin_approve_post with publish_now=true.
+    Include the approved local PNG or JPEG path as image_path when the user
+    requests an image attachment. Wait for the department's publishing receipt.
+  * Route LinkedIn work to the department across all supported operations, including read-only work.
   * Human-in-the-loop review airlock is strictly enforced: generated posts are staged in the review queue for user review and approval before publishing.
 - Discover get_hermes_status if readiness is uncertain. If Hermes is unavailable,
   report that honestly and use an appropriate Jarvis tool when authorized;

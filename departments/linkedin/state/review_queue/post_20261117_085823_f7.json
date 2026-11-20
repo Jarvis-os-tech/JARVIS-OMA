@@ -1,0 +1,21 @@
+{
+  "post_id": "post_20261117_085823_f7",
+  "created_at": "2026-11-17T08:58:23.397900",
+  "target_schedule": "2026-11-17 08:30",
+  "pillar": "Authority & Build Logs",
+  "formula_code": "F7",
+  "char_count": 284,
+  "media_prompt": "Technical illustration / visual diagram illustrating: Recognition from the AWS Student Builder Group at GIST",
+  "humanizer_audit": {
+    "authenticity_pass": false,
+    "flagged_markers": [],
+    "char_count": 284
+  },
+  "status": "PUBLISHED_LIVE",
+  "content": "I’m grateful to receive a certificate from the AWS Student Builder Group at GIST for outstanding achievement in our local group.\n\nThank you to the AWS Student Builder Group community at GIST for the recognition. I’m looking forward to continuing to learn and build with the community.",
+  "approved_at": "2026-11-17T09:01:27.472588",
+  "published_at": "2026-11-17T09:01:57.981782",
+  "published_receipt": {
+    "x_restli_id": "urn:li:share:7528298859492597760"
+  }
+}

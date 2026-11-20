@@ -5,6 +5,7 @@ bounded playback with generation fences, offline wake-word standby, and
 full-duplex Gemini Live conversation sessions.
 """
 from .daemon import LiveVoice, live_config
+from .decision_router import DecisionRouter, DecisionResult
 from .echo import EchoCancellation, MonitorEchoCancellation, monitor_properties
 from .speech import SpeechTurnGate, SileroSpeechDetector, SpokenInterruption, GateFrame
 from .playback import Playback, MicrophoneBacklogError, PlaybackBacklogError
@@ -18,6 +19,8 @@ __version__ = '0.1.0'
 __all__ = [
     'LiveVoice',
     'live_config',
+    'DecisionRouter',
+    'DecisionResult',
     'EchoCancellation',
     'MonitorEchoCancellation',
     'monitor_properties',

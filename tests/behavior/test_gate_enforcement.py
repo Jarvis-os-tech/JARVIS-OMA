@@ -9,7 +9,22 @@ from unittest.mock import Mock
 import pytest
 
 from orchestration.release_manager import ReleaseManager
-from scripts.behavior_gate import ROOT, load_contract, main
+from scripts.behavior_gate import ROOT, load_contract, main, source_digest
+
+
+def test_fingerprint_tracks_department_schema_and_ignores_local_state(tmp_path, monkeypatch):
+    monkeypatch.setattr('scripts.behavior_gate.ROOT', tmp_path)
+    department = tmp_path / 'departments' / 'memory'
+    department.mkdir(parents=True)
+    schema = department / 'schema.sql'
+    schema.write_text('SELECT 1;')
+    before = source_digest()
+    schema.write_text('SELECT 2;')
+    after = source_digest()
+    assert after != before
+    (department / 'state').mkdir()
+    (department / 'state' / 'local.json').write_text('{}')
+    assert source_digest() == after
 
 
 @pytest.mark.parametrize('body,passed', [

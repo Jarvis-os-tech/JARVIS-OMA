@@ -13,6 +13,7 @@ from .bridge import MemoryBridge, rank_all
 from .config import MemoryConfig
 from .embeddings import DeterministicFakeEmbeddingProvider, StaticEmbeddingProvider
 from .hybrid import _candidate_key, fuse_results
+from .retrieval import recall_with_evidence
 
 STRATEGIES = ('lexical', 'vector', 'weighted', 'rrf')
 CUTOFFS = (1, 3, 5)
@@ -218,7 +219,9 @@ def evaluate(suite, provider=None):
                     raise RuntimeError('Embedding evaluation unavailable; refusing silent fallback')
                 lexical = rank_all(case['query'], memory.observed_memories, 20)
                 semantic = memory.observed_semantic
-                weighted = fuse_results(lexical, semantic, 20, config.semantic_min_score)
+                weighted = recall_with_evidence(
+                    case['query'], fuse_results(lexical, semantic, 20, config.semantic_min_score)
+                )
                 if weighted != actual['memories']:
                     raise RuntimeError('Evaluation candidate pools drifted from production retrieval')
                 rankings = dict(lexical=lexical, vector=semantic, weighted=weighted,
@@ -251,7 +254,7 @@ def evaluate(suite, provider=None):
                 scope='Synthetic structured-memory ranking and bridge lifecycle; not answer-generation quality.',
                 candidate_budget=20, rrf_constant=60, summary=groups, cases=rows,
                 lifecycle=checks, quality_checks=quality, quality_passed=all(quality.values()),
-                promotion='No production retrieval or live configuration changes.')
+                promotion='Synthetic retrieval evidence only. Live configuration was not changed.')
 
 
 def compare_baseline(report, baseline):

@@ -257,7 +257,7 @@ def test_noop_filesystem_command_cannot_prove_success(tmp_path, monkeypatch, ope
 
 
 def test_noop_atomic_write_does_not_prove_content(tmp_path, monkeypatch):
-    monkeypatch.setattr(Path, 'replace', lambda *_args: None)
+    monkeypatch.setattr(files.os, 'link', lambda *_args: None)
     result = files.write_text(str(tmp_path / 'missing'), 'expected')
     assert result['status'] == 'unverified' and not result['verified']
 

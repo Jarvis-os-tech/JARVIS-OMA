@@ -116,7 +116,7 @@ async def test_fragmented_reply_keeps_pcm_intact_with_continuity_buffer():
             await until(lambda: sum(len(c.args[0]) for c in process.stdin.write.call_args_list) == 2 + len(rest))
             assert b''.join(c.args[0] for c in process.stdin.write.call_args_list) == b'\x01\x00' + rest
             args = spawn.call_args.args
-            assert args[args.index('--latency') + 1] == '80ms'
+            assert args[args.index('--latency') + 1] == '20ms'
         finally:
             worker.cancel()
             await asyncio.gather(worker, return_exceptions=True)

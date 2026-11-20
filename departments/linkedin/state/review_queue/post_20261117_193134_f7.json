@@ -1,0 +1,17 @@
+{
+  "post_id": "post_20261117_193134_f7",
+  "created_at": "2026-11-17T19:31:34.001237",
+  "target_schedule": "2026-11-17 08:30",
+  "pillar": "Founder Story & Vulnerability",
+  "formula_code": "F7",
+  "char_count": 555,
+  "media_prompt": "Technical illustration / visual diagram illustrating: AWS Builders Club hackathon",
+  "humanizer_audit": {
+    "authenticity_pass": true,
+    "flagged_markers": [],
+    "char_count": 555,
+    "full_audit_report": "Spent a weekend with just one teammate and built a prototype that took second place at the AWS Builders Club hackathon. The hackathon forces you to test AWS services in 48 hours—no budget, no safety net. We were the underdogs, wrestling with serverless architecture and real‑time data pipelines. Our hands‑on AWS experience paid off; the judges liked what we delivered and gave us a runner‑up spot.\n\nSecond place finish  \nOne teammate  \nAWS Builders Club hackathon  \nHands‑on AWS experience\n\nWhat would you build in 48 hours on AWS? Share your idea below."
+  },
+  "status": "PENDING_JARVIS_USER_REVIEW",
+  "content": "Spent a weekend with just one teammate and built a prototype that took second place at the AWS Builders Club hackathon. The hackathon forces you to test AWS services in 48 hours—no budget, no safety net. We were the underdogs, wrestling with serverless architecture and real‑time data pipelines. Our hands‑on AWS experience paid off; the judges liked what we delivered and gave us a runner‑up spot.\n\nSecond place finish  \nOne teammate  \nAWS Builders Club hackathon  \nHands‑on AWS experience\n\nWhat would you build in 48 hours on AWS? Share your idea below."
+}

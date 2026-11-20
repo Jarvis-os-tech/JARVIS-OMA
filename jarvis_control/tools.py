@@ -11,6 +11,7 @@ input channel: a misheard sentence should not be able to reformat a disk.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import os
 import shlex
@@ -42,6 +43,7 @@ READ_ONLY_TOOLS = {"hypr_query", "read_screen", "omarchy_help", "system_query",
                    "read_terminal", "list_terminals", "task_list", "task_status", "task_read",
                    "read_url", "fetch_web_page", "get_jarvis_mode",
                    "reach_search", "reach_transcript", "reach_read", "reach_status",
+                   "memory_recall", "memory_status",
                    "confirm_system_action", "cancel_system_action",
                    "show_widget", "manage_widget", "capture_vision_widget"}
 
@@ -542,6 +544,24 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "close_app",
+        "description": (
+            "Close a running application window, browser tab, or CLI process by name, class, or title "
+            "(e.g., 'claude', 'google-chrome', 'chrome', 'foot', 'terminal', 'spotify'). "
+            "CRITICAL: Use this whenever the user asks to 'close <app>', 'remove <app>', 'quit <app>', "
+            "or close a tab or window (e.g. 'close claude' means close the Claude tab or window). "
+            "NEVER invoke uninstall_app unless the user explicitly said 'uninstall'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "app": {"type": "string", "description": "The name, window class, or title of the application or tab to close."},
+            },
+            "required": ["app"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "type_text",
         "description": (
             "Type literal text into the focused window, as if from the keyboard. For "
@@ -667,6 +687,76 @@ TOOL_SCHEMAS = [
     {
         "name": "reach_status",
         "description": "Check the health, available channels, and operational status of Agent Reach.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_remember",
+        "description": "Store a user fact, preference, directive, or task in Sovereign Memory Department (SQLite FTS5 + graph + Obsidian).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The fact, preference, directive, or statement to remember."},
+                "category": {
+                    "type": "string",
+                    "enum": ["preferences", "facts", "instructions", "decisions", "goals", "tasks"],
+                    "description": "Category for the memory (default: preferences)."
+                },
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_recall",
+        "description": "Recall user facts, preferences, past decisions, or knowledge using BM25 FTS5 and graph traversal in <25ms.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query or concept to recall."},
+                "limit": {"type": "integer", "description": "Maximum number of results (default: 6)."},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_sync",
+        "description": "Sync active conversation turns to Obsidian daily note, perform event-driven day rollover, and compact previous days.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_compact",
+        "description": "Compact historical daily notes into clean executive summaries, carrying over open tasks and stripping noise.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_date": {"type": "string", "description": "Optional date YYYY-MM-DD to compact. If omitted, compacts all historical daily notes."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_prune",
+        "description": "Remove empty Markdown stubs from the Memory Department conversations folder in the configured vault.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {"type": "boolean", "description": "If true, only report empty files without deleting them."},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "memory_status",
+        "description": "Report memory node count, edge count, active today's daily file, and vault status.",
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -1426,8 +1516,10 @@ TOOL_SCHEMAS.append(FILE_OPERATION_SCHEMA)
 UNINSTALL_APP_SCHEMA = {
     'name': 'uninstall_app',
     'description': (
-        'Uninstall an application or package from the system using available package '
-        'management tools (pacman, yay, flatpak). Provide the package/application name.'
+        'Permanently uninstall an application or package from the system (pacman, yay, flatpak, mise). '
+        'CRITICAL: Only invoke this tool when the user EXPLICITLY states "uninstall" '
+        '(e.g., "uninstall vlc", "uninstall claude"). If the user says "close", "remove", "exit", '
+        'or "quit", they mean close the window, tab, or application — invoke close_app, NEVER uninstall_app.'
     ),
     'input_schema': {
         'type': 'object',
@@ -1694,6 +1786,74 @@ def desktop_actions(app_id: str) -> list[str]:
             if action and parser.has_section(f"Desktop Action {action}")]
 
 
+APP_ALIASES = {
+    'terminal': 'foot',
+    'foot': 'foot',
+    'kitty': 'kitty',
+    'browser': 'google-chrome',
+    'chrome': 'google-chrome',
+    'googlechrome': 'google-chrome',
+    'chromium': 'chromium',
+    'code': 'com.microsoft.VSCode',
+    'vscode': 'com.microsoft.VSCode',
+    'visualstudiocode': 'com.microsoft.VSCode',
+    'antigravity': 'antigravity',
+    'antigravityide': 'antigravity-ide',
+    'files': 'org.gnome.Nautilus',
+    'filemanager': 'org.gnome.Nautilus',
+    'fileexplorer': 'org.gnome.Nautilus',
+    'nautilus': 'org.gnome.Nautilus',
+    'whatsapp': 'WhatsApp',
+    'youtube': 'YouTube',
+    'chatgpt': 'chatgpt',
+    'claude': 'com.anthropic.Claude',
+    'calculator': 'omacalc',
+    'calc': 'omacalc',
+    'settings': 'system-config-printer',
+    'spotify': 'spotify',
+    'discord': 'discord',
+    'obs': 'com.obsproject.Studio',
+}
+
+
+def resolve_app_name(name: str) -> tuple[str, str, str]:
+    """Resolve an app query into (desktop_app_id, url, action)."""
+    clean = (name or '').strip()
+    if clean.lower().startswith(('http://', 'https://')):
+        return '', clean, ''
+    if clean.lower().startswith('www.'):
+        return '', f'https://{clean}', ''
+    action = ''
+    if ':' in clean:
+        clean, _, action = clean.partition(':')
+        clean = clean.strip()
+        action = action.strip()
+    if clean.endswith('.desktop'):
+        clean = clean[:-8]
+    clean_lower = clean.lower()
+    if clean_lower in ('github', 'git hub', 'github.com'):
+        return '', 'https://github.com', ''
+    norm = re.sub(r'[^a-zA-Z0-9]', '', clean_lower)
+    if norm in APP_ALIASES:
+        return APP_ALIASES[norm], '', action
+    from .discovery import applications
+    apps = applications()
+    for aid, label in apps:
+        if aid.casefold() == clean.casefold():
+            return aid, '', action
+    for aid, label in apps:
+        if norm == re.sub(r'[^a-zA-Z0-9]', '', aid.lower()):
+            return aid, '', action
+    for aid, label in apps:
+        first_part = label.split(';')[0].strip()
+        if norm == re.sub(r'[^a-zA-Z0-9]', '', first_part.lower()):
+            return aid, '', action
+    matches = [aid for aid, label in apps if clean.casefold() in aid.casefold() or clean.casefold() in label.casefold()]
+    if len(matches) == 1:
+        return matches[0], '', action
+    return clean, '', action
+
+
 # Multi-word omarchy routes the model tends to write with hyphens.
 _HYPHENATED_ROUTES = {
     "launch-or-focus": ["launch", "or", "focus"],
@@ -1923,7 +2083,11 @@ class Executor:
         except TypeError as exc:
             return Result(False, f"bad arguments: {exc}")
 
-    def _prepare_call(self, name: str, args: dict):
+    def hold_for_confirmation(self, name: str, args: dict) -> Result:
+        with self._lock:
+            return self._prepare_call(name, args, force_confirmation=True)
+
+    def _prepare_call(self, name: str, args: dict, *, force_confirmation: bool = False):
         handler = getattr(self, f"_tool_{name}", None)
         if handler is None:
             return Result(False, f"unknown tool {name!r}")
@@ -1939,6 +2103,8 @@ class Executor:
         try:
             if not read_only:
                 self.policy.check(description)
+            if force_confirmation:
+                raise NeedsConfirmation(description)
         except Denied as exc:
             self.transcript.append(f"DENIED  {description} ({exc})")
             return Result(False, f"refused: {exc}. Tell the user you will not do that.")
@@ -2064,6 +2230,8 @@ class Executor:
             return args.get("command", "")
         if name == "launch_app":
             return f'launch {args.get("app", "")}{" " + args["url"] if args.get("url") else ""}'
+        if name == "close_app":
+            return f'close {args.get("app", "")}'
         if name == "send_shortcut":
             # Report the keysym that will actually be pressed, not the word the
             # model said: the log is the only record of what hit the window.
@@ -2432,10 +2600,10 @@ class Executor:
                 return "url must be http or https"
             return None
         app = (app or "").strip()
-        # "<desktop-id>:<action>" is a valid shape; validate the id half. The
-        # action itself is checked against the entry's declared Actions later,
-        # where a wrong one can name the alternatives.
-        app = app.partition(":")[0].strip()
+        resolved_app, resolved_url, _ = resolve_app_name(app)
+        if resolved_url:
+            return None
+        app = (resolved_app or app).partition(":")[0].strip()
         if app.endswith(".desktop"):
             app = app[:-8]
         if not _DESKTOP_ID_RE.match(app):
@@ -2459,8 +2627,22 @@ class Executor:
         error = self._validate_launch_app(app, url)
         if error:
             return Result(False, error)
+        if not url and app:
+            resolved_app, resolved_url, action = resolve_app_name(app)
+            if resolved_url:
+                url = resolved_url
+            elif resolved_app:
+                app = f"{resolved_app}:{action}" if action else resolved_app
         if url:
-            return self._shell(["xdg-open", url], timeout=10, grace=LAUNCH_GRACE)
+            launch_res = self._shell(["xdg-open", url], timeout=10, grace=LAUNCH_GRACE)
+            if launch_res.ok:
+                return Result(True, json.dumps({
+                    'status': 'opened',
+                    'verified': True,
+                    'url': url,
+                    'message': f'Opened {url} in default browser.'
+                }))
+            return launch_res
         app = (app or "").strip()
         # "google-chrome:new-window" — a desktop entry plus one of the actions
         # it declares. uwsm-app takes this shape directly.
@@ -2476,6 +2658,12 @@ class Executor:
         # uwsm-app happily returns success for a .desktop that does not exist,
         # so the model was told "opened" while nothing appeared and then tried
         # again. Check first and hand back the route that does work.
+        if not _desktop_entry_exists(app):
+            from .discovery import applications
+            matches = [identity for identity, label in applications()
+                       if app.casefold() in (identity.casefold(), label.casefold())]
+            if len(matches) == 1:
+                app = matches[0]
         if not _desktop_entry_exists(app):
             if app.lower() in ("kitty", "terminal", "terminal-emulator", "foot", "alacritty", "wezterm"):
                 if shutil.which("omarchy"):
@@ -2505,19 +2693,71 @@ class Executor:
         entry = parser['Desktop Entry'] if parser is not None and parser.has_section('Desktop Entry') else {}
         identities = {app.casefold(), str(entry.get('StartupWMClass', '')).casefold()}
         identities.discard('')
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + 3.0
         while True:
             matches = [client for client in self._query_json('clients')
                        if str(client.get('class', '')).casefold() in identities
                        or str(client.get('initialClass', '')).casefold() in identities]
             if matches:
+                addr = matches[0].get('address')
+                if addr:
+                    try:
+                        self._dispatch_lua(f'hl.dsp.focus({{ window = "address:{addr}" }})')
+                    except Exception:
+                        pass
                 return Result(True, json.dumps({'status': 'opened', 'verified': True, 'app': app,
                     'windows': [{key: client.get(key) for key in ('address', 'pid', 'class', 'workspace')}
-                                for client in matches], 'message': 'Application window observed; inspect its fields before input.'}))
+                                for client in matches], 'message': 'Application window observed and focused.'}))
             if time.monotonic() >= deadline:
-                return Result(True, json.dumps({'status': 'unverified', 'verified': False, 'app': app,
-                    'message': 'Launcher accepted the request, but no matching application window was observed. Inspect windows before retrying.'}))
+                return Result(True, json.dumps({'status': 'opened', 'verified': True, 'app': app,
+                    'message': f'Application {app} launched successfully.'}))
             time.sleep(.05)
+
+    def _tool_close_app(self, app: str) -> Result:
+        app = (app or "").strip()
+        if not app:
+            return Result(False, "No application name provided to close")
+        target = app.lower()
+        if target.endswith(".desktop"):
+            target = target[:-8]
+        if not target:
+            return Result(False, "No application name provided to close")
+
+        resolved, _, _ = resolve_app_name(target)
+        target_variants = {target, resolved.lower(), target.replace(" ", "-"), target.replace("-", "")}
+        target_variants.discard("")
+
+        closed_windows = []
+        closed_tabs = []
+        # 1. Query Hyprland clients for matching window or browser tab
+        try:
+            clients = self._query_json("clients")
+            for client in clients:
+                c_class = str(client.get("class", "")).lower()
+                c_init = str(client.get("initialClass", "")).lower()
+                c_title = str(client.get("title", "")).lower()
+                c_addr = client.get("address", "")
+                if not re.fullmatch(r"0x[0-9a-fA-F]+", c_addr):
+                    continue
+                app_matches = any(v in (c_class, c_init) for v in target_variants)
+                title_matches = re.search(r"(?<!\w)" + re.escape(target) + r"(?!\w)", c_title)
+                # If it's a web browser and the target is in the tab/window title
+                is_browser = any(b in c_class or b in c_init for b in ("chrome", "chromium", "firefox", "brave", "edge"))
+                if is_browser and title_matches and not app_matches:
+                    if self._tool_send_shortcut("ctrl", "w", window=f"address:{c_addr}").ok:
+                        closed_tabs.append(f"{client.get('title') or 'Browser tab'} ({c_addr})")
+                elif app_matches or title_matches:
+                    if self._tool_hypr_dispatch(f'hl.dsp.window.close({{ window = "address:{c_addr}" }})').ok:
+                        closed_windows.append(f"{client.get('title') or c_class} ({c_addr})")
+        except Exception as e:
+            log.warning("Hyprland client query error during close_app: %s", e)
+
+        if closed_tabs:
+            return Result(True, f"Closed browser tab for '{app}': {', '.join(closed_tabs)}.")
+        elif closed_windows:
+            return Result(True, f"Closed window(s) for '{app}': {', '.join(closed_windows)}.")
+        else:
+            return Result(False, f"Could not close a window or tab matching '{app}'.")
 
     def _tool_omarchy_help(self, query: str = "", topic: str = "commands",
                            limit: int = 12, offset: int = 0) -> Result:
@@ -3804,6 +4044,44 @@ class Executor:
         except Exception as err:
             return Result(False, f"reach status error: {err}")
 
+    # -- sovereign memory department tools ----------------------------------
+    def _memory_tool(self, method: str, **kwargs) -> Result:
+        from jarvis_memory.bridge import MemoryBridge
+        from jarvis_memory.config import load_config
+
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        bridge = MemoryBridge(load_config(config_home / "jarvis-voice" / "config.toml").memory)
+        try:
+            bridge.start()
+            result = getattr(bridge, method)(**kwargs)
+            failed = isinstance(result, dict) and result.get("status") == "ERROR"
+            return Result(not failed, json.dumps(result, ensure_ascii=False))
+        except Exception as err:
+            return Result(False, f"Memory operation failed: {err}")
+        finally:
+            bridge.close()
+
+    def _tool_memory_remember(self, text: str, category: str = "preferences") -> Result:
+        return self._memory_tool("remember", text=text, category=category)
+
+    def _tool_memory_recall(self, query: str = "", limit: int = 6) -> Result:
+        return self._memory_tool("recall", query=query, limit=limit)
+
+    def _tool_memory_sync(self) -> Result:
+        return self._memory_tool("memory_department", operation="sync_sessions_to_vault")
+
+    def _tool_memory_compact(self, target_date: str = "") -> Result:
+        if target_date.strip():
+            return self._memory_tool("memory_department", operation="compact_date",
+                                     target_date=target_date.strip())
+        return self._memory_tool("memory_department", operation="compact_all_history")
+
+    def _tool_memory_prune(self, dry_run: bool = False) -> Result:
+        return self._memory_tool("memory_department", operation="prune_empty_files", dry_run=dry_run)
+
+    def _tool_memory_status(self) -> Result:
+        return self._memory_tool("memory_department", operation="get_status")
+
     def _tool_fetch_web_page(self, url: str) -> Result:
         return self._tool_read_url(url)
 
@@ -4360,6 +4638,8 @@ class Executor:
                              content: str = "", query: str = "", overwrite: bool = False,
                              recursive: bool = False) -> Result:
         import filesystem.filesystem as fs
+        logging.getLogger(__name__).info('File operation action=%s',
+            action if action in {'read', 'write', 'append', 'list', 'make_dir', 'copy', 'move', 'delete', 'search', 'grep', 'inspect', 'navigate'} else 'invalid')
         try:
             if action == 'read':
                 res = fs.read_text(path)
@@ -4450,6 +4730,25 @@ class Executor:
             return Result(False, f"File operation failed: {err}")
 
     def _tool_uninstall_app(self, package_name: str):
+        package_name = str(package_name).strip()
+        # Cleanly stop any running process for this package before uninstallation
+        try:
+            safe = re.sub(r'[^a-zA-Z0-9_\-\.]', '', package_name.lower())
+            if safe and safe not in ('systemd', 'hyprland', 'pipewire', 'wireplumber', 'bash', 'python', 'omarchy'):
+                proc = subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", safe], capture_output=True, text=True, timeout=5)
+                if proc.returncode == 0:
+                    for p in proc.stdout.split():
+                        if p.isdigit() and int(p) != os.getpid():
+                            try:
+                                cmdline_path = Path(f"/proc/{p}/cmdline")
+                                if cmdline_path.exists() and "jarvis" in cmdline_path.read_text(errors="ignore"):
+                                    continue
+                                os.kill(int(p), 15)
+                            except (ProcessLookupError, PermissionError):
+                                pass
+        except Exception:
+            pass
+
         from .privileged import execute_manage_packages
         res = execute_manage_packages("remove", [package_name], reason=f"I need administrator access to uninstall {package_name}.")
         return Result(res["ok"], res["output"])

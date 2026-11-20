@@ -10,10 +10,10 @@ import time
 
 from .speech import PlaybackReference
 
-PLAYBACK_LATENCY = '80ms'
-PLAYBACK_LEAD_SECONDS = .12
-PRIME_BYTES = 3840  # 80 ms of 24 kHz mono PCM16
-PRIME_WAIT_SECONDS = .04  # Bound startup delay without reducing the device buffer
+PLAYBACK_LATENCY = '20ms'
+PLAYBACK_LEAD_SECONDS = .04
+PRIME_BYTES = 960  # 20 ms of 24 kHz mono PCM16
+PRIME_WAIT_SECONDS = .02  # Bound startup delay without reducing the device buffer
 
 OUTPUT_BYTES = 960  # 20 ms at 24 kHz mono PCM16
 PLAYBACK_MAX_BYTES = 48000 * 60  # 60 seconds

@@ -55,6 +55,7 @@ KNOWN DETECTED AI MARKERS:
 OUTPUT INSTRUCTIONS:
 Inside <final_output>, output ONLY the final humanized post draft with AI tells removed, natural line spacing, and varied sentence rhythm.
 Do not put audit commentary or scores inside <final_output>.
+Preserve the supplied facts. Do not add metrics, achievements, or personal experiences.
 """
 
         try:

@@ -6,10 +6,10 @@ packages replay test harnesses for evolution.py, and updates the user profile.
 from collections import defaultdict
 from datetime import datetime
 import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from hashlib import sha256
+from typing import Any, Dict, List
 
-from .base_memory_agent import BaseMemoryAgent
+from .base_memory_agent import BaseMemoryAgent, write_private_text
 
 
 class ReflectionAgent(BaseMemoryAgent):
@@ -51,25 +51,16 @@ class ReflectionAgent(BaseMemoryAgent):
 
         rules_created = []
         rules_file = self.cfg.state_dir / "procedural_rules.json"
-        existing_rules = []
-        if rules_file.exists():
-            try:
-                existing_rules = json.loads(rules_file.read_text(encoding="utf-8"))
-            except Exception:
-                existing_rules = []
-
-        now_str = datetime.now().isoformat()
-
+        existing_rules = json.loads(rules_file.read_text(encoding="utf-8")) if rules_file.exists() else []
+        known = {(item["tool"], item["rule"]) for item in existing_rules}
         for tool_name, tool_traces in by_tool.items():
-            if len(tool_traces) >= 1:
-                latest = tool_traces[0]
-                rule_text = (
-                    f"When invoking tool '{tool_name}', avoid previous failure: "
-                    f"'{latest.get('error_message') or latest.get('stderr') or 'non-zero exit'}'"
-                )
-                rule_id = f"rule_{tool_name}_{len(existing_rules) + 1}"
-
-                # Store in database
+            latest = self.redact_diagnostics(tool_traces[0])
+            message = latest.get("error_message") or latest.get("stderr") or "non-zero exit"
+            rule_text = f"When invoking tool '{tool_name}', avoid previous failure: '{message}'"
+            if (tool_name, rule_text) in known:
+                continue
+            rule_id = "rule_" + sha256(rule_text.encode()).hexdigest()[:24]
+            if self.db.get_node(rule_id) is None:
                 self.db.upsert_node(
                     node_id=rule_id,
                     layer="procedural",
@@ -78,20 +69,16 @@ class ReflectionAgent(BaseMemoryAgent):
                     content=rule_text,
                     importance=0.90,
                     provenance="inferred_agent",
-                    obsidian_path="05 Procedural Memory/Rules.md",
                 )
-
-                rule_obj = {
-                    "id": rule_id,
-                    "tool": tool_name,
-                    "rule": rule_text,
-                    "created_at": now_str,
-                    "sample_trigger": latest["trigger_prompt"],
-                }
-                existing_rules.append(rule_obj)
-                rules_created.append(rule_obj)
-
-        rules_file.write_text(json.dumps(existing_rules, indent=2, ensure_ascii=False), encoding="utf-8")
+            rules_created.append({
+                "id": rule_id,
+                "tool": tool_name,
+                "rule": rule_text,
+                "created_at": datetime.now().isoformat(),
+                "sample_trigger": latest["trigger_prompt"],
+            })
+        if rules_created:
+            write_private_text(rules_file, json.dumps(existing_rules + rules_created, indent=2, ensure_ascii=False))
         self.logger.info("Synthesized %d new procedural rules", len(rules_created))
         return rules_created
 
@@ -101,18 +88,26 @@ class ReflectionAgent(BaseMemoryAgent):
         replays_dir.mkdir(parents=True, exist_ok=True)
 
         packets = []
-        for t in traces[:10]:
+        for trace in traces[:10]:
+            t = self.redact_diagnostics(trace)
+            try:
+                inputs = self.redact_diagnostics(json.loads(t["tool_input"]))
+            except (ValueError, TypeError):
+                inputs = {}
             packet = {
                 "trace_id": t["id"],
                 "tool_name": t["tool_name"],
-                "tool_input": t["tool_input"],
+                "tool_input": json.dumps(inputs, ensure_ascii=False),
                 "trigger_prompt": t["trigger_prompt"],
                 "expected_failure_code": t["exit_code"],
                 "recorded_stderr": t["stderr"],
                 "status": "ready_for_evolution_test",
             }
-            packet_path = replays_dir / f"{t['id']}.json"
-            packet_path.write_text(json.dumps(packet, indent=2), encoding="utf-8")
+            packet_id = sha256(t["id"].encode()).hexdigest()
+            packet_path = replays_dir / f"{packet_id}.json"
+            content = json.dumps(packet, indent=2)
+            if not packet_path.exists() or packet_path.read_text(encoding="utf-8") != content:
+                write_private_text(packet_path, content)
             packets.append(packet)
 
         return packets
@@ -131,5 +126,5 @@ class ReflectionAgent(BaseMemoryAgent):
             "active_mode": "Sovereign AI-Native Desktop",
         }
 
-        profile_file.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_private_text(profile_file, json.dumps(profile, indent=2, ensure_ascii=False))
         return profile

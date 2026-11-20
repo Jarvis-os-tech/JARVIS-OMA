@@ -41,7 +41,7 @@ except ImportError:
     from config import MemoryConfig
 from core.workers import BoundedWorker, WorkerBusyError
 from core.secret_env import sanitized_subprocess_env
-from jarvis_memory.bridge import MemoryBridge, MemoryError as BridgeMemoryError
+from jarvis_memory.bridge import MemoryBridge
 try:
     from skills.input_bar import TestBar
 except ImportError:
@@ -66,6 +66,8 @@ from skills.domains.api_anything import ApiAnythingDomain, ADAPTERS as API_ANYTH
 from skills.domains.widgets import WidgetsDomain, ADAPTERS as WIDGET_ADAPTERS, ADAPTER_COMMANDS as WIDGET_COMMANDS
 from skills.domains.linkedin import LinkedInDomain, ADAPTERS as LINKEDIN_ADAPTERS, ADAPTER_COMMANDS as LINKEDIN_COMMANDS
 from skills.domains.agent_reach import AgentReachDomain, ADAPTERS as AGENT_REACH_ADAPTERS, ADAPTER_COMMANDS as AGENT_REACH_COMMANDS
+from skills.domains.memory import MemoryDomain, ADAPTERS as MEMORY_ADAPTERS, ADAPTER_COMMANDS as MEMORY_COMMANDS
+from skills.domains.yt_brain import YtBrainDomain, ADAPTERS as YT_BRAIN_ADAPTERS, ADAPTER_COMMANDS as YT_BRAIN_COMMANDS
 from orchestration.tool_tiers import CORE_TOOLS, META_TOOLS, DOMAINS, META_SPECS, domain_for_tool
 
 
@@ -73,7 +75,7 @@ def _normalized(value: str) -> str:
     return re.sub(r'[^a-z0-9]+', '', value.casefold())
 
 
-class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain, LinkedInDomain, AgentReachDomain):
+class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, ComposioDomain, ApiAnythingDomain, WidgetsDomain, LinkedInDomain, AgentReachDomain, MemoryDomain, YtBrainDomain):
     """Small, auditable set of controls for an Omarchy/Hyprland desktop."""
 
     # ── Adapter → method mapping ──────────────────────────────────────
@@ -86,6 +88,8 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **WIDGET_ADAPTERS,
         **LINKEDIN_ADAPTERS,
         **AGENT_REACH_ADAPTERS,
+        **MEMORY_ADAPTERS,
+        **YT_BRAIN_ADAPTERS,
         'harness.status': '_adapter_harness_status',
         'harness.start_check': '_adapter_start_harness_check',
         'harness.check_status': '_adapter_harness_check_status',
@@ -248,6 +252,9 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         **COMPOSIO_COMMANDS,
         **API_ANYTHING_COMMANDS,
         **LINKEDIN_COMMANDS,
+        **AGENT_REACH_COMMANDS,
+        **MEMORY_COMMANDS,
+        **YT_BRAIN_COMMANDS,
         'jarvis.switch_mode': ('systemctl', 'git'),
         'jarvis.get_mode': (),
         'jarvis.sync_branch': ('systemctl', 'git'),
@@ -450,6 +457,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
         self.learning_service = None
         self._memory_worker = BoundedWorker('jarvis-memory', capacity=16)
         self._file_worker = BoundedWorker('jarvis-files', capacity=16)
+        self._linkedin_worker = BoundedWorker('jarvis-linkedin', capacity=8)
         self._memory_writes = set()
         if not self._memory_config.enabled:
             self._skills = {name: spec for name, spec in self._skills.items()
@@ -915,37 +923,26 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
 
     def _applications(self):
         """Discover installed .desktop applications via XDG directories."""
-        # XDG Base Directory Specification compliant
-        data_home = os.getenv('XDG_DATA_HOME') or str(Path.home() / '.local/share')
-        data_dirs_str = os.getenv('XDG_DATA_DIRS', '/usr/local/share:/usr/share')
-        data_dirs = [d.strip() for d in data_dirs_str.split(':') if d.strip()]
-
-        directories = [Path(data_home) / 'applications']
-        for d in data_dirs:
-            directories.append(Path(d) / 'applications')
-
+        from jarvis_control.discovery import desktop_paths, read_desktop
         apps = {}
         self._application_classes = {}
-        for directory in directories:
-            if not directory.is_dir():
-                continue
-            for entry in directory.glob('*.desktop'):
-                parser = configparser.ConfigParser(interpolation=None, strict=False)
-                try:
-                    parser.read(entry, encoding='utf-8')
-                    section = parser['Desktop Entry']
-                    if (section.get('Type', 'Application') != 'Application' or
-                            section.getboolean('NoDisplay', fallback=False) or
-                            section.getboolean('Hidden', fallback=False) or
-                            not section.get('Exec')):
-                        continue
-                    name = section.get('Name', fallback=entry.stem).strip()
-                except (OSError, configparser.Error, ValueError, KeyError):
+        for app_id, entry in desktop_paths().items():
+            parser = read_desktop(entry)
+            try:
+                section = parser['Desktop Entry']
+                if (section.get('Type', 'Application') != 'Application' or
+                        section.getboolean('NoDisplay', fallback=False) or
+                        section.getboolean('Hidden', fallback=False) or
+                        not section.get('Exec')):
                     continue
-                apps.setdefault(entry.name, name)
-                self._application_classes.setdefault(entry.name, {
-                    entry.stem.casefold(), section.get('StartupWMClass', '').strip().casefold(),
-                } - {''})
+                name = section.get('Name', fallback=entry.stem).strip()
+            except (configparser.Error, ValueError, KeyError):
+                continue
+            identity = app_id + '.desktop'
+            apps[identity] = name
+            self._application_classes[identity] = {
+                entry.stem.casefold(), section.get('StartupWMClass', '').strip().casefold(),
+            } - {''}
         return apps
 
     async def execute(self, name, arguments=None):
@@ -1259,7 +1256,10 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                     await self._task_runner.close()
                 if getattr(self, '_task_presentation', None) is not None:
                     self._task_presentation.close()
-                await self._file_worker.close()
+                try:
+                    await self._linkedin_worker.close()
+                finally:
+                    await self._file_worker.close()
 
     async def _adapter_open_input_bar(self):
         # The JARVIS input bar includes attachments. The canvas's optional
@@ -1421,14 +1421,15 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
     async def _memory_operation(self, method, **arguments):
         try:
             return await self.memory_call(method, **arguments)
-        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, WorkerBusyError) as error:
+        except (ValueError, OSError, sqlite3.Error, WorkerBusyError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_remember_memory(self, text, category='auto', scope='user', steps=None, outcome=None, occurred_at=None):
         return await self._memory_operation('remember', text=text, category=category, scope=scope, steps=steps, outcome=outcome, occurred_at=occurred_at)
 
     async def _adapter_recall_memory(self, query='', limit=20, device=None, category='all', scope='user'):
-        return await self._memory_operation('recall', query=query, limit=limit, device=device, category=category, scope=scope)
+        return await self._memory_operation('recall', query=query, limit=limit, device=device,
+                                            category=category, scope=scope)
 
     async def _adapter_forget_memory(self, text, scope='user'):
         return await self._memory_operation('forget', text=text, scope=scope)
@@ -1600,6 +1601,7 @@ class DesktopSkills(WorkspaceDomain, GithubDomain, OrchestrationDomain, Composio
                 'browser': 'google-chrome.desktop',
                 'chrome': 'google-chrome.desktop',
                 'files': 'org.gnome.Nautilus.desktop',
+                'filemanager': 'org.gnome.Nautilus.desktop',
                 'nautilus': 'org.gnome.Nautilus.desktop',
                 'spotify': 'spotify.desktop',
                 'discord': 'discord.desktop',

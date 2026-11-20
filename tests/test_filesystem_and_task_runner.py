@@ -125,6 +125,37 @@ def test_append_text(tmp_path: Path):
     assert readback == "Line 1\nLine 2\n"
 
 
+def test_create_text_loses_race_without_overwriting_the_winner(tmp_path, monkeypatch):
+    target = tmp_path / 'document'
+    link = os.link
+
+    def concurrent_create(source, destination):
+        target.write_text('other writer', encoding='utf-8')
+        return link(source, destination)
+
+    monkeypatch.setattr(os, 'link', concurrent_create)
+    with pytest.raises(FileOperationError, match='file exists'):
+        write_text(str(target), 'requested text')
+    assert target.read_text() == 'other writer'
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_replace_text_rejects_a_changed_original(tmp_path, monkeypatch):
+    target = tmp_path / 'document'
+    target.write_text('original', encoding='utf-8')
+    original_open = Path.open
+
+    def concurrent_edit(path, mode='r', *args, **kwargs):
+        if mode == 'x':
+            target.write_text('edited elsewhere', encoding='utf-8')
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', concurrent_edit)
+    with pytest.raises(FileOperationError, match='changed since it was read'):
+        replace_text(str(target), 'original', 'replacement')
+    assert target.read_text() == 'edited elsewhere'
+
+
 def test_replace_text(tmp_path: Path):
     file_path = tmp_path / "edit_test.txt"
     write_text(str(file_path), "The quick brown fox jumps over the lazy dog.")
@@ -224,6 +255,24 @@ def test_copy_and_move_path(tmp_path: Path):
     assert res_m["verified"] is True
     assert dst_move.exists()
     assert not src.exists()
+
+
+def test_trash_metadata_failure_leaves_original_in_place(tmp_path, monkeypatch):
+    target = tmp_path / 'document'
+    target.write_text('keep this', encoding='utf-8')
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+    original_open = Path.open
+
+    def reject_trash_metadata(path, *args, **kwargs):
+        if path.suffix == '.trashinfo':
+            raise PermissionError(13, 'fixture blocked')
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', reject_trash_metadata)
+    with pytest.raises(FileOperationError, match='cannot move path to Trash'):
+        trash_path(str(target))
+    assert target.read_text() == 'keep this'
+    assert not list((tmp_path / 'data/Trash/files').iterdir())
 
 
 def test_trash_and_delete_path(tmp_path: Path, monkeypatch):
@@ -356,6 +405,63 @@ async def test_task_runner_execution_and_ground_truth(tmp_path: Path):
     assert event["id"] == task_id
     assert event["status"] == "completed"
 
+    await runner.close()
+
+
+@pytest.mark.asyncio
+async def test_task_runner_trashes_symlink_without_treating_target_as_remaining(tmp_path, monkeypatch):
+    monkeypatch.setenv('XDG_DATA_HOME', str(tmp_path / 'data'))
+    target = tmp_path / 'target'
+    target.write_text('keep', encoding='utf-8')
+    link = tmp_path / 'link'
+    link.symlink_to(target)
+
+    async def execute(tool, args):
+        return trash_path(args['path'])
+
+    runner = TaskRunner(execute, lambda *_: True)
+    job = runner.start('Trash shortcut', json.dumps([
+        {'tool': 'trash_path', 'args': {'path': str(link)}}
+    ]))
+    for _ in range(50):
+        status = runner.status(job['id'])
+        if status['status'] in ('completed', 'failed', 'cancelled'):
+            break
+        await asyncio.sleep(.01)
+
+    assert status['status'] == 'completed'
+    assert not link.is_symlink()
+    assert target.read_text(encoding='utf-8') == 'keep'
+    await runner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool', ['copy_path', 'move_path'])
+async def test_task_runner_verifies_dangling_symlink_destinations(tmp_path, tool):
+    source = tmp_path / 'missing-link'
+    source.symlink_to(tmp_path / 'absent-target')
+    destination = tmp_path / 'destination'
+
+    async def execute(name, args):
+        os.symlink(os.readlink(args['source']), args['destination'])
+        if name == 'move_path':
+            os.unlink(args['source'])
+        return {'status': 'copied' if name == 'copy_path' else 'moved', 'verified': True}
+
+    runner = TaskRunner(execute, lambda *_: True)
+    job = runner.start('Copy dangling link', json.dumps([
+        {'tool': tool, 'args': {'source': str(source), 'destination': str(destination)}}
+    ]))
+    for _ in range(50):
+        status = runner.status(job['id'])
+        if status['status'] in ('completed', 'failed', 'cancelled'):
+            break
+        await asyncio.sleep(.01)
+
+    assert status['status'] == 'completed'
+    assert destination.is_symlink()
+    assert os.readlink(destination) == str(tmp_path / 'absent-target')
+    assert source.is_symlink() is (tool == 'copy_path')
     await runner.close()
 
 

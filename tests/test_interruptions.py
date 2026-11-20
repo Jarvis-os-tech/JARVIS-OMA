@@ -1,5 +1,6 @@
 """Natural interruption boundaries without microphone, speaker or network access."""
 import asyncio
+import contextlib
 import struct
 import time
 from types import SimpleNamespace
@@ -426,4 +427,58 @@ def test_spoken_interruption_clears_frames_and_resets_on_echo():
     assert interruption.rejected_echo_frames == 1
 
 
+def test_spoken_interruption_admits_speech_when_reference_is_short():
+    """Absence of full reference audio does not falsely block natural user interruption."""
+    from voice_layer.speech import SpokenInterruption, PlaybackReference
+    ref = PlaybackReference()
+    ref.add(struct.pack('<960h', *([100] * 960)), now=time.monotonic())  # Short reference (40ms)
+    detector = lambda _: 0.95
+    interruption = SpokenInterruption(ref, detector=detector, min_rms=0.018, echo_threshold=0.40, vad_threshold=0.50)
 
+    pcm = struct.pack('<320h', *([4000] * 320))
+    res = None
+    for _ in range(6):
+        res = interruption.process(pcm, time.monotonic())
+        if res is not None:
+            break
+
+    assert res is not None
+    assert res.barge_in is True
+    assert res.opened is True
+    assert interruption.last_correlation < 0.40
+
+
+@pytest.mark.asyncio
+async def test_barge_in_frame_routes_immediately_to_cloud_forwarding():
+    """A barge-in frame sets release_early=True and forwards immediately without local buffer delay."""
+    player = Playback('default')
+    voice = LiveVoice(player, barge_in=True)
+    voice.gate.admit_interruption()
+    voice.local_speech.ready = True
+
+    pcm = struct.pack('<320h', *([3000] * 320))
+    turn = voice.gate.accepted_turns
+    barge_frame = GateFrame(pcm, opened=True, barge_in=True, turn_id=turn)
+    queue = asyncio.Queue()
+    queue.put_nowait((barge_frame, voice.player.generation))
+
+    session = SimpleNamespace(
+        send_realtime_input=AsyncMock(),
+    )
+
+    # Put a close frame to finish the turn
+    close_frame = GateFrame(pcm, closed=True, barge_in=True, turn_id=turn)
+    queue.put_nowait((close_frame, voice.player.generation))
+
+    send_task = asyncio.create_task(voice._send_frames(session, queue))
+    # Let the supervisor run
+    await asyncio.sleep(0.05)
+    send_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await send_task
+
+    # Verify session.send_realtime_input was called with activity_start
+    assert session.send_realtime_input.call_count >= 1
+    calls = [call.kwargs for call in session.send_realtime_input.call_args_list]
+    has_activity_start = any('activity_start' in k for k in calls)
+    assert has_activity_start, "Session should have received activity_start immediately on barge-in"

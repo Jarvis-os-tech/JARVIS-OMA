@@ -2,6 +2,19 @@
   "version": 1,
   "skills": [
     {
+      "name": "linkedin_get_post",
+      "description": "Read a LinkedIn post by its share or ugcPost URN through the LinkedIn Department.",
+      "adapter": "linkedin.get_post",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "post_urn": {"type": "string", "description": "LinkedIn share or ugcPost URN."}
+        },
+        "required": ["post_urn"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "linkedin_draft_post",
       "description": "Draft and stage a LinkedIn post through the LinkedIn Department (A3 PostWriter -> A10 Humanizer -> A12 Scheduler). The post is placed in the review queue for user approval before publishing.",
       "adapter": "linkedin.draft_post",
@@ -104,6 +117,10 @@
             "type": "boolean",
             "description": "If true, immediately publishes to the user's live LinkedIn feed upon approval.",
             "default": false
+          },
+          "image_path": {
+            "type": "string",
+            "description": "Absolute local PNG or JPEG path explicitly approved for this post. Requires publish_now=true."
           }
         },
         "required": ["post_id"],

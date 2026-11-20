@@ -19,7 +19,7 @@
     },
     {
       "name": "list_system_agents",
-      "description": "Discover installed delegate agents and their readiness. Readiness does not guarantee a successful model task.",
+      "description": "Answer what agents we have or which agents are available. Lists one JARVIS agent catalog with local command availability and department membership for native agents. Department agents run through department workflows.",
       "adapter": "agents.list",
       "parameters_json_schema": {
         "type": "object",

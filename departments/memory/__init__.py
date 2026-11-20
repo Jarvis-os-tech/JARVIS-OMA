@@ -5,7 +5,7 @@ zero-RAM graph edges, FTS5 full-text search, and event-driven day rollover compa
 
 from .config import MemoryConfig, config
 from .db import MemoryDatabase
-from .department import MemoryDepartment, memory_dept
+from .department import MemoryDepartment
 from .agents import (
     BaseMemoryAgent,
     MemoryCandidate,
@@ -15,6 +15,13 @@ from .agents import (
     RetrievalRouterAgent,
     DayRolloverCompactorAgent,
 )
+
+def __getattr__(name):
+    if name == "memory_dept":
+        from .department import memory_dept
+        return memory_dept
+    raise AttributeError(name)
+
 
 __all__ = [
     "MemoryConfig",

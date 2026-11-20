@@ -9,10 +9,9 @@ if [[ -f "${AGENT_DIR}/.env" ]]; then
     set +a
 fi
 
-# Match PipeWire's client period to the 20 ms audio frames. A 128-sample
-# (2.7 ms) period makes the Python callback race the device at speech onset.
-export PIPEWIRE_LATENCY="${PIPEWIRE_LATENCY:-1024/48000}"
-export PIPEWIRE_QUANTUM="${PIPEWIRE_QUANTUM:-1024/48000}"
+# Match PipeWire's client period to ultra-low-latency 20 ms / 256 quantum frames
+export PIPEWIRE_LATENCY="${PIPEWIRE_LATENCY:-256/48000}"
+export PIPEWIRE_QUANTUM="${PIPEWIRE_QUANTUM:-256/48000}"
 export PYTHONUNBUFFERED=1
 
 # User services have a smaller PATH than interactive terminals. Agent CLIs are

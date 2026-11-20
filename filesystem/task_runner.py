@@ -9,10 +9,13 @@ import uuid
 from jarvis_control.outcomes import classify_result
 
 
-TASK_TOOLS = frozenset({
+FILE_TASK_TOOLS = frozenset({
     'make_directory', 'write_file', 'append_file', 'edit_file',
     'copy_path', 'move_path', 'trash_path',
 })
+TASK_TOOLS = FILE_TASK_TOOLS | {
+    'linkedin_draft_post', 'linkedin_plan_sprint', 'linkedin_audit_profile',
+}
 MAX_STEPS = 30
 MAX_JOBS = 20
 MAX_EVENTS = 32
@@ -93,7 +96,8 @@ class TaskRunner:
                         job['completed_steps'] += 1
                         job['status'] = 'cancelled'
                         break
-                    await self._verify_step_ground_truth(step['tool'], step['args'])
+                    if step['tool'] in FILE_TASK_TOOLS:
+                        await self._verify_step_ground_truth(step['tool'], step['args'])
                 except Exception as error:
                     if task_id in self._cancel_requested:
                         step['status'] = 'cancelled'
@@ -135,37 +139,37 @@ class TaskRunner:
     async def _verify_step_ground_truth(self, tool: str, args: dict) -> None:
         """Deterministically verify physical ground truth on disk after step execution."""
         def _verify_disk():
-            from pathlib import Path
+            from filesystem.filesystem import path_for
             if tool in ('write_file', 'append_file', 'edit_file'):
                 raw_path = args.get('path', '')
                 if raw_path:
-                    path = Path(raw_path).expanduser().resolve()
+                    path = path_for(raw_path)
                     # Empty content is valid for writes, appends, and edits.
                     if not path.is_file():
                         raise TaskPlanError(f'Ground-truth verification failed: file {raw_path} not found')
             elif tool == 'make_directory':
                 raw_path = args.get('path', '')
                 if raw_path:
-                    path = Path(raw_path).expanduser().resolve()
+                    path = path_for(raw_path)
                     if not path.is_dir():
                         raise TaskPlanError(f'Ground-truth verification failed: directory {raw_path} does not exist')
             elif tool == 'copy_path':
                 raw_dst = args.get('destination', '')
                 if raw_dst:
-                    dst = Path(raw_dst).expanduser().resolve()
-                    if not dst.exists():
+                    dst = path_for(raw_dst)
+                    if not dst.exists() and not dst.is_symlink():
                         raise TaskPlanError(f'Ground-truth verification failed: copy destination {raw_dst} does not exist')
             elif tool == 'move_path':
                 raw_dst = args.get('destination', '')
                 if raw_dst:
-                    dst = Path(raw_dst).expanduser().resolve()
-                    if not dst.exists():
+                    dst = path_for(raw_dst)
+                    if not dst.exists() and not dst.is_symlink():
                         raise TaskPlanError(f'Ground-truth verification failed: move destination {raw_dst} does not exist')
             elif tool == 'trash_path':
                 raw_path = args.get('path', '')
                 if raw_path:
-                    path = Path(raw_path).expanduser().resolve()
-                    if path.exists():
+                    path = path_for(raw_path)
+                    if path.exists() or path.is_symlink():
                         raise TaskPlanError(f'Ground-truth verification failed: path {raw_path} still exists after trash')
 
         await asyncio.to_thread(_verify_disk)

@@ -197,6 +197,60 @@
         "required": [],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "sync_memory_department",
+      "description": "Sync active conversation turns to Obsidian daily note, check event-driven day rollover, and compact previous days automatically.",
+      "adapter": "memory.sync",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "compact_memory_history",
+      "description": "Compact historical daily conversation files into clean executive summaries with carried-over tasks, stripping filler and raw logs.",
+      "adapter": "memory.compact",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "target_date": {
+            "type": "string",
+            "description": "Optional specific date YYYY-MM-DD to compact. If omitted, compacts all historical daily notes."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "prune_memory_vault",
+      "description": "Remove empty Markdown stubs from the Memory Department conversations folder in the configured vault.",
+      "adapter": "memory.prune",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "description": "If true, only report empty files without deleting them."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "reflect_memory",
+      "description": "Analyze episodic error traces and distill procedural rules via the A3 Reflection Agent.",
+      "adapter": "memory.reflect",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
     }
   ]
 }

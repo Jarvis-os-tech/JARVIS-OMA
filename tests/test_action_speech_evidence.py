@@ -45,9 +45,11 @@ async def test_spoken_success_without_any_tool_is_suppressed_and_not_saved_as_fa
     assert voice.player.queued_bytes==0 and voice._memory_assistant==''
     await voice.handle(boundary(),session)
     skills.execute.assert_not_awaited()
-    session.send_client_content.assert_not_awaited()  # No hidden second model pass.
+    session.send_client_content.assert_awaited_once()
     assert voice.player.queued_bytes==0
-    assert 'not marked it complete' in voice._memory_assistant
+    await voice.handle(audio('I could not verify that action.'), session)
+    assert voice.player.queued_bytes == 1920
+    assert 'browser is open' not in voice._assistant_text
 
 
 @pytest.mark.asyncio

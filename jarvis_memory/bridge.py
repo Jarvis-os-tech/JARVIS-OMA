@@ -31,7 +31,7 @@ from .session import SessionStore
 from .paths import get_config_dir
 from .knowledge import KnowledgeStore
 from .capture import extract_memories
-from .retrieval import rank_candidates
+from .retrieval import rank_candidates, recall_with_evidence
 from .embeddings import GeminiEmbeddingProvider, OllamaEmbeddingProvider
 from .hybrid import fuse_results
 from .categories import CATEGORIES, category_for, validate_selection
@@ -174,6 +174,16 @@ class MemoryBridge:
             self.service = MemoryService(self.store, extractor, scanner=self.scanner)
             self.service.start()
 
+    def memory_department(self, operation, *, vault_dir=None, **kwargs):
+        self._require()
+        if operation == 'sync_sessions_to_vault' and not self.config.record_sessions:
+            return {'status': 'RECORDING_DISABLED', 'messages_synced': 0}
+        from departments.memory.department import MemoryDepartment
+        department = MemoryDepartment.for_bridge(self, vault_dir=vault_dir)
+        if operation == 'sync_sessions_to_vault':
+            kwargs['sessions_db_path'] = self.root / 'sessions.db'
+        return getattr(department, operation)(**kwargs)
+
     def remember(self, text, category='auto', scope='user', steps=None, outcome=None, occurred_at=None):
         self._require()
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 1000:
@@ -264,6 +274,10 @@ class MemoryBridge:
             for item in documents + conversation:
                 if 'text' in item:
                     item['content'] = item['text'][:4000]
+        memories = recall_with_evidence(search_query, memories)
+        ranked_facts = recall_with_evidence(search_query, ranked_facts)
+        documents = recall_with_evidence(search_query, documents)
+        conversation = recall_with_evidence(search_query, conversation)
         return {'facts': ranked_facts, 'memories': memories, 'documents': documents,
                 'conversation': conversation,
                 'count': len(ranked_facts) + len(memories) + len(documents) + len(conversation),

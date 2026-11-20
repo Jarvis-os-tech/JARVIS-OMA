@@ -33,6 +33,9 @@ def project(source, job):
         elif job.get('pending_approvals'):
             state = 'waiting_confirmation'
     if source == 'file_task':
+        has_department_step = any(
+            step.get('tool', '').startswith('linkedin_') for step in job.get('steps', [])
+        )
         complete, total = job.get('completed_steps'), job.get('total_steps')
         if type(complete) is int and type(total) is int and 0 <= complete <= total <= 30 and total > 0:
             progress = {'completed': complete, 'total': total}
@@ -42,10 +45,13 @@ def project(source, job):
                             and all(s.get('status') == 'completed' for s in job.get('steps', [])))
             state = 'completed' if verified else 'interrupted'
             scope = 'file_step_checks' if verified else 'execution_unknown'
-        message = f"{complete} of {total} file steps finished." if progress else 'File-task progress is unavailable.'
+            if verified and has_department_step:
+                state, scope, verified = 'response_received', 'response_only', False
+        step_label = 'steps' if has_department_step else 'file steps'
+        message = f"{complete} of {total} {step_label} finished." if progress else 'Task progress is unavailable.'
         if state == 'failed':
             failure = next((s for s in job.get('steps', []) if s.get('status') == 'failed'), {})
-            message = _text(failure.get('error'), 'A file step failed.')
+            message = _text(failure.get('error'), f'One of the {step_label} failed.')
     elif source == 'model':
         title = 'Analysis' if job.get('route') == 'reasoning' else 'Text processing'
         if state == 'completed':

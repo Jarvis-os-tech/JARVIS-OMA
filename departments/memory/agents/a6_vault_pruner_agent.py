@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from .base_memory_agent import BaseMemoryAgent
+from .a5_day_rollover_compactor import SYNC_CURSOR
 
 PROTECTED_NAMES = {"00 HOME.md", "INDEX.md"}
 IGNORED_DIRS = {".obsidian", ".raw_backups", ".git"}
@@ -34,6 +35,7 @@ class VaultPrunerAgent(BaseMemoryAgent):
         pruned_files: List[str] = []
         bytes_freed = 0
         removed_stems: Set[str] = set()
+        failed_files: List[str] = []
 
         for md_path in sorted(root.rglob("*.md")):
             # 1. Skip protected directories
@@ -42,7 +44,7 @@ class VaultPrunerAgent(BaseMemoryAgent):
                 continue
 
             # 2. Skip protected root files
-            if md_path.name in PROTECTED_NAMES:
+            if md_path.is_symlink() or md_path.name in PROTECTED_NAMES:
                 continue
 
             # 3. Protect today's active note even if it only has initial template
@@ -53,23 +55,24 @@ class VaultPrunerAgent(BaseMemoryAgent):
             is_empty, reason = self._is_empty_or_blank_stub(md_path)
             if is_empty:
                 size = md_path.stat().st_size
-                pruned_files.append(f"{md_path.relative_to(root)} ({reason})")
-                removed_stems.add(md_path.stem)
-                bytes_freed += size
-
                 if not dry_run:
                     try:
                         md_path.unlink()
-                        self.logger.info("Purged empty file: %s (%s)", md_path.relative_to(root), reason)
-                    except Exception as e:
-                        self.logger.warning("Could not delete %s: %e", md_path, e)
+                    except OSError as error:
+                        failed_files.append(str(md_path.relative_to(root)))
+                        self.logger.warning("Could not delete %s: %s", md_path, error)
+                        continue
+                pruned_files.append(f"{md_path.relative_to(root)} ({reason})")
+                removed_stems.add(md_path.stem)
+                bytes_freed += size
 
         # 5. Clean up any dangling wikilinks in INDEX.md
         if not dry_run and removed_stems:
             self._cleanup_dangling_index_links(root, removed_stems)
 
         return {
-            "status": "COMPLETED",
+            "status": "ERROR" if failed_files else "COMPLETED",
+            "failed_files": failed_files,
             "dry_run": dry_run,
             "pruned_count": len(pruned_files),
             "bytes_freed": bytes_freed,
@@ -85,6 +88,8 @@ class VaultPrunerAgent(BaseMemoryAgent):
                 return True, "0-byte file"
 
             content = file_path.read_text(encoding="utf-8")
+            if SYNC_CURSOR.search(content):
+                return False, "contains a session sync checkpoint"
 
             # Case 2: Whitespace only
             if not content.strip():
@@ -116,13 +121,16 @@ class VaultPrunerAgent(BaseMemoryAgent):
     def _cleanup_dangling_index_links(self, root: Path, removed_stems: Set[str]) -> None:
         """Remove links to deleted files from INDEX.md files in the vault."""
         for index_path in root.rglob("INDEX.md"):
+            if index_path.is_symlink():
+                continue
             try:
                 text = index_path.read_text(encoding="utf-8")
                 changed = False
                 lines = []
                 for line in text.splitlines():
-                    # If line links to one of the removed stems, drop it
-                    if any(f"[[Conversations/{stem}|" in line or f"[[{stem}]]" in line for stem in removed_stems):
+                    # Only remove a standalone link entry, preserving surrounding prose.
+                    entry = re.fullmatch(r"\s*(?:[-*+]\s+)?\[\[(?:Conversations/)?([^|\]]+)(?:\|[^\]]+)?\]\]\s*", line)
+                    if entry and entry[1] in removed_stems:
                         changed = True
                         continue
                     lines.append(line)

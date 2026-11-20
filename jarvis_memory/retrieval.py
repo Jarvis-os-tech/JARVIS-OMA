@@ -31,6 +31,42 @@ def _tokens(text):
     return re.findall(r"[^\W_]+(?:[._][^\W_]+)*(?:\+\+|#)?", normalized, re.UNICODE)
 
 
+def recall_with_evidence(query, ranked):
+    """Abstain on slot and keyword lookups without enough matching evidence."""
+    tokens = _tokens(query)
+    if not tokens:
+        return ranked if not query.strip() else []
+    attribute = (
+        tokens[0] in {"what", "which"}
+        and len(tokens) >= 3
+        and tokens[1] in {"is", "are", "was", "were", "s"}
+        and tokens[2] in {"my", "our"}
+    )
+    if not attribute and tokens[0] in {
+        "what", "when", "where", "why", "how", "which", "who",
+        "do", "does", "did", "is", "are", "can", "could", "should",
+    }:
+        return ranked
+    # shortcut: topical similarity cannot establish a named attribute, revisit with verified reranking evidence
+    terms = [_CONCEPTS.get(word, word) for word in tokens[3 if attribute else 0:] if word not in _STOPWORDS]
+    if not terms:
+        return []
+    required = set(terms)
+
+    def coverage(item):
+        text = item.get("text") or item.get("content") or ""
+        words = {_CONCEPTS.get(word, word) for word in _tokens(text[:32768])}
+        return required & words
+
+    if attribute:
+        return [item for item in ranked if (matched := coverage(item)) and terms[-1] in matched
+                and (len(required) == 1 or len(matched) >= 2)
+                and 2 * len(matched) >= len(required)]
+    if any(2 * len(coverage(item)) >= len(required) for item in ranked):
+        return ranked
+    return []
+
+
 def _timestamp(candidate):
     value = candidate.get("updated_at") or candidate.get("timestamp") or candidate.get("created_at")
     try:

@@ -4,8 +4,10 @@ import json
 import logging
 import os
 import stat
+import time
 from pathlib import Path
 from typing import Callable, Optional
+from core.ipc import start_control_server, unlink_owned_socket
 
 from .config import RUNTIME_DIR, SOCKET_PATH
 
@@ -56,39 +58,30 @@ class ControlServer:
         self.speak_cb = speak_cb
         self._server = None
         self._speak_server = None
+        self._owns_speak_socket = False
         self._owns_socket = False
         self._legacy_symlink: Optional[Path] = None
+        self._legacy_identity = None
 
     async def start(self):
         self.socket_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         parent = self.socket_path.parent.lstat()
         if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != os.getuid() or parent.st_mode & 0o077:
             raise PermissionError('Voice runtime directory must be private and owned by this user')
-        if self.socket_path.exists() or self.socket_path.is_symlink():
-            node = self.socket_path.lstat()
-            if not stat.S_ISSOCK(node.st_mode) or node.st_uid != os.getuid():
-                raise PermissionError('Refusing to replace an unowned or non-socket control path')
-            try:
-                reader, writer = await asyncio.wait_for(asyncio.open_unix_connection(str(self.socket_path)), 1)
-            except (ConnectionRefusedError, FileNotFoundError):
-                self.socket_path.unlink(missing_ok=True)
-            else:
-                writer.close()
-                await writer.wait_closed()
-                raise RuntimeError('JARVIS voice is already running')
-        self._server = await asyncio.start_unix_server(
-            self._handle_client, path=str(self.socket_path), limit=262144)
-        self._owns_socket = True
+        self._server = await start_control_server(
+            self._handle_client, self.socket_path, limit=262144)
+        node = self.socket_path.lstat()
+        self._owns_socket = (node.st_dev, node.st_ino)
         self.socket_path.chmod(0o600)
         log.info('IPC listening on %s', self.socket_path)
 
         # Dedicated speak socket for OS alerts and external daemons
         try:
-            if SPEAK_SOCKET_PATH.exists() or SPEAK_SOCKET_PATH.is_symlink():
-                SPEAK_SOCKET_PATH.unlink(missing_ok=True)
-            self._speak_server = await asyncio.start_unix_server(
-                self._handle_client, path=str(SPEAK_SOCKET_PATH), limit=262144
+            self._speak_server = await start_control_server(
+                self._handle_client, SPEAK_SOCKET_PATH, limit=262144
             )
+            node = SPEAK_SOCKET_PATH.lstat()
+            self._owns_speak_socket = (node.st_dev, node.st_ino)
             SPEAK_SOCKET_PATH.chmod(0o600)
             log.info('Speak socket listening on %s', SPEAK_SOCKET_PATH)
         except Exception as err:
@@ -97,10 +90,11 @@ class ControlServer:
         legacy_sock = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "jarvis.sock"
         if self.socket_path == SOCKET_PATH and legacy_sock != self.socket_path:
             try:
-                if legacy_sock.is_symlink() or legacy_sock.exists():
-                    legacy_sock.unlink()
-                legacy_sock.symlink_to(self.socket_path)
-                self._legacy_symlink = legacy_sock
+                if not legacy_sock.exists() and not legacy_sock.is_symlink():
+                    legacy_sock.symlink_to(self.socket_path)
+                    self._legacy_symlink = legacy_sock
+                    node = legacy_sock.lstat()
+                    self._legacy_identity = (node.st_dev, node.st_ino)
                 log.debug("Linked legacy socket %s -> %s", legacy_sock, self.socket_path)
             except Exception as err:
                 log.debug("Could not create legacy jarvis.sock symlink: %s", err)
@@ -114,17 +108,18 @@ class ControlServer:
             self._speak_server.close()
             await self._speak_server.wait_closed()
             self._speak_server = None
-        if SPEAK_SOCKET_PATH.exists() or SPEAK_SOCKET_PATH.is_symlink():
+        if self._owns_speak_socket:
             try:
-                SPEAK_SOCKET_PATH.unlink(missing_ok=True)
+                unlink_owned_socket(SPEAK_SOCKET_PATH, self._owns_speak_socket)
             except Exception:
                 pass
+            self._owns_speak_socket = False
         if self._owns_socket:
-            self.socket_path.unlink(missing_ok=True)
+            unlink_owned_socket(self.socket_path, self._owns_socket)
             self._owns_socket = False
         if getattr(self, '_legacy_symlink', None) and self._legacy_symlink.is_symlink():
             try:
-                self._legacy_symlink.unlink(missing_ok=True)
+                unlink_owned_socket(self._legacy_symlink, self._legacy_identity)
             except Exception:
                 pass
 
@@ -133,7 +128,7 @@ class ControlServer:
         from .config import STATE_FILE
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         temp = STATE_FILE.with_suffix('.tmp')
-        temp.write_text(json.dumps(status))
+        temp.write_text(json.dumps({**status, 'status_written_at': time.time()}))
         temp.chmod(0o600)
         temp.replace(STATE_FILE)
 

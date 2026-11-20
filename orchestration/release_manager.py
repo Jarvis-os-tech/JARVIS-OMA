@@ -12,11 +12,11 @@ import hashlib
 import logging
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import tempfile
 import time
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -341,8 +341,24 @@ class ReleaseManager:
             timeout=30,
         )
 
+    def _voice_ready(self, timeout: float) -> bool:
+        from voice_layer.config import SOCKET_PATH
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(timeout)
+                client.connect(str(SOCKET_PATH))
+                client.sendall(b'{"command":"status"}\n')
+                with client.makefile('rb') as response:
+                    status = json.loads(response.readline(65536))
+            return isinstance(status, dict) and (
+                status.get('connected') is True or status.get('standby') is True
+            )
+        except (OSError, ValueError):
+            return False
+
     def verify_health(self, timeout: float = 5.0) -> bool:
-        """Require both operational services to remain active for one second."""
+        """Require sustained service activity and a responsive desktop voice socket."""
         deadline = time.monotonic() + timeout
         healthy_since: float | None = None
         while time.monotonic() < deadline:
@@ -356,6 +372,9 @@ class ReleaseManager:
                     capture_output=True, text=True, timeout=min(2.0, remaining),
                 )
                 healthy = res.returncode == 0 and res.stdout.split() == ["active", "active"]
+                if healthy:
+                    remaining = deadline - time.monotonic()
+                    healthy = remaining > 0 and self._voice_ready(min(1.0, remaining))
             except (OSError, subprocess.TimeoutExpired):
                 healthy = False
             now = time.monotonic()

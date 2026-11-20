@@ -33,30 +33,78 @@ def _runtime_dir() -> Path:
 RUNTIME_DIR = _runtime_dir()
 
 
-def load_env_file(path: Path = ENV_FILE) -> list[str]:
-    """Merge ~/.config/omarchy-voice/env into os.environ.
+def load_env_file(path: Path | None = None) -> list[str]:
+    """Merge .env files into os.environ.
 
-    The systemd unit reads this file through EnvironmentFile, so the daemon has
-    the keys either way. Without this, the *CLI* does not. A real environment
-    variable always wins. Returns warnings (world-readable file, etc.).
+    Checks the specified file, repository root .env, and user configuration
+    locations. A real non-empty environment variable always wins.
     """
     warnings: list[str] = []
-    try:
-        st = path.stat()
-        text = path.read_text()
-    except OSError:
-        return warnings
-    if st.st_mode & 0o077:
-        warnings.append(f"{path} is readable by group/other — chmod 600")
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = []
+    if path:
+        candidates.append(Path(path))
+    else:
+        candidates.extend([
+            repo_root / ".env",
+            CONFIG_HOME / "jarvis-voice" / ".env",
+            CONFIG_HOME / "jarvis-voice" / "env",
+            ENV_FILE,
+        ])
+
+    for target in candidates:
+        if not target.is_file():
             continue
-        name, _, value = line.partition("=")
-        name, value = name.strip(), value.strip().strip('"').strip("'")
-        if name and name not in os.environ:
-            os.environ[name] = value
+        try:
+            st = target.stat()
+            text = target.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if st.st_mode & 0o077:
+            warnings.append(f"{target} is readable by group/other — chmod 600")
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.partition("=")
+            name, value = name.strip(), value.strip().strip('"').strip("'")
+            if name and value:
+                curr = os.environ.get(name, "").strip()
+                if not curr or curr.startswith("PASTE_YOUR_"):
+                    os.environ[name] = value
+
+    # Ensure key aliases & rotation defaults
+    if not os.environ.get("GEMINI_API_KEY"):
+        for suffix in ("_1", "_2", "_3", "_4", "_5", "_6", "_7"):
+            candidate = os.environ.get(f"GEMINI_API_KEY{suffix}")
+            if candidate and not candidate.startswith("PASTE_"):
+                os.environ["GEMINI_API_KEY"] = candidate
+                break
+
+    if "GEMINI_API_KEY" in os.environ and not os.environ.get("GOOGLE_API_KEY"):
+        os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
+    if not os.environ.get("GROQ_API_KEY"):
+        for suffix in ("_1", "_2", "_3"):
+            candidate = os.environ.get(f"GROQ_API_KEY{suffix}")
+            if candidate and not candidate.startswith("PASTE_"):
+                os.environ["GROQ_API_KEY"] = candidate
+                break
+
+    nim_key = os.environ.get("NVIDIA_NIM_API_KEY", "")
+    nv_key = os.environ.get("NVIDIA_API_KEY", "")
+    if (not nim_key or nim_key.startswith("PASTE_")) and nv_key and not nv_key.startswith("PASTE_"):
+        os.environ["NVIDIA_NIM_API_KEY"] = nv_key
+    elif (not nv_key or nv_key.startswith("PASTE_")) and nim_key and not nim_key.startswith("PASTE_"):
+        os.environ["NVIDIA_API_KEY"] = nim_key
+
     return warnings
+
+
+# Load environment on configuration load
+load_env_file()
 
 
 CONFIG_DIR = CONFIG_HOME / "omarchy-voice"

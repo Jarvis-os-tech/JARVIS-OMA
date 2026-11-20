@@ -4,6 +4,13 @@ set -euo pipefail
 SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/.env"
+    set +a
+fi
+
 if [[ -x "${SCRIPT_DIR}/.venv/bin/python" ]]; then
     PYTHON="${SCRIPT_DIR}/.venv/bin/python"
 elif [[ -x "${HOME}/Projects/JARVIS-OMA/.venv/bin/python" ]]; then

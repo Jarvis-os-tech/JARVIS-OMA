@@ -10,6 +10,15 @@ ROUTES = {
     'reasoning': ('gemini-4-argon', 'gemini-3.6-flash'),
 }
 
+SUBSYSTEM_ROUTES = {
+    'jarvis_control': 'Desktop automation, OS control, window management, volume, brightness, local applications, or Wayland actuators.',
+    'jarvis_memory': 'Querying or storing user memory, preferences, personal facts, and historical notes.',
+    'connectors_reach': 'External web services, APIs, OAuth integrations (Slack, GitHub, LinkedIn, Notion, Spotify), and data harvesting.',
+    'hermes_agents': 'Autonomous multi-step coding, deep planning, long-running agent workflows, and Hermes subagents.',
+    'gemini_live': 'Direct conversation, casual dialogue, chit-chat, and real-time voice streaming Q&A.',
+}
+
+
 REASONING_INSTRUCTION = (
     'You are the analysis worker for JARVIS OS. Provide analysis only; you have no execution tools. '
     'Never claim computer actions were performed or infer current machine state from memory. '
@@ -85,7 +94,7 @@ class ModelJobs:
         keys = self.keys if isinstance(self.keys, (list, tuple)) else [self.keys]
         if not keys or not keys[0]:
             raise ValueError('Gemini API key unavailable')
-        async with genai.Client(api_key=keys[0]).aio as client:
+        async with genai.Client(api_key=keys[0], http_options={'api_version': 'v1beta'}).aio as client:
             response = await client.models.generate_content(
                 model=model, contents=prompt,
                 config={'max_output_tokens': 4096, 'system_instruction':

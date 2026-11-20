@@ -46,12 +46,32 @@ class MemoryConfig:
     
     def __post_init__(self):
         self.state_dir = self.base_dir / "state"
-        self.state_dir.mkdir(parents=True, exist_ok=True)
         
-        # Load API key if present
+        # Load all root .env variables into environment if not present
         root_env = self.base_dir.parent.parent / ".env"
         env_vars = _load_env_file(root_env)
-        self.api_key = os.getenv("GEMINI_API_KEY") or env_vars.get("GEMINI_API_KEY") or os.getenv("NVIDIA_NIM_API_KEY")
+        for k, v in env_vars.items():
+            if k not in os.environ and not v.startswith("PASTE_YOUR_"):
+                os.environ[k] = v
+
+        def _clean_key(k: Optional[str]) -> Optional[str]:
+            if not k or k.startswith("PASTE_YOUR_") or k.startswith("<") or k.startswith("YOUR_"):
+                return None
+            return k.strip()
+
+        # Load API key if present with proper priority and rotation fallbacks
+        self.api_key = (
+            _clean_key(os.getenv("GEMINI_API_KEY"))
+            or _clean_key(env_vars.get("GEMINI_API_KEY"))
+            or _clean_key(os.getenv("GEMINI_API_KEY_1"))
+            or _clean_key(env_vars.get("GEMINI_API_KEY_1"))
+            or _clean_key(os.getenv("GOOGLE_API_KEY"))
+            or _clean_key(env_vars.get("GOOGLE_API_KEY"))
+            or _clean_key(os.getenv("NVIDIA_NIM_API_KEY"))
+            or _clean_key(env_vars.get("NVIDIA_NIM_API_KEY"))
+            or _clean_key(os.getenv("NVIDIA_API_KEY"))
+            or _clean_key(env_vars.get("NVIDIA_API_KEY"))
+        )
         
         # Determine database path
         xdg_data = os.getenv("XDG_DATA_HOME")
@@ -61,10 +81,9 @@ class MemoryConfig:
             data_root = Path.home() / ".local" / "share" / "jarvis-oma" / "memory"
         
         # Fallback to local repo memory dir if XDG does not exist yet
-        if not data_root.parent.exists():
+        if not xdg_data and not data_root.parent.exists():
             data_root = self.base_dir.parent.parent / "memory" / "data"
             
-        data_root.mkdir(parents=True, exist_ok=True)
         self.db_path = data_root / "memory_graph.db"
         
         # Determine Obsidian Vault path
@@ -96,7 +115,6 @@ class MemoryConfig:
         # 3. Fallback to local repo memory dir
         if not vault_path:
             vault_path = self.base_dir.parent.parent / "memory" / "data" / "obsidian-vault"
-            vault_path.mkdir(parents=True, exist_ok=True)
 
         self.obsidian_vault_path = vault_path
 

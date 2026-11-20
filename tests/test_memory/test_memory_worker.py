@@ -23,7 +23,9 @@ async def test_memory_writes_leave_audio_loop_free_and_keep_order(tmp_path):
     try:
         with patch.object(skills.memory, 'record_exchange', side_effect=record):
             skills.queue_memory_exchange('first', 'reply')
-            assert await asyncio.to_thread(entered.wait, 1)
+            async with asyncio.timeout(1):
+                while not entered.is_set():
+                    await asyncio.sleep(.01)
             # We can run this coroutine while storage is still waiting in its worker.
             assert not release.is_set()
             assert threads[0] != loop_thread

@@ -32,7 +32,12 @@ class RetrievalRouterAgent(BaseMemoryAgent):
         target_layer = self._detect_target_layer(clean_prompt)
 
         # 2. SQLite FTS5 BM25 full-text lookup
+        max_items = min(max(max_items, 0), 20)
+        if not max_items or max_words <= 0:
+            return ""
         matches = self.db.search_fts(clean_prompt, limit=max_items, layer=target_layer)
+        if target_layer and not matches:
+            matches = self.db.search_fts(clean_prompt, limit=max_items)
 
         # 3. If top match exists, traverse graph edges for adjacent rules / context
         enriched_nodes: List[Dict[str, Any]] = list(matches)
@@ -78,10 +83,11 @@ class RetrievalRouterAgent(BaseMemoryAgent):
         for n in nodes:
             line = f"• [{n.get('layer', 'semantic').upper()}] {n.get('title', '')}: {n.get('content', '')}"
             words_in_line = len(line.split())
-            if total_words + words_in_line > max_words:
+            remaining = max_words - total_words
+            lines.append(line if words_in_line <= remaining else " ".join(line.split()[:remaining]))
+            total_words += min(words_in_line, remaining)
+            if total_words >= max_words:
                 break
-            lines.append(line)
-            total_words += words_in_line
 
         lines.append("[END CONTEXT]")
         return "\n".join(lines)

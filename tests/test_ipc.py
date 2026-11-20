@@ -11,6 +11,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def socket_path(tmp_path):
     return tmp_path / 'test.sock'
 
+
+def test_status_file_contains_a_freshness_timestamp(tmp_path, monkeypatch):
+    from voice_layer import config, ipc
+
+    state_file = tmp_path / 'state.json'
+    monkeypatch.setattr(config, 'STATE_FILE', state_file)
+    monkeypatch.setattr(ipc.time, 'time', lambda: 1000)
+    status = {'state': 'speaking'}
+    ipc.ControlServer().broadcast_state(status)
+    assert json.loads(state_file.read_text()) == {'state': 'speaking', 'status_written_at': 1000}
+    assert status == {'state': 'speaking'}
+
 @pytest.mark.asyncio
 async def test_status_json(socket_path):
     from voice_layer.ipc import ControlServer

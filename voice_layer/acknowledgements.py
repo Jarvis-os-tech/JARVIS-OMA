@@ -1,4 +1,5 @@
 """Short, grounded acknowledgements selected without a model round trip."""
+from pathlib import Path
 import re
 
 PHRASES = {
@@ -22,6 +23,48 @@ PHRASES = {
     'ack_general_1': "I'll work through that.",
     'ack_general_2': "Let me check that.",
 }
+
+# Criteria mapping for Gemini Decision 1 ack_clip choice question
+DECISION_ACK_CRITERIA = {
+    'ack_short_sure': 'Standard brief affirmative assent ("Sure.") for routine commands and requests.',
+    'ack_short_on_it': 'Immediate execution assent ("On it.") for active tasks or immediate action.',
+    'ack_short_okay': 'Neutral acknowledgement ("Okay.") for adjustments or state changes.',
+    'ack_short_hmm': 'Reflective thinking sound ("Hmm.") for questions, inquiries, or contemplation.',
+    'ack_file': 'Reading, opening, or inspecting a specific local file ("I\'ll read through that file.").',
+    'ack_files': 'Searching or browsing filesystem directories ("I\'ll look through your files.").',
+    'ack_analysis': 'Deep analysis, data crunching, or detailed reasoning ("I\'ll work through the details.").',
+    'ack_search': 'Information retrieval, internet search, or looking something up ("I\'ll look that up.").',
+    'ack_screen': 'Inspecting desktop display, vision, or reading screen ("I\'ll check what\'s on your screen.").',
+    'ack_browser': 'Navigating web pages or browser interactions ("I\'ll check that in the browser.").',
+    'ack_terminal': 'Executing terminal commands or shell operations ("I\'ll run that and check the result.").',
+    'ack_agent': 'Delegating to autonomous background agents or multi-step goals ("I\'ll get started on that task.").',
+    'ack_app': 'Opening or launching desktop applications ("I\'ll open that application.").',
+    'ack_volume': 'Adjusting speaker volume settings ("I\'ll adjust the volume.").',
+    'ack_brightness': 'Adjusting screen brightness settings ("I\'ll adjust the screen brightness.").',
+    'ack_workspace': 'Switching virtual desktop workspaces ("I\'ll switch to that workspace.").',
+    'none': 'Direct conversation, casual dialogue, follow-up, or no pre-rendered acknowledgement clip needed.',
+}
+
+
+def resolve_ack_asset(ack_clip: str, assets_dir: Path | None = None) -> Path | None:
+    """Resolve an ack_clip choice to a .pcm or .wav asset Path, or None if 'none' or missing."""
+    if not ack_clip or ack_clip == 'none':
+        return None
+    if assets_dir is None:
+        assets_dir = Path(__file__).parent / 'assets'
+    for ext in ('.pcm', '.wav'):
+        candidate = assets_dir / f"{ack_clip}{ext}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def get_decision_ack_phrase(ack_clip: str) -> str:
+    """Return the spoken phrase for a decision ack clip, or empty string if 'none'."""
+    if not ack_clip or ack_clip == 'none':
+        return ''
+    return PHRASES.get(ack_clip, '')
+
 
 _INQUIRY_PATTERN = re.compile(
     r'^(?:(?:(?:hey\s+)?jarvis|oma)[,\s]*)?(?:why|how|what|when|where|who|is|are|tell me|could you explain|can you explain)\b',

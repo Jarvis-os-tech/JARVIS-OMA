@@ -72,6 +72,8 @@ def test_offline_report_detects_real_gaps_and_preserves_lifecycle(report):
     assert forbidden <= {'foreign_scope'}
     assert report['quality_checks']['no_forbidden'] == (not forbidden)
     assert report['quality_checks']['no_false_recall'] == (not any(r['grades']['5']['false_recall'] for r in weighted))
+    assert report['quality_checks']['no_false_recall']
+    assert report['quality_checks']['recall_at_5']
     assert compare_baseline(report, report) == []
 
 

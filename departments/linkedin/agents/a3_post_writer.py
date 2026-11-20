@@ -59,6 +59,8 @@ RELEVANT STORY BANK SEED:
 OUTPUT INSTRUCTIONS:
 Inside <final_output>, output ONLY the final ready-to-publish LinkedIn post draft with its hook, body lines, spacing, and ending CTA.
 Do not put explanations, notes, or character counts inside <final_output>.
+Use only facts supplied for this post. If a formula calls for metrics, examples,
+or personal experience that the user did not supply, omit those details.
 """
 
         try:

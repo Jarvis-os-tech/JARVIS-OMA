@@ -5,9 +5,13 @@ and event-driven day rollover compaction.
 
 from datetime import datetime, date, timedelta
 from pathlib import Path
+import json
 import shutil
+import sqlite3
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 
 from departments.memory.config import MemoryConfig
 from departments.memory.db import MemoryDatabase
@@ -107,7 +111,7 @@ class TestMemoryDepartment(unittest.TestCase):
         failed_event = [
             {
                 "tool_name": "hyprctl_dispatch",
-                "input": {"command": "workspace 9"},
+                "input": {"command": "workspace 9", "headers": {"Authorization": "fixture-secret"}},
                 "exit_code": 1,
                 "error": "Failed to connect to hyprland socket",
             }
@@ -116,6 +120,8 @@ class TestMemoryDepartment(unittest.TestCase):
         failed_traces = self.db.get_recent_failed_traces()
         self.assertGreaterEqual(len(failed_traces), 1)
         self.assertEqual(failed_traces[0]["tool_name"], "hyprctl_dispatch")
+        self.assertNotIn("fixture-secret", failed_traces[0]["tool_input"])
+        self.assertIn("[REDACTED_SECRET]", failed_traces[0]["tool_input"])
 
     def test_agent2_consolidation_matrix(self):
         """Verify Agent 2 executes ADD, UPDATE, and SUPERSEDE decisions."""
@@ -156,6 +162,20 @@ class TestMemoryDepartment(unittest.TestCase):
         # Verify edge created
         edges = self.db.get_edges("pref_os_x11")
         self.assertTrue(any(e["relation"] == "supersedes" for e in edges))
+        self.assertEqual([row["id"] for row in self.db.search_fts("X11 Wayland")], [c2.id])
+        a2.consolidate(c1)
+        self.assertEqual([row["id"] for row in self.db.search_fts("X11 Wayland")], [c1.id])
+
+    def test_agent2_retry_repairs_fact_projection(self):
+        candidate = MemoryCandidate("retry_fact", "semantic", "preference", "Editor", "I prefer Neovim")
+        with patch("departments.memory.agents.a2_consolidation_agent.write_private_text",
+                   side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                self.dept.a2_consolidation.consolidate(candidate)
+        self.assertIsNotNone(self.db.get_node(candidate.id))
+        self.assertEqual(self.dept.a2_consolidation.consolidate(candidate)["decision"], "NO-OP")
+        note = self.vault_path / "Memory Department" / "Facts" / "preference.md"
+        self.assertEqual(note.read_text().count(candidate.content), 1)
 
     def test_agent3_reflection_loop(self):
         """Verify Agent 3 turns tool failure traces into procedural rules."""
@@ -180,6 +200,8 @@ class TestMemoryDepartment(unittest.TestCase):
         # Verify procedural rule in DB
         rules = self.db.search_fts("pipewire", layer="procedural")
         self.assertGreaterEqual(len(rules), 1)
+        self.assertEqual(a3.run_daily_reflection()["new_procedural_rules_count"], 0)
+        self.assertEqual(len(json.loads((self.cfg.state_dir / "procedural_rules.json").read_text())), 1)
 
     def test_agent4_retrieval_router(self):
         """Verify Agent 4 assembles prompt context in sub-25ms."""
@@ -199,13 +221,22 @@ class TestMemoryDepartment(unittest.TestCase):
         self.assertIn("[JARVIS MEMORY CONTEXT]", context)
         self.assertIn("jarvis_aec PipeWire filter", context)
 
+    def test_agent4_excludes_expired_nodes_and_related_context(self):
+        self.db.upsert_node("current", "semantic", "fact", "Current detail", "Audio gateway works.")
+        self.db.upsert_node("expired", "semantic", "fact", "Expired detail", "Audio gateway expired.",
+                            ttl_expires_at=int(time.time()) - 1)
+        self.db.add_edge("current", "relates_to", "expired")
+        context = self.dept.get_context_for_prompt("Audio gateway")
+        self.assertIn("Current detail", context)
+        self.assertNotIn("Expired detail", context)
+
     def test_agent5_event_driven_day_rollover_compactor(self):
         """Verify Agent 5 detects rollover, scrubs raw logs, carries open tasks, and compacts."""
         a5 = self.dept.a5_compactor
 
         # Create yesterday's uncompacted raw log
         yesterday_str = (datetime.now().date() - timedelta(days=1)).strftime("%Y-%m-%d")
-        episodic_dir = self.vault_path / "03 Episodic Memory" / "Conversations"
+        episodic_dir = a5._get_conversations_folder()
         episodic_dir.mkdir(parents=True, exist_ok=True)
         yesterday_file = episodic_dir / f"{yesterday_str}.md"
 
@@ -248,6 +279,124 @@ class TestMemoryDepartment(unittest.TestCase):
         self.assertTrue(today_file.exists())
         today_content = today_file.read_text(encoding="utf-8")
         self.assertIn("Implement PipeWire AEC filter repair", today_content)
+        self.assertEqual(self.dept.compact_all_history(), [])
+        self.assertEqual(yesterday_file.read_text(), compacted_yesterday)
+        self.assertEqual((episodic_dir / ".raw_backups" / yesterday_file.name).read_text(),
+                         raw_yesterday_content)
+
+    def test_compact_only_accepts_past_dates_and_real_agent_notes(self):
+        folder = self.dept.ensure_today_file().parent
+        past = (date.today() - timedelta(days=1)).isoformat()
+        outside = self.vault_path / "outside.md"
+        outside.write_text("My original note")
+        (folder / f"{past}.md").symlink_to(outside)
+        for invalid in (str(outside.with_suffix("")), date.today().isoformat(), past):
+            with self.subTest(target=invalid), self.assertRaises(ValueError):
+                self.dept.compact_date(invalid)
+        self.assertEqual(self.dept.compact_all_history(), [])
+        self.assertEqual(outside.read_text(), "My original note")
+
+    def test_existing_today_note_repairs_stale_rollover_marker(self):
+        today = date.today()
+        self.dept.a5_compactor._initialize_today_file(today, [], None)
+        marker = self.cfg.state_dir / "last_active_date.txt"
+        marker.write_text((today - timedelta(days=1)).isoformat())
+
+        first = self.dept.check_daily_rollover()
+        self.assertTrue(first["rollover_occurred"])
+        self.assertEqual(marker.read_text(), today.isoformat())
+        self.assertFalse(self.dept.check_daily_rollover()["rollover_occurred"])
+
+    def test_failed_sync_can_retry_without_duplicate_notes(self):
+        sessions = self.temp_dir / "sessions.db"
+        with sqlite3.connect(sessions) as conn:
+            conn.execute("CREATE TABLE session_messages (id INTEGER PRIMARY KEY, role TEXT, content TEXT, timestamp REAL)")
+            conn.execute("INSERT INTO session_messages VALUES (1, 'user', ?, ?)",
+                         ("Schedule the test review", (datetime.now() - timedelta(days=1)).timestamp()))
+            conn.execute("INSERT INTO session_messages VALUES (2, 'assistant', ?, ?)",
+                         ("The review is pending", datetime.now().timestamp()))
+        from departments.memory.agents.base_memory_agent import write_private_text
+
+        def fail_note_only(path, content):
+            if path.suffix == ".md":
+                raise PermissionError(path)
+            write_private_text(path, content)
+
+        with patch("departments.memory.department.write_note", side_effect=fail_note_only):
+            with self.assertRaises(PermissionError):
+                self.dept.sync_sessions_to_vault(sessions)
+        self.assertEqual(len(list(self.cfg.state_dir.glob("session-start-*.txt"))), 1)
+
+        self.assertEqual(self.dept.sync_sessions_to_vault(sessions)["messages_synced"], 2)
+        files = self.dept.a5_compactor._get_conversations_folder()
+        yesterday = files / f"{date.today() - timedelta(days=1)}.md"
+        self.assertIn("Schedule the test review", yesterday.read_text())
+        self.assertIn("episodic_compacted_summary", yesterday.read_text())
+        today = files / f"{date.today()}.md"
+        self.assertEqual(self.dept.sync_sessions_to_vault(sessions)["status"], "UP_TO_DATE")
+        self.assertEqual(today.read_text().count("The review is pending"), 1)
+
+    def test_sync_recovers_when_legacy_cursor_exceeds_migration_high_water(self):
+        from jarvis_memory.session import SessionStore
+
+        sessions = self.temp_dir / "sessions.db"
+        with sqlite3.connect(sessions) as conn:
+            conn.execute("""CREATE TABLE session_messages (
+                id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL,
+                content TEXT NOT NULL, channel TEXT, timestamp REAL, metadata TEXT
+            )""")
+            for row in [(1, "Keep this message"), (8, "Delete the last legacy message")]:
+                conn.execute("INSERT INTO session_messages VALUES (?, 'legacy', 'user', ?, '', ?, '{}')",
+                             (*row, time.time()))
+        self.assertEqual(self.dept.sync_sessions_to_vault(sessions)["last_message_id"], 8)
+        with sqlite3.connect(sessions) as conn:
+            conn.execute("DELETE FROM session_messages WHERE id = 8")
+
+        store = SessionStore(sessions)
+        try:
+            session_id = store.get_or_create("local-user").session_id
+            store.save_message(session_id, "user", "New message after migration")
+            first = self.dept.sync_sessions_to_vault(sessions)
+            self.assertEqual(first["messages_synced"], 1)
+            with sqlite3.connect(sessions) as conn:
+                conn.execute("DELETE FROM session_messages WHERE id = ?", (first["last_message_id"],))
+            store.save_message(session_id, "assistant", "New message after deletion")
+            second = self.dept.sync_sessions_to_vault(sessions)
+            self.assertGreater(second["last_message_id"], first["last_message_id"])
+            self.assertEqual(second["messages_synced"], 1)
+            self.assertEqual(self.dept.sync_sessions_to_vault(sessions)["status"], "UP_TO_DATE")
+            content = Path(first["today_note"]).read_text()
+            self.assertEqual(content.count("Keep this message"), 1)
+            self.assertEqual(content.count("New message after migration"), 1)
+            self.assertIn("New message after deletion", content)
+        finally:
+            store.close()
+
+    def test_bridge_uses_selected_vault_and_respects_recording_setting(self):
+        from jarvis_memory.bridge import MemoryBridge
+        from jarvis_memory.config import MemoryConfig as BridgeConfig
+
+        configured = self.vault_path / "default"
+        selected = self.vault_path / "selected"
+        shared = selected / "Conversations"
+        shared.mkdir(parents=True)
+        untouched = shared / "empty.md"
+        untouched.touch()
+        bridge = MemoryBridge(BridgeConfig(path=str(self.temp_dir / "bridge"),
+                                           obsidian_vault=str(configured), record_sessions=False))
+        try:
+            self.assertEqual(bridge.memory_department("sync_sessions_to_vault", vault_dir=selected)["status"],
+                             "RECORDING_DISABLED")
+            self.assertFalse((selected / "Memory Department").exists())
+            bridge.config.record_sessions = True
+            bridge.start()
+            bridge.memory_department("sync_sessions_to_vault", vault_dir=selected)
+            bridge.memory_department("prune_empty_files", vault_dir=selected)
+            self.assertTrue((selected / "Memory Department" / "Conversations").is_dir())
+            self.assertTrue(untouched.exists())
+            self.assertFalse(configured.exists())
+        finally:
+            bridge.close()
 
     def test_agent6_vault_pruner(self):
         """Verify Agent 6 prunes 0-byte, whitespace, and blank stub files while protecting content."""
@@ -271,7 +420,10 @@ class TestMemoryDepartment(unittest.TestCase):
 
         # 5. Create INDEX.md with link to zero.md and valid.md
         f_index = self.vault_path / "INDEX.md"
-        f_index.write_text("## Index\n- [[zero]]\n- [[valid]]\n", encoding="utf-8")
+        f_index.write_text("## Index\n- [[zero]]\n- [[valid]]\nSee [[zero]] and [[valid]] for context.\n",
+                           encoding="utf-8")
+        checkpoint = self.vault_path / "checkpoint.md"
+        checkpoint.write_text("<!-- memory-department-session-id: 1234567890abcdef1234 42 -->\n")
 
         # Run pruner
         res = a6.prune_empty_files(self.vault_path)
@@ -280,11 +432,13 @@ class TestMemoryDepartment(unittest.TestCase):
         self.assertFalse(f_ws.exists())
         self.assertFalse(f_stub.exists())
         self.assertTrue(f_valid.exists())
+        self.assertTrue(checkpoint.exists())
 
         # Verify dangling link removed from INDEX.md
         index_content = f_index.read_text(encoding="utf-8")
-        self.assertNotIn("[[zero]]", index_content)
+        self.assertNotIn("- [[zero]]", index_content)
         self.assertIn("[[valid]]", index_content)
+        self.assertIn("See [[zero]] and [[valid]] for context.", index_content)
 
     def test_end_to_end_department_pipeline(self):
         """Verify full ingestion and context recall flow."""

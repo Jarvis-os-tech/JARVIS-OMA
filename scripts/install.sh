@@ -24,16 +24,21 @@ if [[ -e "$CURRENT_LINK" || -L "$CURRENT_LINK" ]]; then
 else
     INSTALL_DIR="$(mktemp -d "$RELEASES_DIR/install.XXXXXXXX")"
     FRESH_INSTALL=1
+    runtime_packages=()
     for package in voice_layer jarvis_memory jarvis_control skills \
                    core connectors filesystem orchestration proactive audio ui \
-                   plugins skill_manifests quickshell scripts learning contracts configs departments packaging; do
+                   plugins skill_manifests quickshell scripts learning contracts configs departments packaging bin; do
         # Only copy existing directories to support both lean checkouts and legacy structures
         if [[ -e "$REPO_DIR/$package" ]]; then
-            cp -r "$REPO_DIR/$package" "$INSTALL_DIR/"
+            runtime_packages+=("$package")
         fi
     done
+    tar -C "$REPO_DIR" --exclude='*/state' --exclude='*/tests' \
+        --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.venv' \
+        --exclude='.env' --exclude='.env.*' --exclude='*.bak' --exclude='*.pyc' \
+        --exclude='*.db' --exclude='*.db-*' --exclude='*.sqlite*' --exclude='*.log' \
+        -cf - "${runtime_packages[@]}" | tar -C "$INSTALL_DIR" -xf -
     cp "$REPO_DIR/agent.py" "$REPO_DIR/agent_orchestrator.py" "$REPO_DIR/task_runner.py" "$INSTALL_DIR/"
-    cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
     cp "$REPO_DIR/requirements.txt" "$REPO_DIR/requirements-dev.txt" "$REPO_DIR/config.toml.example" "$INSTALL_DIR/"
     cp "$REPO_DIR/LICENSE" "$REPO_DIR/PROVENANCE.json" "$INSTALL_DIR/"
     mkdir -p "$INSTALL_DIR/docs"

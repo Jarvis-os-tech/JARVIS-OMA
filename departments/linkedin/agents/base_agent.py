@@ -41,7 +41,7 @@ class BaseLinkedInAgent(ABC):
         tools: Optional[LinkedInTools] = None,
     ):
         self.cfg = cfg or config
-        self.client = client or nim_client
+        self.client = client or (NIMClient(cfg) if cfg is not None else nim_client)
         self.tools = tools or linkedin_tools
 
     def read_reference(self, filename: str) -> str:

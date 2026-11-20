@@ -165,12 +165,16 @@ class PlaybackReference:
             return 0.0
         signal = np.asarray(microphone, dtype=np.float64)
         reference = np.asarray(self.samples, dtype=np.float64)
-        if len(signal) < 160 or len(reference) < len(signal):
+        if len(signal) < 80:
             return None
+        if len(reference) < len(signal):
+            if len(reference) < 40:
+                return None
+            signal = signal[-len(reference):]
         signal = signal - signal.mean()
         energy = float(signal @ signal)
         if energy < 1:
-            return 1.0
+            return 0.0
         n = len(signal)
         sums = np.concatenate(([0.0], np.cumsum(reference)))
         squares = np.concatenate(([0.0], np.cumsum(reference * reference)))
@@ -185,8 +189,8 @@ class SpokenInterruption:
     """Require speech evidence while rejecting speaker output echo."""
 
     def __init__(self, reference, detector=None, *,
-                 min_rms: float = .004,
-                 echo_threshold: float = .45,
+                 min_rms: float = .018,
+                 echo_threshold: float = .40,
                  vad_threshold: float = .50,
                  min_voiced: int = 4,
                  min_positives: int = 2):
@@ -233,7 +237,7 @@ class SpokenInterruption:
         if not np.isfinite(probability):
             raise RuntimeError('Interruption detector returned an invalid probability')
         correlation = self.reference.correlation(self._microphone, now)
-        self.last_correlation = correlation if correlation is not None else 1.0
+        self.last_correlation = correlation if correlation is not None else 0.0
         if correlation is not None and correlation >= self.echo_threshold:
             self.rejected_echo_frames += 1
             self._positives = self._voiced_frames = 0

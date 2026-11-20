@@ -1,6 +1,7 @@
 """Unit tests for privileged execution, core OS package denylist protection,
 and full-range system tools.
 """
+import subprocess
 import pytest
 from unittest.mock import patch, MagicMock
 from jarvis_control.security import (
@@ -118,6 +119,104 @@ def test_execute_manage_packages_blocks_denylist():
     res = execute_manage_packages("remove", ["linux-cachyos"])
     assert res["ok"] is False
     assert "critical OS package" in res["output"]
+
+
+@patch("jarvis_control.privileged.subprocess.run")
+@patch("jarvis_control.privileged.shutil.which")
+def test_execute_manage_packages_remove_mise(mock_which, mock_run):
+    mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}"
+    # mise which returns 0 (installed), mise unuse returns 0, mise uninstall returns 0
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+    res = execute_manage_packages("remove", ["claude"])
+    assert res["ok"] is True
+    assert "Successfully uninstalled claude from mise" in res["output"]
+
+
+@patch("jarvis_control.privileged.subprocess.run")
+@patch("jarvis_control.privileged.shutil.which")
+@patch("jarvis_control.privileged.run_privileged_action")
+def test_execute_manage_packages_remove_pacman(mock_priv, mock_which, mock_run):
+    mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}"
+    # mise which fails (not in mise), flatpak fails (not in flatpak), pacman -Q succeeds (in pacman)
+    def run_side_effect(cmd, *args, **kwargs):
+        if cmd[0] == "/usr/bin/mise" or cmd[0] == "/usr/bin/flatpak":
+            return MagicMock(returncode=1, stdout="", stderr="")
+        if cmd[0] == "/usr/bin/pacman" and cmd[1] == "-Q":
+            return MagicMock(returncode=0, stdout="vlc 3.0", stderr="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+    mock_run.side_effect = run_side_effect
+    mock_priv.return_value = {"ok": True, "output": "removed", "code": 0}
+
+    res = execute_manage_packages("remove", ["vlc"])
+    assert res["ok"] is True
+    mock_priv.assert_called_once()
+    assert mock_priv.call_args[1]["destructive"] is True
+
+
+@patch("jarvis_control.privileged.subprocess.run")
+@patch("jarvis_control.privileged.shutil.which")
+@patch("jarvis_control.privileged.run_privileged_action")
+def test_execute_manage_packages_remove_nonexistent_no_sudo(mock_priv, mock_which, mock_run):
+    mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}"
+    # All queries return returncode=1 (not found anywhere)
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="")
+
+    res = execute_manage_packages("remove", ["completely-fake-package-xyz"])
+    assert res["ok"] is False
+    assert "not installed" in res["output"]
+    # Verify run_privileged_action was NEVER called!
+    mock_priv.assert_not_called()
+
+
+def test_close_app_executor_call():
+    from jarvis_control.tools import Executor
+    executor = Executor(Config(dry_run=False, allow_shell=True))
+    with patch.object(executor, "_query_json", return_value=[
+        {"class": "foot", "initialClass": "foot", "title": "Claude session", "address": "0x1234abcd"}
+    ]), patch.object(executor, "_tool_hypr_dispatch", return_value=MagicMock(ok=True)):
+        res = executor.call("close_app", {"app": "claude"})
+        assert res.ok is True
+        assert "0x1234abcd" in res.output
+        executor._tool_hypr_dispatch.return_value = MagicMock(ok=False)
+        with patch("jarvis_control.tools.os.kill") as kill:
+            assert not executor.call("close_app", {"app": "claude"}).ok
+            kill.assert_not_called()
+
+
+@patch("jarvis_control.privileged.subprocess.run")
+@patch("jarvis_control.privileged.shutil.which", side_effect=lambda cmd: f"/usr/bin/{cmd}")
+@patch("jarvis_control.privileged.run_privileged_action")
+def test_mixed_package_removal_reports_mise_failure(mock_priv, _mock_which, mock_run):
+    def run(cmd, **kwargs):
+        command = cmd[0].rsplit("/", 1)[-1]
+        succeeds = (command == "mise" and cmd[-1] == "claude" and cmd[1] != "uninstall")
+        succeeds |= command == "pacman" and cmd[1:] == ["-Q", "vlc"]
+        return MagicMock(returncode=0 if succeeds else 1, stdout="", stderr="")
+
+    mock_run.side_effect = run
+    mock_priv.return_value = {"ok": True, "code": 0, "output": "Removed vlc"}
+    result = execute_manage_packages("remove", ["claude", "vlc"])
+    assert not result["ok"]
+    assert "mise removal of claude" in result["output"]
+    assert "Removed vlc" in result["output"]
+    assert mock_priv.call_args.args[0][-1:] == ["vlc"]
+
+
+def test_mixed_removal_preserves_success_after_later_timeout():
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["/usr/bin/flatpak", "uninstall"]:
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+        success = ((cmd[0] == "/usr/bin/mise" and cmd[-1] == "claude")
+                   or cmd == ["/usr/bin/flatpak", "info", "example.app"])
+        return subprocess.CompletedProcess(cmd, 0 if success else 1, "", "")
+
+    with patch("jarvis_control.privileged.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"), \
+         patch("jarvis_control.privileged.subprocess.run", side_effect=run):
+        result = execute_manage_packages("remove", ["claude", "example.app"])
+    assert result["code"] == 124 and not result["ok"]
+    assert "Successfully uninstalled claude" in result["output"]
+    assert "example.app" in result["output"] and "outcome unknown" in result["output"]
 
 
 @patch("jarvis_control.privileged.run_privileged_action")

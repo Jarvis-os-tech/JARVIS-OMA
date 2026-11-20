@@ -19,10 +19,12 @@ import re
 import signal
 import shutil
 import stat
+import subprocess
 import sys
 import uuid
 
 from core.secret_env import sanitized_subprocess_env
+from ui.jarvis_widgets import backend as widget_backend
 from .agent_orchestrator import AGENTS, OrchestrationError, now
 
 
@@ -51,6 +53,28 @@ def _safe_path(path):
         if part.is_symlink():
             raise EvolutionError(f'symlink artifact rejected: {part}')
     return path
+
+
+async def _emit_hud_proposal(job: dict) -> None:
+    """Present a review-only proposal with a shortcut to its diff."""
+    if not shutil.which("omarchy-shell"):
+        return
+    try:
+        job_id = job['id']
+        widget = widget_backend.make_widget(
+            "text", "Code Evolution Proposal",
+            {
+                "text": (f"Goal: {job['goal'][:80]}\nSandbox checks passed.\n"
+                         f"Diff: {len(job['diff'].splitlines())} lines."),
+                "actions": [
+                    {"label": "Diff", "action": f"diff_{job_id}", "prompt": f"Show diff for evolution {job_id}"}
+                ],
+            },
+            widget_id=f"evolution-{job_id}", expires_seconds=300,
+        )
+        await asyncio.to_thread(widget_backend.shell_call, "present", widget)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        pass
 
 
 def default_state_dir():
@@ -243,9 +267,14 @@ class EvolutionManager:
                 evidence['output'] = combined[-limit:]
 
         try:
+            # Prefix 'bwrap' with nice and ionice so tests never starve Gemini Live audio
+            exec_argv = list(argv)
+            if exec_argv and Path(exec_argv[0]).name == 'bwrap':
+                exec_argv = ['nice', '-n', '15', 'ionice', '-c', '3'] + exec_argv
+
             # Shield spawn so task cancellation cannot lose a newly created process.
             spawn = asyncio.create_task(asyncio.create_subprocess_exec(
-                *argv, cwd=str(cwd), stdin=asyncio.subprocess.DEVNULL,
+                *exec_argv, cwd=str(cwd), stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True, umask=0o077,
                 env=sanitized_subprocess_env(
@@ -455,6 +484,7 @@ class EvolutionManager:
             self._update(job, tested_tree=before_tests,
                          diff_sha256=hashlib.sha256(job['diff'].encode()).hexdigest())
             self._update(job, state='ready_for_review')
+            await _emit_hud_proposal(job)
         except _Stopped as stopped:
             self._update(job, state=stopped.state)
         except asyncio.CancelledError:

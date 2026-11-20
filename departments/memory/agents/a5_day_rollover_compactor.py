@@ -7,10 +7,9 @@ carries forward unfinished tasks, and writes a clean executive summary to Obsidi
 from datetime import datetime, date
 from pathlib import Path
 import re
-import shutil
 from typing import Any, Dict, List, Optional, Tuple
 
-from .base_memory_agent import BaseMemoryAgent
+from .base_memory_agent import BaseMemoryAgent, write_private_text as write_note
 
 # Noise patterns to strip from raw daily notes
 CODE_BLOCK_REGEX = re.compile(r"```(?:bash|sh|json|text|output)?[\s\S]*?```", re.MULTILINE)
@@ -20,6 +19,13 @@ CHECKLIST_OPEN_REGEX = re.compile(r"^\s*-\s*\[\s*\]\s+(.*)$", re.MULTILINE)
 CHECKLIST_DONE_REGEX = re.compile(r"^\s*-\s*\[[xX]\]\s+(.*)$", re.MULTILINE)
 
 
+SYNC_CURSOR = re.compile(r"^<!-- memory-department-session-id: ([0-9a-f]{20}) (\d+) -->$", re.MULTILINE)
+
+
+def is_compacted(content: str) -> bool:
+    return bool(re.match(r"^---\n(?:(?!---\n)[^\n]*\n)*type: episodic_compacted_summary\n", content))
+
+
 class DayRolloverCompactorAgent(BaseMemoryAgent):
     """The Event-Driven Day Rollover and Compaction Agent."""
 
@@ -27,27 +33,27 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
     agent_name: str = "DayRolloverCompactor"
 
     def _get_conversations_folder(self) -> Path:
-        """Find the conversations folder (either 'Conversations' or '03 Episodic Memory/Conversations')."""
-        sovereign_dir = self.cfg.obsidian_vault_path / "Conversations"
-        if sovereign_dir.is_dir():
+        sovereign_dir = self.cfg.obsidian_vault_path.resolve() / "Conversations"
+        if sovereign_dir.is_dir() and str(self.cfg.obsidian_vault_path.resolve()).rstrip("/") == "/home/g0pi/Documents/JARVIS Memory":
+            if sovereign_dir.is_symlink():
+                raise ValueError("Memory Department conversations folder must not be a symlink")
             return sovereign_dir
-        return self.ensure_obsidian_subfolder("03 Episodic Memory/Conversations")
+        folder = self.cfg.obsidian_vault_path.resolve() / "Memory Department" / "Conversations"
+        if folder.resolve() != folder:
+            raise ValueError("Memory Department conversations folder must not be a symlink")
+        return folder
 
     def _resolve_daily_file(self, date_str: str) -> Optional[Path]:
-        """Find the daily file for a date, supporting '{date}.md' and '{date} - {weekday}.md'."""
-        conv_dir = self._get_conversations_folder()
-        direct = conv_dir / f"{date_str}.md"
-        if direct.exists():
-            return direct
-        matches = list(conv_dir.glob(f"{date_str} - *.md"))
-        if matches:
-            return matches[0]
-        return None
+        if date.fromisoformat(date_str).isoformat() != date_str:
+            raise ValueError("Use YYYY-MM-DD for a daily note")
+        folder = self._get_conversations_folder()
+        return next((p for p in (folder / f"{date_str}.md", *sorted(folder.glob(f"{date_str} - *.md")))
+                     if p.is_file() and not p.is_symlink()), None)
 
     def _get_today_filename(self, date_obj: date) -> str:
         """Format today's filename adhering to vault layout style."""
         conv_dir = self._get_conversations_folder()
-        has_weekday_format = any(" - " in p.name for p in conv_dir.glob("2026-*.md"))
+        has_weekday_format = any(" - " in p.name for p in conv_dir.glob("????-??-?? - *.md"))
         if has_weekday_format:
             weekday = date_obj.strftime("%A")
             return f"{date_obj.strftime('%Y-%m-%d')} - {weekday}.md"
@@ -60,11 +66,15 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         for p in conv_dir.glob("*.md"):
             if p.name.startswith("INDEX") or p.name.startswith("conversation"):
                 continue
-            date_match = re.match(r"^(\d{4}-\d{2}-\d{2})", p.name)
-            if date_match:
-                d_str = date_match.group(1)
-                if d_str < today_str:
-                    dates.append(d_str)
+            date_match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})(?: - [A-Za-z]+)?\.md", p.name)
+            if not date_match or p.is_symlink():
+                continue
+            try:
+                candidate = date.fromisoformat(date_match[1]).isoformat()
+            except ValueError:
+                continue
+            if candidate < today_str:
+                dates.append(candidate)
         if dates:
             return sorted(dates)[-1]
         return None
@@ -80,41 +90,131 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         last_date_file = self.cfg.state_dir / "last_active_date.txt"
         last_date_str = last_date_file.read_text(encoding="utf-8").strip() if last_date_file.exists() else None
 
-        # If last_date_str is not recorded yet, discover the most recent recorded date in vault
-        if not last_date_str:
-            last_date_str = self._find_latest_previous_date(today_str)
-
         conv_dir = self._get_conversations_folder()
         today_filename = self._get_today_filename(now_date)
-        today_file = conv_dir / today_filename
+        today_file = self._resolve_daily_file(now_date.isoformat()) or conv_dir / today_filename
 
         # If today file already exists and last_date_str is today, no rollover needed
+        if today_file.is_symlink():
+            raise ValueError("Daily note must not be a symlink")
         if last_date_str == today_str and today_file.exists():
-            return {"rollover_occurred": False, "active_date": today_str, "daily_file": str(today_file)}
+            return {"rollover_occurred": False, "active_date": today_str, "daily_file": str(today_file), "tasks_carried_count": 0}
 
-        self.logger.info("Day rollover detected: %s -> %s", last_date_str, today_str)
-
+        latest_prev = self._find_latest_previous_date(today_str)
         tasks_carried: List[str] = []
-        compacted_summary: str = ""
+        if latest_prev:
+            prev_file = self._resolve_daily_file(latest_prev)
+            if prev_file and prev_file.exists():
+                prev_content = prev_file.read_text(encoding="utf-8")
+                tasks_carried = CHECKLIST_OPEN_REGEX.findall(prev_content)
 
-        # 1. Compact previous day's file if it exists
-        if last_date_str and last_date_str != today_str:
-            compacted_summary, tasks_carried = self._compact_previous_day(last_date_str)
-
-        # 2. Initialize today's new file if not yet created
-        new_file_path = self._initialize_today_file(now_date, tasks_carried, last_date_str)
-
-        # 3. Update last active date
-        last_date_file.write_text(today_str, encoding="utf-8")
-
+        today_path = self.ensure_today_file(now_date)
         return {
             "rollover_occurred": True,
-            "previous_date": last_date_str,
+            "previous_date": latest_prev,
             "today_date": today_str,
+            "daily_file": str(today_path),
+            "new_daily_note": str(today_path),
             "tasks_carried_count": len(tasks_carried),
-            "new_daily_note": str(new_file_path),
-            "summary_preview": compacted_summary[:150] if compacted_summary else "No previous note to compact",
         }
+
+    def ensure_today_file(self, target_date: Optional[date] = None) -> Path:
+        """Ensure today's file exists TODAY. If not, compact yesterday immediately and create today's file.
+        Also automatically compacts any past day files that remain uncompacted."""
+        now_date = target_date or datetime.now().date()
+        today_str = now_date.strftime("%Y-%m-%d")
+        conv_dir = self._get_conversations_folder()
+        today_filename = self._get_today_filename(now_date)
+        today_file = self._resolve_daily_file(now_date.isoformat()) or conv_dir / today_filename
+
+        self.compact_all_history(before=now_date)
+
+        # 2. If today's file already exists, return it
+        if today_file.is_symlink():
+            raise ValueError("Daily note must not be a symlink")
+        if today_file.exists():
+            self.cfg.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            write_note(self.cfg.state_dir / "last_active_date.txt", today_str)
+            return today_file
+
+        # 3. Create today's file immediately today!
+        latest_prev = self._find_latest_previous_date(today_str)
+        tasks_carried = []
+        if latest_prev:
+            prev_file = self._resolve_daily_file(latest_prev)
+            if prev_file and prev_file.exists():
+                prev_content = prev_file.read_text(encoding="utf-8")
+                tasks_carried = CHECKLIST_OPEN_REGEX.findall(prev_content)
+
+        today_file = self._initialize_today_file(now_date, tasks_carried, latest_prev)
+
+        last_date_file = self.cfg.state_dir / "last_active_date.txt"
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        write_note(last_date_file, today_str)
+
+        return today_file
+
+    def _extract_all_dialogue_turns(self, content: str) -> Tuple[List[str], List[str]]:
+        """Extract user statements and assistant responses from active notes, legacy notes, and transcripts."""
+        user_statements: List[str] = []
+        assistant_statements: List[str] = []
+
+        # 1. Active note format: - `[07:01:24]` **User**: Clean the all widgets.
+        active_user_re = re.compile(r"^-\s*`?\[\d{2}:\d{2}:\d{2}\]`?\s*\*\*User\*\*:\s*(.+)$", re.MULTILINE)
+        active_asst_re = re.compile(r"^-\s*`?\[\d{2}:\d{2}:\d{2}\]`?\s*\*\*Jarvis\*\*:\s*(.+)$", re.MULTILINE)
+
+        for match in active_user_re.finditer(content):
+            text = match.group(1).strip()
+            if text and not self._is_dialogue_noise(text):
+                user_statements.append(text)
+
+        for match in active_asst_re.finditer(content):
+            text = match.group(1).strip()
+            if text and len(text) > 8:
+                assistant_statements.append(text)
+
+        # 2. Legacy verbatim format: message 4774 (user), verbatim excerpt:\nJarvis, please do me a favor.
+        legacy_re = re.compile(r"message\s+\d+\s*\((user|assistant)\),\s*verbatim excerpt:\s*\n+([^\n]+)", re.IGNORECASE)
+        for match in legacy_re.finditer(content):
+            role = match.group(1).lower()
+            text = match.group(2).strip()
+            if not text or self._is_dialogue_noise(text):
+                continue
+            if role == "user":
+                user_statements.append(text)
+            else:
+                assistant_statements.append(text)
+
+        # 3. Transcript format: ### [07:01:24] [User] — message 123\n\nClean the all widgets.
+        trans_re = re.compile(r"###\s*\[\d{2}:\d{2}:\d{2}\]\s*\[(User|JARVIS)\][^\n]*\n+([^\n#]+)", re.MULTILINE)
+        for match in trans_re.finditer(content):
+            role = match.group(1).lower()
+            text = match.group(2).strip()
+            if not text or self._is_dialogue_noise(text):
+                continue
+            if "user" in role:
+                user_statements.append(text)
+            else:
+                assistant_statements.append(text)
+
+        return user_statements, assistant_statements
+
+    def _is_dialogue_noise(self, text: str) -> bool:
+        """Check if dialogue text is just filler or low-substance greeting."""
+        t = text.strip().lower()
+        if len(t) < 3:
+            return True
+        fillers = {
+            "ok", "okay", "cool", "test", "echo", "hello", "hi", "hey",
+            "thanks", "thank you", "got it", "yes", "no", "yep", "nope",
+            "standby", "jarvis standby", "sure", "all right", "alright",
+        }
+        if t in fillers:
+            return True
+        words = t.split()
+        if len(words) <= 2 and all(w in fillers for w in words):
+            return True
+        return False
 
     def _extract_section_items(self, content: str, heading: str) -> List[str]:
         """Extract clean item lines from a markdown section ## heading."""
@@ -143,19 +243,89 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         return items
 
     def _compact_single_file(self, file_path: Path, date_str: str) -> Tuple[str, List[str]]:
-        """Scrub noise from a historical file and build a rich executive summary."""
+        """Scrub noise from a historical file and build a rich executive summary, while preserving the full dialogue transcript."""
+        folder = self._get_conversations_folder()
+        if file_path.parent != folder or file_path.is_symlink():
+            raise ValueError("Daily note must be inside the Memory Department conversations folder")
+
         raw_content = file_path.read_text(encoding="utf-8")
-        raw_char_count = len(raw_content)
+        if is_compacted(raw_content):
+            return raw_content, CHECKLIST_OPEN_REGEX.findall(raw_content)
+
+        backup_dir = folder / ".raw_backups"
+        if backup_dir.is_symlink():
+            raise ValueError("Daily note backup folder must not be a symlink")
+        backup_dir.mkdir(exist_ok=True)
+        backup = backup_dir / file_path.name
+        if backup.is_symlink():
+            raise ValueError("Daily note backup must not be a symlink")
+
+        if not backup.exists():
+            write_note(backup, raw_content)
+        source_content = raw_content
+
+        raw_char_count = len(source_content)
 
         # Extract structured sections
-        decisions = self._extract_section_items(raw_content, "User decisions")
-        preferences = self._extract_section_items(raw_content, "User preferences")
-        requests = self._extract_section_items(raw_content, "User requests")
-        outcomes = self._extract_section_items(raw_content, "Assistant reported outcomes (unverified)")
-        followups = self._extract_section_items(raw_content, "Explicit follow-up mentions")
-        open_tasks = CHECKLIST_OPEN_REGEX.findall(raw_content)
-        done_tasks = CHECKLIST_DONE_REGEX.findall(raw_content)
+        decisions = self._extract_section_items(source_content, "User decisions")
+        preferences = self._extract_section_items(source_content, "User preferences")
+        requests = self._extract_section_items(source_content, "User requests")
+        other_user = self._extract_section_items(source_content, "Other user statements")
+        outcomes = self._extract_section_items(source_content, "Assistant reported outcomes (unverified)")
+        followups = self._extract_section_items(source_content, "Explicit follow-up mentions")
+        open_tasks = CHECKLIST_OPEN_REGEX.findall(source_content)
+        done_tasks = CHECKLIST_DONE_REGEX.findall(source_content)
 
+        # Extract live dialogue turns
+        dialogue_user, dialogue_asst = self._extract_all_dialogue_turns(source_content)
+
+        # Merge extracted statements
+        all_user_statements = []
+        for s in requests + other_user + dialogue_user:
+            s_clean = s.strip()
+            if s_clean and s_clean not in all_user_statements and not self._is_dialogue_noise(s_clean):
+                all_user_statements.append(s_clean)
+
+        # Categorize user statements into directives/requests vs decisions/preferences
+        for statement in all_user_statements:
+            s_low = statement.lower()
+            if any(s_low.startswith(w) for w in ["i prefer", "always", "never", "my name", "i like", "i want to use"]):
+                if statement not in preferences:
+                    preferences.append(statement)
+            elif any(s_low.startswith(w) for w in ["let's", "decided", "confirm", "choose", "agreed"]):
+                if statement not in decisions:
+                    decisions.append(statement)
+            else:
+                if statement not in requests:
+                    requests.append(statement)
+
+        # Extract outcomes from assistant turns if outcomes section was sparse
+        if len(outcomes) < 3 and dialogue_asst:
+            for asst_text in dialogue_asst:
+                if any(k in asst_text.lower() for k in ["cleared", "active", "restored", "saved", "completed", "cannot uninstall", "cannot remove"]):
+                    if asst_text not in outcomes:
+                        outcomes.append(asst_text[:140])
+
+        # Extract dialogue transcript body to preserve forever in Obsidian
+        transcript_body = ""
+        if "## Chronological Dialogue Transcript" in source_content:
+            transcript_body = source_content.split("## Chronological Dialogue Transcript", 1)[1].strip()
+            if "[[Conversations/INDEX" in transcript_body:
+                transcript_body = transcript_body.split("[[Conversations/INDEX", 1)[0].strip()
+        elif "### 📝 Active Session Notes & Live Log" in source_content:
+            transcript_body = source_content.split("### 📝 Active Session Notes & Live Log", 1)[1].strip()
+        elif "## Conversation" in source_content:
+            transcript_body = source_content.split("## Conversation", 1)[1].strip()
+            if "[[Conversations/INDEX" in transcript_body:
+                transcript_body = transcript_body.split("[[Conversations/INDEX", 1)[0].strip()
+        else:
+            match = re.search(r"(?:^-\s*`?\[\d{2}:\d{2}:\d{2}\]|###\s*\[\d{2}:\d{2}:\d{2}\])", source_content, re.MULTILINE)
+            if match:
+                transcript_body = source_content[match.start():].strip()
+            else:
+                transcript_body = ""
+
+        transcript_body = SYNC_CURSOR.sub("", transcript_body).strip()
         stem = file_path.stem
 
         summary_lines = [
@@ -168,14 +338,16 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
             "---",
             "<!-- jarvis-oma-memory-generated:v2 -->",
             "",
-            f"# Executive Daily Summary — {stem}",
+            f"# Daily Conversation & Executive Summary — {stem}",
+            "",
+            "## 📋 Executive Daily Summary",
             "",
         ]
 
         # 1. Key Requests & Tasks
         summary_lines.append("### 🎯 Key Requests & Focus")
         if requests:
-            for r in requests[:6]:
+            for r in requests[:8]:
                 summary_lines.append(f"- {r}")
         elif done_tasks:
             for dt in done_tasks[:6]:
@@ -214,9 +386,28 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
                 summary_lines.append(f"- {f}")
             summary_lines.append("")
 
-        compact_content = "\n".join(summary_lines).rstrip() + "\n"
-        file_path.write_text(compact_content, encoding="utf-8")
-        compact_char_count = len(compact_content)
+        summary_text = "\n".join(summary_lines).rstrip()
+
+        # Combine Executive Summary + Full Dialogue Transcript
+        if transcript_body.strip():
+            full_note_content = (
+                summary_text + "\n\n"
+                "---\n\n"
+                "## 💬 Chronological Dialogue Transcript\n\n"
+                + transcript_body.strip() + "\n\n"
+                "---\n"
+                "[[Conversations/INDEX|📁 Vault Conversations]] | [[00 HOME|🏠 Master Dashboard]]\n"
+            )
+        else:
+            full_note_content = summary_text + "\n"
+
+        cursors = {}
+        for source, row_id in SYNC_CURSOR.findall(source_content):
+            cursors[source] = max(int(row_id), cursors.get(source, 0))
+        for source, row_id in cursors.items():
+            full_note_content += f"\n<!-- memory-department-session-id: {source} {row_id} -->\n"
+
+        compact_char_count = len(full_note_content)
 
         # Store in SQLite memory_nodes
         node_id = f"mem_epi_{date_str.replace('-', '')}"
@@ -226,7 +417,7 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
             layer="episodic",
             category="episode",
             title=f"Summary for {stem}",
-            content=compact_content[:1200],
+            content=summary_text[:1200],
             importance=0.85,
             provenance="inferred_agent",
             obsidian_path=rel_obsidian_path,
@@ -237,54 +428,50 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
             raw_char_count=raw_char_count,
             compact_char_count=compact_char_count,
             tasks_carried=len(open_tasks),
-            summary_preview=compact_content[:200],
+            summary_preview=summary_text[:200],
         )
 
         self.logger.info(
-            "Compacted %s: %d chars -> %d chars (%d tasks)",
+            "Compacted %s: %d chars (summary: %d chars, transcript: %d chars, %d tasks)",
             stem,
-            raw_char_count,
             compact_char_count,
+            len(summary_text),
+            len(transcript_body),
             len(open_tasks),
         )
 
-        return compact_content, open_tasks
+        write_note(file_path, full_note_content)
+        return full_note_content, open_tasks
 
-    def compact_all_history(self) -> List[Dict[str, Any]]:
-        """Compact all historical daily files in Conversations, preserving raw copies in .raw_backups/."""
-        conv_dir = self._get_conversations_folder()
-        backup_dir = conv_dir / ".raw_backups"
-        backup_dir.mkdir(parents=True, exist_ok=True)
+    def compact_date(self, target_date: str) -> Dict[str, Any]:
+        if date.fromisoformat(target_date) >= date.today():
+            raise ValueError("Only past daily notes can be compacted")
+        path = self._resolve_daily_file(target_date)
+        if path is None:
+            raise ValueError(f"No Memory Department daily note for {target_date}")
+        before = path.read_text(encoding="utf-8")
+        summary, tasks = self._compact_single_file(path, target_date)
+        return {"status": "COMPACTED" if summary != before else "ALREADY_COMPACTED",
+                "date": target_date, "file": str(path), "tasks_carried": len(tasks)}
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+    def compact_all_history(self, before: Optional[date] = None) -> List[Dict[str, Any]]:
+        """Compact past daily notes once, keeping a raw backup."""
+        cutoff = (before or date.today()).isoformat()
         results = []
-
-        for p in sorted(conv_dir.glob("*.md")):
-            if p.name.startswith("INDEX") or p.name.startswith("conversation") or p.name.startswith("."):
+        folder = self._get_conversations_folder()
+        for path in sorted(folder.glob("*.md")):
+            match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})(?: - [A-Za-z]+)?\.md", path.name)
+            if not match or match[1] >= cutoff or path.is_symlink() or not path.is_file():
                 continue
-            date_match = re.match(r"^(\d{4}-\d{2}-\d{2})", p.name)
-            if not date_match:
+            try:
+                date.fromisoformat(match[1])
+            except ValueError:
                 continue
-            date_str = date_match.group(1)
-
-            # Skip today's active file
-            if date_str >= today_str:
-                continue
-
-            # 1. Back up original raw file
-            backup_file = backup_dir / p.name
-            if not backup_file.exists():
-                shutil.copy2(p, backup_file)
-
-            # 2. Extract and compact
-            compacted_summary, tasks = self._compact_single_file(p, date_str)
-            results.append({
-                "filename": p.name,
-                "date": date_str,
-                "tasks_carried": len(tasks),
-                "summary_length": len(compacted_summary),
-            })
-
+            original = path.read_text(encoding="utf-8")
+            summary, tasks = self._compact_single_file(path, match[1])
+            if summary != original:
+                results.append({"filename": path.name, "date": match[1],
+                                "tasks_carried": len(tasks), "summary_length": len(summary)})
         return results
 
     def _compact_previous_day(self, prev_date_str: str) -> Tuple[str, List[str]]:
@@ -303,8 +490,10 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         """Create today's new Obsidian daily note with template and carried tasks."""
         conv_dir = self._get_conversations_folder()
         today_filename = self._get_today_filename(now_date)
-        today_file = conv_dir / today_filename
+        today_file = self._resolve_daily_file(now_date.isoformat()) or conv_dir / today_filename
 
+        if today_file.is_symlink():
+            raise ValueError("Daily note must not be a symlink")
         if today_file.exists():
             return today_file
 
@@ -328,10 +517,12 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         ]
 
         if tasks_carried and prev_date_str:
-            for t in tasks_carried:
-                lines.append(f"- [ ] {t} *(carried from {prev_date_str})*")
+            for task in tasks_carried:
+                task = re.sub(r"\s+\*\(carried from \d{4}-\d{2}-\d{2}\)\*$", "", task)
+                if task != "Standby for active tasks":
+                    lines.append(f"- [ ] {task} *(carried from {prev_date_str})*")
         else:
-            lines.append("- [ ] Standby for active tasks")
+            lines.append("- No open tasks carried over.")
 
         lines.extend([
             "",
@@ -340,7 +531,8 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
             "",
         ])
 
-        today_file.write_text("\n".join(lines), encoding="utf-8")
+        conv_dir.mkdir(parents=True, exist_ok=True)
+        write_note(today_file, "\n".join(lines))
         self.logger.info("Initialized new daily note: %s", today_file)
 
         # Update Conversations/INDEX.md if it exists
@@ -352,11 +544,11 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
         """Ensure today's file is linked at the top of Conversations/INDEX.md."""
         conv_dir = self._get_conversations_folder()
         index_file = conv_dir / "INDEX.md"
-        if not index_file.exists():
+        if index_file.is_symlink() or not index_file.exists():
             return
 
         stem = today_filename.removesuffix(".md")
-        link_line = f"- [[Conversations/{stem}|{stem}]]"
+        link_line = f"- [[Memory Department/Conversations/{stem}|{stem}]]"
         content = index_file.read_text(encoding="utf-8")
         if link_line not in content:
             marker = "## Recorded Days\n"
@@ -365,5 +557,5 @@ class DayRolloverCompactorAgent(BaseMemoryAgent):
                 updated = parts[0] + marker + "\n" + link_line + "\n" + parts[1].lstrip()
             else:
                 updated = content.rstrip() + f"\n{link_line}\n"
-            index_file.write_text(updated, encoding="utf-8")
+            write_note(index_file, updated)
             self.logger.info("Updated Conversations/INDEX.md with link to %s", stem)

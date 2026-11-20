@@ -13,6 +13,7 @@ import asyncio
 import copy
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import pytest
 
@@ -27,7 +28,7 @@ from orchestration.agent_orchestrator import (
 )
 from orchestration.personas import PERSONAS, software_assignments
 from orchestration.model_policy import apply_model_policy
-from orchestration.evolution import EvolutionManager, verification_command
+from orchestration.evolution import EvolutionManager, _emit_hud_proposal, verification_command
 from skills.skills import DesktopSkills
 from skills.errors import SkillError
 
@@ -100,6 +101,7 @@ def test_intent_domains_parsing():
     assert 'workspace' in tool_tiers.intent_domains("Check my calendar for tomorrow")
     assert 'github' in tool_tiers.intent_domains("Review open pull requests on github")
     assert 'orchestration' in tool_tiers.intent_domains("Delegate task to claude agent")
+    assert 'orchestration' in tool_tiers.intent_domains("What agents are we have?")
     assert 'desktop' in tool_tiers.intent_domains("Turn up the volume")
     assert 'agent_reach' in tool_tiers.intent_domains("Search reddit or bilibili via agent reach")
     assert 'filesystem' in tool_tiers.intent_domains("Copy the file to another folder")
@@ -287,10 +289,29 @@ async def test_team_cancellation(tmp_path):
 @pytest.mark.asyncio
 async def test_desktop_skills_list_system_agents():
     """Verify DesktopSkills executes list_system_agents tool."""
+    from voice_layer.daemon import build_instruction
+
     desktop = DesktopSkills()
+    declarations = desktop.live_declarations
+    assert 'list_system_agents' in {tool['name'] for tool in declarations}
+    assert 'call list_system_agents before answering' in build_instruction(
+        [{'function_declarations': declarations}]
+    )
     res = await desktop.execute('list_system_agents', {})
     assert res['status'] == 'success'
-    assert len(res['agents']) == 8
+    assert len({agent['name'] for agent in res['agents']}) == len(res['agents']) == 38
+    assert {agent['name'] for agent in res['agents'] if 'department' not in agent} == set(AGENTS)
+    for department, count in [('Automation', 1), ('LinkedIn', 12), ('Memory', 6), ('YouTube Brain', 5), ('Google Workspace', 6)]:
+        members = [agent for agent in res['agents'] if agent.get('department') == department]
+        assert len(members) == count
+    for department in ('LinkedIn', 'Memory', 'YouTube Brain', 'Google Workspace'):
+        members = [agent for agent in res['agents'] if agent.get('department') == department]
+        assert all(agent['available'] is None for agent in members)
+        assert all(agent['registered'] is True for agent in members)
+    assert res['department_counts']['Google Workspace'] == 6
+    assert res['summary'].startswith('JARVIS has 38 registered agents.')
+    assert {'name': 'Update Agent', 'department': 'Automation', 'available': True, 'kind': 'automation', 'capabilities': ['apply_updates'], 'description': 'Checks system and developer packages and requests approval before applying updates.'} in res['agents']
+    assert {'name': 'VaultPruner', 'department': 'Memory', 'registered': True, 'available': None} in res['agents']
     await desktop.close_agent_jobs()
 
 
@@ -372,6 +393,26 @@ async def test_desktop_skills_delegate_team_and_status(tmp_path):
 # ==============================================================================
 # 5. EVOLUTION & SELF-HEALING TESTS
 # ==============================================================================
+
+@pytest.mark.asyncio
+async def test_evolution_proposals_have_distinct_cards_and_bounded_shell_calls(monkeypatch):
+    from ui.jarvis_widgets import backend
+
+    calls = []
+
+    def blocked_shell(command, *, capture_output, text, timeout):
+        calls.append((json.loads(command[-1]), timeout))
+        raise subprocess.TimeoutExpired(command[0], timeout)
+
+    monkeypatch.setattr(backend.shutil, 'which', lambda command: '/usr/bin/' + command)
+    monkeypatch.setattr(backend.subprocess, 'run', blocked_shell)
+    job_ids = ('a' * 32, 'b' * 32)
+    for job_id in job_ids:
+        await _emit_hud_proposal({'id': job_id, 'goal': 'Update tests', 'diff': '+ changed'})
+
+    assert [card['id'] for card, _ in calls] == [f'evolution-{job_id}' for job_id in job_ids]
+    assert all(0 < timeout <= 4 for _, timeout in calls)
+
 
 def test_evolution_manager_initialization_and_sandbox(tmp_path):
     """Verify EvolutionManager initialization, job persistence, and bwrap sandbox command."""

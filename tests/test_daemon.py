@@ -1,5 +1,7 @@
 """Tests for voice_layer.daemon module."""
 import asyncio
+import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -17,7 +19,9 @@ def test_live_config_produces_valid_dict():
     assert config['response_modalities'] == ['AUDIO']
     assert 'system_instruction' in config
     assert 'realtime_input_config' in config
-    assert config['realtime_input_config']['automatic_activity_detection']['disabled'] is True
+    assert config['realtime_input_config']['automatic_activity_detection']['disabled'] is False
+    assert config['realtime_input_config']['automatic_activity_detection']['silence_duration_ms'] == 350
+    assert config['realtime_input_config']['automatic_activity_detection']['prefix_padding_ms'] == 100
     assert config['speech_config']['voice_config']['prebuilt_voice_config']['voice_name'] == 'Aoede'
     assert config['speech_config']['language_code'] == 'en-US'
     assert 'en-IN' in config['input_audio_transcription']['language_codes']
@@ -244,6 +248,55 @@ async def test_turn_audio_sent_in_order_with_explicit_boundaries():
 
 
 @pytest.mark.asyncio
+async def test_turn_audio_sent_auto_vad_streams_without_activity_boundaries():
+    from voice_layer.daemon import LiveVoice, INPUT_BYTES, supervise
+    from voice_layer.playback import Playback
+    from voice_layer.speech import GateFrame
+
+    voice = LiveVoice(Playback('default'), config=SimpleNamespace(auto_vad=True, local_speech=SimpleNamespace(enabled=False)))
+    queue = asyncio.Queue()
+    queue.put_nowait((GateFrame(b'\x01\x00' * 320, opened=True), 0))
+    queue.put_nowait((GateFrame(bytes(INPUT_BYTES), closed=True), 0))
+    sent = []
+    finished = asyncio.Event()
+
+    async def send(**kwargs):
+        sent.append(kwargs)
+        if len(sent) >= 2:
+            finished.set()
+
+    await asyncio.wait_for(supervise(
+        voice._send_frames(SimpleNamespace(send_realtime_input=send), queue),
+        finished.wait()), .5)
+    assert [next(iter(item)) for item in sent] == ['audio', 'audio']
+    assert sent[0]['audio'].data == b'\x01\x00' * 320
+
+
+@pytest.mark.asyncio
+async def test_audio_stream_end_sent_when_standby_engaged():
+    from voice_layer.daemon import LiveVoice, INPUT_BYTES, supervise
+    from voice_layer.playback import Playback
+    from voice_layer.speech import GateFrame
+
+    voice = LiveVoice(Playback('default'), config=SimpleNamespace(auto_vad=True, local_speech=SimpleNamespace(enabled=False)))
+    voice.standby._requested.set()
+    queue = asyncio.Queue()
+    queue.put_nowait((GateFrame(bytes(INPUT_BYTES)), 0))
+    sent = []
+    finished = asyncio.Event()
+
+    async def send(**kwargs):
+        sent.append(kwargs)
+        if kwargs.get('audio_stream_end') is True:
+            finished.set()
+
+    await asyncio.wait_for(supervise(
+        voice._send_frames(SimpleNamespace(send_realtime_input=send), queue),
+        finished.wait()), .5)
+    assert sent == [{'audio_stream_end': True}]
+
+
+@pytest.mark.asyncio
 async def test_first_audio_latency_stays_fixed_across_response_chunks(monkeypatch):
     from voice_layer.daemon import LiveVoice
     from voice_layer.playback import Playback
@@ -340,6 +393,29 @@ async def test_stalled_provider_reconnects_without_resuming_old_answer(monkeypat
     with pytest.raises(ConnectionError, match='Please repeat'):
         await voice.monitor_response()
     assert voice.resume_handle is None
+
+
+@pytest.mark.asyncio
+async def test_stalled_transcribed_turn_requests_one_reply_without_filler(monkeypatch):
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
+
+    voice = LiveVoice(Playback('default'))
+    voice.connected = voice._reply_authorized = True
+    voice._user_text = 'Tell me about the moon'
+    voice._last_progress = 87
+    voice._reply_wait_started_at = 87
+    voice._session = SimpleNamespace(send_client_content=AsyncMock())
+    filler = MagicMock()
+    monkeypatch.setattr(voice, '_play_filler_reflex', filler)
+    monkeypatch.setattr('voice_layer.daemon.time.monotonic', lambda: 100)
+    monkeypatch.setattr('voice_layer.daemon.asyncio.sleep', AsyncMock(side_effect=[None, None, asyncio.CancelledError]))
+
+    with pytest.raises(asyncio.CancelledError):
+        await voice.monitor_response()
+    filler.assert_not_called()
+    voice._session.send_client_content.assert_awaited_once()
+    assert voice._reply_recovery_active and voice._waiting
 
 
 @pytest.mark.asyncio
@@ -539,6 +615,57 @@ async def test_tool_call_id_deduplicates_control_effect():
     await voice.handle_tools(event, session)
     skills.execute.assert_awaited_once()
     assert session.send_tool_response.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_voice_can_answer_another_turn_while_linkedin_draft_runs(monkeypatch):
+    from jarvis_control.skills import UnifiedSkills
+    from voice_layer.daemon import LiveVoice
+    from voice_layer.playback import Playback
+    from skills.skills import DesktopSkills
+    from skills.domains.linkedin import linkedin_dept
+
+    release = threading.Event()
+    started = threading.Event()
+
+    def draft(**kwargs):
+        started.set()
+        assert release.wait(3)
+        return SimpleNamespace(
+            post_id='draft-1', target_slot='tomorrow', pillar='Testing', formula_code='F7',
+            char_count=5, humanizer_passed=True, review_card_path='draft.json', content='Draft',
+        )
+
+    desktop = DesktopSkills()
+    monkeypatch.setattr(linkedin_dept, 'draft_and_stage_post', draft)
+    monkeypatch.setattr(desktop, '_task_event_response', AsyncMock(side_effect=lambda _, job: job))
+    skills = UnifiedSkills(desktop_skills=desktop)
+    voice = LiveVoice(Playback('default'), skills=skills)
+    session = SimpleNamespace(send_tool_response=AsyncMock())
+
+    async def call(name, args):
+        voice._reply_authorized = True
+        await voice.handle_tools(SimpleNamespace(function_calls=[
+            SimpleNamespace(id=name, name=name, args=args)
+        ]), session)
+        return session.send_tool_response.await_args.kwargs['function_responses'][0].response
+
+    try:
+        receipt = await asyncio.wait_for(call('linkedin_draft_post', {'topic': 'Testing'}), 1)
+        assert receipt['status'] == 'queued' and not receipt['completed']
+        assert await asyncio.to_thread(started.wait, 1)
+        voice.gate.accepted_turns += 1
+        voice._start_reply_watch()
+        assert (await call('get_assistant_status', {}))['completed']
+        task_id = json.loads(receipt['result'])['id']
+        assert desktop._task_runner.status(task_id)['status'] == 'running'
+        release.set()
+        await asyncio.wait_for(desktop.task_events.get(), 5)
+        result = desktop._task_runner.status(task_id)
+        assert result['steps'][0]['result']['status'] == 'AWAITING_USER_REVIEW'
+    finally:
+        release.set()
+        await skills.close_agent_jobs()
 
 
 @pytest.mark.asyncio

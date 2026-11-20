@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "name": "yt_brain_search",
+      "description": "Search the user's personal YouTube knowledge brain for indexed video notes, takeaways, concepts, and transcripts from watched videos.",
+      "adapter": "yt_brain.search",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword or concept to search within watched YouTube video notes"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of note results to return (default: 5)"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "yt_brain_get",
+      "description": "Retrieve full note content, key takeaways, and metadata for a specific watched YouTube video by video_id or note path.",
+      "adapter": "yt_brain.get",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "description": "YouTube video ID (e.g. 'nAkfg5TUBKk')"
+          },
+          "path": {
+            "type": "string",
+            "description": "Relative or absolute path to the video markdown note"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "yt_brain_topics",
+      "description": "List all indexed topics, categories, and video counts in the user's personal YouTube knowledge brain.",
+      "adapter": "yt_brain.topics",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "yt_brain_status",
+      "description": "Check the operational status of the YouTube knowledge brain (total indexed videos, available topics, worker connection, and latest video).",
+      "adapter": "yt_brain.status",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

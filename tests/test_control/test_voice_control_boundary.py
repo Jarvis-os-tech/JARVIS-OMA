@@ -1,6 +1,7 @@
 """Provider-event control boundaries, without desktop or cloud operations."""
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -96,6 +97,37 @@ async def test_confirmation_uses_transcript_from_the_same_provider_event():
     response = provider_result(session)
     assert response['ok'] is True
     assert voice._user_text == 'Confirm.'
+
+
+@pytest.mark.asyncio
+async def test_audio_only_decision_uses_bound_control_confirmation():
+    from jarvis_control.config import Config
+    from jarvis_control.skills import ControlSkills, UnifiedSkills
+    from jarvis_control.tools import Result
+
+    control = ControlSkills(Config(dry_run=False))
+    actuator = Mock(return_value=Result(True, "Fixture action completed"))
+    control.executor._tool_omarchy_cli = actuator
+    voice, _, session = control_fixture()
+    voice.skills = UnifiedSkills(control_skills=control)
+    voice.gate.accepted_turns = 1
+    voice._decision_confirmation_turn = 1
+    try:
+        await voice.handle(tool_event('omarchy_cli', {'command': 'reboot'}), session)
+        assert provider_result(session)['status'] == 'needs_confirmation'
+        assert control.executor.pending == ('omarchy_cli', {'command': 'reboot'})
+        actuator.assert_not_called()
+        voice.gate.accepted_turns = 2
+        voice.decision_router.evaluate = AsyncMock()
+        token = (voice.gate.accepted_turns, voice.player.generation)
+        assert not await voice._handle_decision_gate(b'yes', token, [], asyncio.Queue(), session)
+        voice.decision_router.evaluate.assert_not_awaited()
+        confirmation = tool_event('confirm_last', {'heard_phrase': 'yes'}, transcript='Yes.')
+        confirmation.tool_call.function_calls[0].id = 'boundary-confirm'
+        await voice.handle(confirmation, session)
+        actuator.assert_called_once_with(command='reboot')
+    finally:
+        await control.close()
 
 
 @pytest.mark.asyncio

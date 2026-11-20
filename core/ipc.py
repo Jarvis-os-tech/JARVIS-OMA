@@ -3,10 +3,54 @@ import asyncio
 import json
 import logging
 import os
+import socket
+import stat
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 log = logging.getLogger("jarvis.ipc")
+
+
+def unlink_owned_socket(path: Path, identity) -> None:
+    try:
+        node = path.lstat()
+        if identity == (node.st_dev, node.st_ino):
+            path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+async def start_control_server(callback, path: Path, **kwargs):
+    """Bind without asyncio's implicit unlink of an existing live socket."""
+    if path.exists() or path.is_symlink():
+        node = path.lstat()
+        if not stat.S_ISSOCK(node.st_mode) or node.st_uid != os.getuid():
+            raise PermissionError('Refusing to replace an unowned or non-socket control path')
+        try:
+            _, writer = await asyncio.wait_for(asyncio.open_unix_connection(str(path)), 1)
+        except (ConnectionRefusedError, FileNotFoundError):
+            try:
+                current = path.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                if (current.st_dev, current.st_ino) != (node.st_dev, node.st_ino):
+                    raise RuntimeError('Control socket changed during startup')
+                path.unlink()
+        else:
+            writer.close()
+            await writer.wait_closed()
+            raise RuntimeError('JARVIS control server is already running')
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.bind(str(path))
+        path.chmod(0o600)
+        sock.listen(socket.SOMAXCONN)
+        sock.setblocking(False)
+        return await asyncio.start_unix_server(callback, sock=sock, **kwargs)
+    except BaseException:
+        sock.close()
+        raise
 
 
 def default_socket_path() -> Path:
@@ -35,18 +79,16 @@ class JarvisIPCServer:
         self.test_voice_cb = test_voice_cb
         self.set_mute_cb = set_mute_cb
         self._server: Optional[asyncio.AbstractServer] = None
+        self._owns_socket = False
         self._subscribers: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.socket_path.exists():
-            try:
-                self.socket_path.unlink()
-            except OSError:
-                pass
-        self._server = await asyncio.start_unix_server(
-            self._handle_client, path=str(self.socket_path)
+        self._server = await start_control_server(
+            self._handle_client, self.socket_path
         )
+        node = self.socket_path.lstat()
+        self._owns_socket = (node.st_dev, node.st_ino)
         os.chmod(self.socket_path, 0o600)
         log.info("Jarvis IPC Server listening on %s (mode 0600)", self.socket_path)
 
@@ -148,8 +190,9 @@ class JarvisIPCServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
-        if self.socket_path.exists():
+        if self._owns_socket:
             try:
-                self.socket_path.unlink()
+                unlink_owned_socket(self.socket_path, self._owns_socket)
             except OSError:
                 pass
+            self._owns_socket = False

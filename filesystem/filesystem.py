@@ -1,8 +1,9 @@
 """Bounded filesystem operations exposed to the voice skill registry with full autonomy."""
 from __future__ import annotations
 
-import os
+import fcntl
 import hashlib
+import os
 from pathlib import Path
 import shutil
 import uuid
@@ -276,23 +277,40 @@ def search_file_content(value: str, query: str, limit: int = 30, max_file_size: 
 
 
 def write_text(value: str, content: str, overwrite: bool = False) -> dict:
-    path = path_for(value)
+    return _write_text(path_for(value), content, overwrite)
+
+
+def _write_text(path: Path, content: str, overwrite: bool, *, expected: bytes | None = None) -> dict:
     if not isinstance(content, str) or len(content.encode('utf-8')) > 5 * 1024 * 1024:
         raise FileOperationError('content must be text of at most 5 MiB')
-    if path.exists() and not overwrite:
-        raise FileOperationError('file exists; set overwrite to true to replace it')
-    if path.exists() and not path.is_file():
-        raise FileOperationError('path is not a regular file')
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
-            temporary.write_text(content, encoding='utf-8')
-            if path.exists():
-                temporary.chmod(path.stat().st_mode & 0o777)
-            temporary.replace(path)
+            fcntl.flock(directory, fcntl.LOCK_EX)
+            if path.exists() and not path.is_file():
+                raise FileOperationError('path is not a regular file')
+            temporary = path.with_name('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
+            stream = temporary.open('x', encoding='utf-8')
+            try:
+                with stream:
+                    stream.write(content)
+                if overwrite:
+                    if path.exists():
+                        temporary.chmod(path.stat().st_mode & 0o777)
+                    # shortcut: the directory lock only covers cooperating writers, use an OS-level conditional replace if available.
+                    if expected is not None and _content_snapshot(path) != expected:
+                        raise FileOperationError('file changed since it was read')
+                    temporary.replace(path)
+                else:
+                    try:
+                        os.link(temporary, path)
+                    except FileExistsError:
+                        raise FileOperationError('file exists; set overwrite to true to replace it') from None
+            finally:
+                temporary.unlink(missing_ok=True)
         finally:
-            temporary.unlink(missing_ok=True)
+            os.close(directory)
     except OSError as error:
         raise FileOperationError(f'cannot write file: {error.strerror}') from None
     return _content_result({'status': 'written', 'path': str(path), 'bytes': len(content.encode('utf-8'))},
@@ -408,7 +426,8 @@ def replace_text(value: str, old: str, new: str) -> dict:
     if not path.is_file() or not old or not isinstance(old, str) or not isinstance(new, str):
         raise FileOperationError('invalid text replacement')
     try:
-        content = path.read_text(encoding='utf-8')
+        source = path.read_bytes()
+        content = source.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
     except (OSError, UnicodeError) as error:
         raise FileOperationError(f'cannot read text file: {error}') from None
     if len(content.encode('utf-8')) > 5 * 1024 * 1024:
@@ -416,7 +435,7 @@ def replace_text(value: str, old: str, new: str) -> dict:
     count = content.count(old)
     if count != 1:
         raise FileOperationError(f'expected exactly one matching passage; found {count}')
-    result = write_text(str(path), content.replace(old, new, 1), overwrite=True)
+    result = _write_text(path, content.replace(old, new, 1), overwrite=True, expected=source)
     return {**result, 'status': 'edited' if result.get('verified') else 'unverified'}
 
 
@@ -429,13 +448,23 @@ def trash_path(value: str) -> dict:
     name = path.name + '.' + uuid.uuid4().hex[:8]
     target = trash / 'files' / name
     info = trash / 'info' / (name + '.trashinfo')
+    created_info = False
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         info.parent.mkdir(parents=True, exist_ok=True)
+        with info.open('x', encoding='utf-8') as stream:
+            created_info = True
+            stream.write('[Trash Info]\nPath=' + quote(str(path), safe='/') +
+                         '\nDeletionDate=' + datetime.now().strftime('%Y-%m-%dT%H:%M:%S') + '\n')
         shutil.move(str(path), str(target))
-        info.write_text('[Trash Info]\nPath=' + quote(str(path), safe='/') +
-                        '\nDeletionDate=' + datetime.now().strftime('%Y-%m-%dT%H:%M:%S') + '\n', encoding='utf-8')
     except OSError as error:
+        if target.exists() or target.is_symlink():
+            raise FileOperationError(f'Trash operation failed; inspect the copy at {target}: {error}') from None
+        if created_info:
+            try:
+                info.unlink(missing_ok=True)
+            except OSError:
+                raise FileOperationError(f'Trash operation failed; leftover metadata at {info}: {error}') from None
         raise FileOperationError(f'cannot move path to Trash: {error.strerror}') from None
     return {'status': 'trashed', 'original': str(path), 'trash_path': str(target)}
 

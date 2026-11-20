@@ -65,7 +65,7 @@ class LinkedInDepartment:
         self.a9_hooks = HookExtractorAgent(self.cfg)
         self.a10_humanizer = HumanizerAgent(self.cfg)
         self.a11_interviewer = InterviewerAgent(self.cfg)
-        self.a12_scheduler = ContentSchedulerAgent(self.cfg)
+        self.a12_scheduler = ContentSchedulerAgent(self.cfg, tools=self.tools)
 
     def draft_and_stage_post(
         self,
@@ -203,8 +203,12 @@ class LinkedInDepartment:
 
         return {"success": True, "data": profile_data, "summary": summary_text}
 
-    def approve_post(self, post_id: str, publish_now: bool = False) -> dict[str, Any]:
+    def approve_post(self, post_id: str, publish_now: bool = False, image_path: str | None = None) -> dict[str, Any]:
         """User has approved the post via Jarvis. If publish_now is True, publishes directly to LinkedIn."""
+        if not post_id or Path(post_id).name != post_id:
+            return {"success": False, "error": "Invalid post ID."}
+        if image_path is not None and not publish_now:
+            return {"success": False, "error": "Supply the approved image path when publishing."}
         json_file = self.cfg.review_queue_dir / f"{post_id}.json"
         md_file = self.cfg.review_queue_dir / f"{post_id}.md"
 
@@ -212,12 +216,14 @@ class LinkedInDepartment:
             return {"success": False, "error": f"Post {post_id} not found."}
 
         data = json.loads(json_file.read_text(encoding="utf-8"))
+        if data.get("status") == "PUBLISHED_LIVE":
+            return {"success": False, "error": "This draft has already been published."}
         data["approved_at"] = datetime.now().isoformat()
 
         if publish_now:
             # Publish live to LinkedIn via Composio
             content_to_post = data.get("content", "")
-            pub_res = self.tools.create_post(commentary=content_to_post)
+            pub_res = self.a12_scheduler.publish_approved(content_to_post, image_path)
             if pub_res.success:
                 data["status"] = "PUBLISHED_LIVE"
                 data["published_at"] = datetime.now().isoformat()
@@ -255,9 +261,9 @@ class LinkedInDepartment:
 
         return {"success": True, "status": "APPROVED_READY_TO_PUBLISH", "post_id": post_id}
 
-    def publish_post(self, post_id: str) -> dict[str, Any]:
+    def publish_post(self, post_id: str, image_path: str | None = None) -> dict[str, Any]:
         """Publish an approved post to LinkedIn live."""
-        return self.approve_post(post_id, publish_now=True)
+        return self.approve_post(post_id, publish_now=True, image_path=image_path)
 
     async def propose_missing_tool(self, problem_description: str) -> dict[str, Any]:
         """API Agent integration: Propose an API blueprint for missing LinkedIn operations."""

@@ -6,6 +6,17 @@ var kinds = ["view", "text", "qr", "image", "pip", "table", "chart", "progress"]
 function validate(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("Expected a widget object");
+    if (!value.kind && (value.body !== undefined || value.text !== undefined)) {
+        value.kind = "text";
+    }
+    if (!value.data && (value.body !== undefined || value.text !== undefined)) {
+        value.data = { text: String(value.body !== undefined ? value.body : value.text) };
+    }
+    if (value.ttl_ms !== undefined && value.expires_seconds === undefined) {
+        if (typeof value.ttl_ms !== "number")
+            throw new Error("Invalid widget lifetime");
+        value.expires_seconds = value.ttl_ms / 1000;
+    }
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(value.id || "") || kinds.indexOf(value.kind) === -1)
         throw new Error("Unsupported widget identity or kind");
     if (value.id.indexOf("jtask_") === 0) throw new Error("Task card IDs are reserved for task events");

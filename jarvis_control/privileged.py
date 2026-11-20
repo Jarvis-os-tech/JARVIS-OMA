@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import time
@@ -34,17 +35,17 @@ CRITICAL_SYSTEM_SERVICES = frozenset({
 
 
 def speak_explanation(text: str) -> None:
-    """Send explanation to JARVIS Voice / OS context silently without robotic fallback speech."""
+    """Send spoken explanation aloud to user so they know why administrator privileges are needed."""
     if not text or not text.strip():
         return
     payload = json.dumps({
         "command": "speak",
         "text": text.strip(),
-        "priority": "normal",
+        "priority": "critical",
         "source": "privileged_control",
         "dedup_key": f"priv_{abs(hash(text)) % 100000}",
-        "silent": True,
-        "speak": False
+        "silent": False,
+        "speak": True
     }) + "\n"
 
     for sock_path in (SPEAK_SOCK, CONTROL_SOCK):
@@ -189,9 +190,92 @@ def execute_manage_packages(
         if err:
             return {"ok": False, "output": f"ERROR: {err}", "code": 1}
 
-        spk_reason = reason or f"I need administrator access to remove package(s): {', '.join(pkg_list)}."
-        cmd = ["pacman", "-Rns", "--noconfirm", *pkg_list]
-        return run_privileged_action(cmd, reason=spk_reason, destructive=True)
+        pending = list(dict.fromkeys(pkg_list))
+        out_lines = []
+        code = 0
+
+        def run_removal_command(cmd, timeout):
+            try:
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return subprocess.CompletedProcess(cmd, 124, "", "Timed out; outcome unknown.")
+            except OSError as error:
+                return subprocess.CompletedProcess(cmd, 125, "", f"Could not start command: {error}")
+
+        def probe(manager, option):
+            nonlocal code
+            found = []
+            for pkg in pending[:]:
+                result = run_removal_command([manager, option, pkg], 5)
+                if result.returncode == 0:
+                    found.append(pkg)
+                elif result.returncode in (124, 125):
+                    code = code or result.returncode
+                    out_lines.append(f"Could not check {pkg} via {manager}: {result.stderr}")
+                    pending.remove(pkg)
+            return found
+
+        # 1. Check if any package is managed by mise (user-space CLI developer tools)
+        mise_bin = shutil.which("mise")
+        if mise_bin:
+            mise_installed = probe(mise_bin, "which")
+            if mise_installed:
+                for pkg in mise_installed:
+                    unuse = run_removal_command([mise_bin, "unuse", "-g", pkg], 10)
+                    proc_mise = (unuse if unuse.returncode in (124, 125)
+                                 else run_removal_command([mise_bin, "uninstall", "--all", pkg], 30))
+                    if unuse.returncode == 0 and proc_mise.returncode == 0:
+                        out_lines.append(f"Successfully uninstalled {pkg} from mise.")
+                    else:
+                        failure = proc_mise if proc_mise.returncode else unuse
+                        code = code or failure.returncode
+                        out_lines.append(f"mise removal of {pkg}: {failure.stderr.strip() or failure.stdout.strip() or 'failed'}")
+                pending = [pkg for pkg in pending if pkg not in mise_installed]
+
+        # 2. Check if installed via flatpak
+        flatpak_bin = shutil.which("flatpak")
+        if flatpak_bin:
+            flatpak_installed = probe(flatpak_bin, "info")
+            if flatpak_installed:
+                proc_flatpak = run_removal_command([flatpak_bin, "uninstall", "-y", *flatpak_installed], 60)
+                code = code or proc_flatpak.returncode
+                output = (proc_flatpak.stdout + "\n" + proc_flatpak.stderr).strip()
+                action_label = "Failed to uninstall" if proc_flatpak.returncode else "Uninstalled"
+                out_lines.append(f"{action_label} {', '.join(flatpak_installed)} via flatpak."
+                                 + (f" {output}" if output else ""))
+                pending = [pkg for pkg in pending if pkg not in flatpak_installed]
+
+        # 3. Check if installed via pacman (system packages)
+        pacman_bin = shutil.which("pacman")
+        pacman_installed = probe(pacman_bin, "-Q") if pacman_bin else []
+
+        if pacman_installed:
+            spk_reason = reason or f"I need administrator access to remove package(s): {', '.join(pacman_installed)}."
+            cmd = ["pacman", "-Rns", "--noconfirm", *pacman_installed]
+            result = run_privileged_action(cmd, reason=spk_reason, destructive=True)
+            code = code or result["code"] or (0 if result["ok"] else 1)
+            out_lines.append(result["output"] + ("; outcome unknown." if result["code"] == 124 else ""))
+            pending = [pkg for pkg in pending if pkg not in pacman_installed]
+
+        # 4. Check if installed via yay (AUR packages)
+        yay_bin = shutil.which("yay")
+        if yay_bin:
+            yay_installed = probe(yay_bin, "-Q")
+            if yay_installed:
+                cmd_yay = [yay_bin, "-Rns", "--noconfirm", *yay_installed]
+                proc_yay = run_removal_command(cmd_yay, 60)
+                code = code or proc_yay.returncode
+                output = (proc_yay.stdout + "\n" + proc_yay.stderr).strip()
+                action_label = "Failed to uninstall" if proc_yay.returncode else "Uninstalled"
+                out_lines.append(f"{action_label} {', '.join(yay_installed)} via yay."
+                                 + (f" {output}" if output else ""))
+                pending = [pkg for pkg in pending if pkg not in yay_installed]
+
+        # 5. Not installed in any package manager:
+        if pending:
+            code = code or 1
+            out_lines.append(f"Package '{', '.join(pending)}' is not installed (checked pacman, yay, flatpak, and mise).")
+        return {"ok": code == 0, "output": "\n".join(out_lines), "code": code}
 
     elif action == "install":
         if not pkg_list:

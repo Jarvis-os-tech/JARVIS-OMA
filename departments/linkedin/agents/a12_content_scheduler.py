@@ -14,6 +14,11 @@ class ContentSchedulerAgent(BaseLinkedInAgent):
     agent_name = "ContentScheduler"
     description = "Packages validated posts into structured review cards for Jarvis and manages the staging queue."
 
+    def publish_approved(self, commentary: str, image_path: str | None = None):
+        if image_path is None:
+            return self.tools.create_post(commentary=commentary)
+        return self.tools.create_post(commentary=commentary, image_path=image_path)
+
     def execute(self, task_input: dict[str, Any]) -> AgentResult:
         post_draft = task_input.get("post_draft", "")
         scheduled_date = task_input.get("scheduled_date", datetime.now().strftime("%Y-%m-%d 08:30"))

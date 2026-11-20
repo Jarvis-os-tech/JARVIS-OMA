@@ -65,7 +65,7 @@ JARVIS OS provides five tightly coupled, sovereign subsystems:
 ### 1. Human Interaction Engine & Voice Core (`voice_layer`)
 * **Ambient Acoustic Ear**: Continuous PipeWire audio capture (16 kHz PCM, 20 ms frames) with local Silero VAD turn gating.
 * **Cactus-Needle Local Command Router**: Embedded high-speed speech recognizer executing offline desktop commands (volume, brightness, app launching, window workspaces, mute, standby) without sending audio to the cloud.
-* **Situational Conversational Acknowledgements**: Pre-rendered, affirmative spoken acknowledgements (`Sure`, `On it`, `Looking into that`) matched dynamically to task context (agent tasks, browser searches, file operations, system actions) to eliminate cloud latency without annoying empty vocal fillers ("Ah", "Haa").
+* **Situational Conversational Acknowledgements**: Pre-rendered, affirmative spoken acknowledgements (`On it`, `Looking into that`) matched dynamically to task context (agent tasks, browser searches, file operations, system actions) to eliminate cloud latency without annoying empty vocal fillers ("Ah", "Haa").
 * **Duplex Cloud Streaming**: Resilient Gemini Live WebSocket session with automatic reconnection backoff, wake confirmation, and session resumption.
 * **Playback Fencing & Interruption**: Generation-tracked audio buffer instantly halts and flushes speaker queues whenever speech is detected.
 

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
+
+from core.workers import BoundedWorker, WorkerBusyError
 
 from .bridge import MemoryBridge, MemoryError as BridgeMemoryError
 from .config import Config, MemoryConfig
@@ -28,7 +28,7 @@ class MemorySkills:
         self._memory_config = getattr(self.config, "memory", MemoryConfig())
         self._memory_api_key = api_key
         self._memory_writes: set[asyncio.Task] = set()
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='jarvis-memory')
+        self._worker = BoundedWorker('jarvis-memory')
         self._closed = False
         self._capture_dropped = 0
         self._capture_failures = 0
@@ -125,9 +125,8 @@ class MemorySkills:
                 return await fn(**kwargs)
             if self._closed:
                 raise SkillError('Memory worker is closed')
-            return await asyncio.get_running_loop().run_in_executor(
-                self._executor, partial(fn, **kwargs))
-        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, ValueError) as error:
+            return await self._worker.run(fn, **kwargs)
+        except (BridgeMemoryError, OSError, UnicodeError, sqlite3.Error, ValueError, WorkerBusyError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_remember_memory(self, text: str, category='auto', scope='user', steps=None, outcome=None, occurred_at=None) -> dict[str, Any]:
@@ -214,12 +213,8 @@ class MemorySkills:
     async def close_agent_jobs(self) -> None:
         if self._memory_writes:
             await asyncio.gather(*tuple(self._memory_writes), return_exceptions=True)
-        if not self._closed:
-            try:
-                await self._memory_operation('close')
-            finally:
-                self._closed = True
-                await asyncio.to_thread(self._executor.shutdown, wait=True)
+        self._closed = True
+        await self._worker.close(finalizer=self.memory.close)
 
 
 # Compatibility alias for tests and legacy callers

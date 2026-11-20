@@ -251,3 +251,159 @@ Outcome: built learning/os_ingestion.py for explicit one-occurrence read-only SQ
 Lesson: use an explicit read transaction to retain one WAL snapshot across schema and occurrence reads. Read-only SQLite may still maintain WAL shared-memory bookkeeping and require host filesystem access; do not claim every live sidecar byte is unchanged. The source's recurring symptom ID and raw trace are not an occurrence identity or reliable structured current-state evidence. Keep typed historical metadata separate from fixture evaluation and disable real-record proposal verdicts until independently implemented.
 
 Sources: learning/os_ingestion.py; learning/os_contracts.py; tests/test_learning/test_os_ingestion.py; docs/harness2-review-2026-11-04/phase2-build.md, phase2-tests.xml, phase2-live-check.json; read-only external healer memory.py schema inspection. Restricted full-suite collection stalled and was interrupted; final host rerun passed 146 tests in 8.78 seconds. Capture-learning skill absent; this append records the sourced outcome. Automatic polling, voice wiring, current-service probes, execution isolation and deployment/recovery remain unimplemented.
+
+## 2026-11-15 — Verify retry and repeat-run behavior before enabling memory maintenance
+
+Outcome: reviewed the local JARVIS OS changes against the recorded upstream commit `4713691`. Temporary-vault checks showed that repeat compaction removed substantive details from the active daily note and that a failed note append still advanced the sync cursor. A temporary voice configuration also reproduced a startup error when the new decision settings were present.
+
+Lesson: make compaction idempotent, advance a persistence cursor only after the corresponding write succeeds, and load new configuration sections through the same typed path as existing settings. Exercise these paths with disposable data before enabling scheduled maintenance.
+
+Sources: `scripts/midnight_summary_sync.py`, `departments/memory/agents/a5_day_rollover_compactor.py`, `departments/memory/department.py`, `voice_layer/config.py` and temporary-data review checks. The capture-learning skill was unavailable in the installed and repository skill paths, so this entry records the findings directly.
+
+## 2026-11-15 — Give memory maintenance a single owner for each file
+
+Outcome: repaired the Memory Department's rollover, session sync, scoped recall integration, and pruning. The agent's notes now live under `Memory Department/Conversations`. The existing exporter retains its own files. Recorded history sync writes the note and its progress marker together, including when the first run occurs after midnight. Temporary-vault checks confirmed retry, repeat compaction, transcript retention, and alternate-vault isolation.
+
+Lesson: keep a durable progress marker in the same atomic write as the content it represents. Apply scope and deletion through one memory store, and keep transcript maintenance from re-promoting historical text into remembered facts.
+
+Sources: `departments/memory/department.py`, `departments/memory/agents/a5_day_rollover_compactor.py`, `departments/memory/tests/test_memory_department.py`, `scripts/midnight_summary_sync.py`, and isolated alternate-vault verification. The capture-learning skill was unavailable, so this entry records the result directly.
+
+## 2026-11-15 — Validate memory stability through retries and worker shutdown
+
+Outcome: hardened the six Memory Department agents and the legacy memory adapter. The graph filters expired and superseded nodes, consolidation regenerates agent-owned fact notes after a failed write, reflection deduplicates its rules, and diagnostic capture redacts credential fields. The legacy adapter now uses the shared bounded worker. Isolated checks exercised tool routing, worker shutdown, and repeat midnight sync against an alternate vault.
+
+Lesson: preserve a stable initial sync cutoff across retries, derive file projections from committed records, and exercise the real worker lifecycle alongside unit tests. Generated rules and agent notes need stable identities and their own write boundaries.
+
+Sources: `departments/memory/tests/test_memory_department.py`, `departments/memory/db.py`, `jarvis_memory/skills.py`, `tests/test_memory/test_memory_worker.py`, and the disposable DesktopSkills and midnight-sync check. The capture-learning skill was unavailable, so this entry records the result directly.
+
+## 2026-11-15 — Verify outcomes at the action boundary
+
+Outcome: buffered voice classifications now reach the Live tool path, and classified confirmation requests block tool execution for the initial turn. Close App reports the window or tab operation's result. Package removal aggregates results across managers. Review cards expose the working Diff action, and widget expiry preserves milliseconds.
+
+Lesson: a classification or dispatch acknowledgment does not establish that a tool ran. Test the actual handoff and retain failures when multiple backends contribute to one result.
+
+Sources: `voice_layer/daemon.py`, `tests/test_gemini_decisions.py`, `tests/test_control/test_privileged_and_security.py`, and the WidgetModel expiry assertions. The capture-learning skill was unavailable.
+
+## 2026-11-15 — Retry desktop submissions before execution starts
+
+Outcome: the control worker now retries only rejected submissions, and shutdown drains active work before releasing the owned camera. In an isolated checkout with local sockets, the behavior gate passed 224 checks and the full suite passed 2,160 tests with 15 skips and 149 subtests. That full run preceded the final camera shutdown change, which passed 15 focused control and concurrency tests. The synthetic memory evaluation reported no baseline regressions and still failed the false-recall check.
+
+Lesson: an admitted tool can change the desktop before raising an error. Retry only when submission itself fails. Drain the worker pool before closing resources an active operation can reopen.
+
+Sources: `jarvis_control/skills.py`, `tests/test_control/test_skills.py`, and the isolated test runs. The capture-learning skill was unavailable.
+
+## 2026-11-16 — Verify desktop repairs at their runtime boundaries
+
+Outcome: repaired desktop voice confirmation and offline classification, file-write conflict handling and Trash recovery, memory sync cursors and evidence filtering, package removal outcomes, release readiness and source fingerprints, evolution cards, stale voice status, and installer packaging. Lower-cost independent reviewers checked the file, release, and memory changes. The final isolated suite passed 2,170 tests and 149 subtests with 15 skips. The behavior gate passed 224 checks when run on its own. The synthetic memory benchmark passed with zero baseline regressions. Phone and mobile work was deferred.
+
+Lesson: verify failure paths through the real local entry point. Keep a file conflict check close to replacement and record which writers honor its lock. Run the required behavior gate separately when a concurrent run fails to produce evidence.
+
+Sources: `tests/test_control/test_voice_control_boundary.py`, `tests/test_filesystem_and_task_runner.py`, `tests/test_release_switching.py`, `departments/memory/tests/test_memory_department.py`, `scripts/behavior_gate.py`, and disposable checkout test results. The capture-learning skill was unavailable.
+
+## 2026-11-16 — Preserve entry and socket ownership during desktop recovery
+
+Outcome: a lower-cost agent review found that an existing daily memory note did not repair its stale rollover marker, and task verification followed symlink targets instead of checking the operated-on entry. Fixed both, including dangling-link verification. Desktop control servers now refuse to replace live listeners or ordinary files, bind before handing sockets to asyncio, and compare device/inode ownership before cleanup. The independent runtime reviewer identified the replacement-path shutdown case; it was fixed and covered for core, voice control, and speak sockets. The final disposable desktop suite passed 2,105 tests and 150 subtests, with 15 optional/runtime skips and 91 phone/mobile-related tests deselected.
+
+Lesson: a pathname is not an ownership identity. Verify the entry an action actually changed, and never let startup or cleanup remove another server's socket. Recover persistent progress markers even when their corresponding output already exists. Preserve repository symlinks when building isolated test snapshots.
+
+Sources: `core/ipc.py`, `voice_layer/ipc.py`, `filesystem/task_runner.py`, `departments/memory/agents/a5_day_rollover_compactor.py`, their regression tests, and `/tmp/jarvis-desktop-audit-ujyf8b0h/.review/suite-final.log`. Phone/mobile code and deployment were excluded; optional integrations and live desktop/cloud behavior remain unverified. The capture-learning skill was unavailable, so this entry records the sourced outcome directly.
+
+## 2026-11-16 — Verify optional desktop connectors without claiming a live connection
+
+Outcome: continued desktop validation after additional YouTube Brain integration changes appeared. A lower-cost reviewer repaired its hardcoded home path, SQLite URI escaping, bus error propagation, missing-note handling, bounded results/content, and bus setup deadline. The parent removed duplicate unconditional connection claims and required observed status before reporting availability. Integration tests now use a temporary SQLite database and the real asynchronous connector rather than personal notes. The final current-source desktop suite passed 2,116 tests and 150 subtests, with 15 optional/runtime skips and 91 phone/mobile-related tests deselected.
+
+Lesson: a declared tool or readable archive does not prove that a live worker or capture pipeline is connected. Keep test fixtures isolated while exercising the real asynchronous boundary, and preserve unsuccessful connector responses instead of turning missing content into success.
+
+Sources: `connectors/yt_brain.py`, `voice_layer/persona.py`, `voice_layer/daemon.py`, `tests/test_yt_brain.py`, `tests/test_yt_brain_persona.py`, and the disposable desktop verification run. Upstream worker response shape was checked read-only in `/home/g0pi/jarvis-yt-brain/yt_brain/jarvis_yt_brain_worker.py`. No phone/mobile modifications or deployment. Capture-learning remains unavailable; this append records the sourced outcome.
+
+Final gate evidence for this continuation: the unchanged final source snapshot passed all 224 required behavior checks (`passed=true`, `source_unchanged=true`). These deterministic checks do not establish live microphone, cloud-provider, desktop-display, or external YouTube worker acceptance.
+
+## 2026-11-16 — Use one desktop-entry inventory across launch routes
+
+Outcome: fixed a case-sensitive legacy app lookup and made DesktopSkills consume the existing XDG desktop_paths/read_desktop discovery helpers. Nested desktop entries are now included and a hidden user override cannot be resurrected by a system entry. Regression coverage includes Antigravity capitalization, separation from Antigravity IDE, nested entries, hidden overrides, failure-loop limits, and worker timing. Isolated focused verification passed 56 tests and 11 subtests.
+
+Lesson: multiple launch routes must agree on entry identity and precedence. A working executable does not make every spoken spelling a valid desktop ID. Bound failed retries and measure queue and handler time without logging file contents.
+
+Sources: `skills/skills.py`, `jarvis_control/tools.py`, `tests/test_antigravity_launch.py`, `tests/test_desktop_tool_failure_loop.py`. The earlier file-action delay remains unattributed; no live action was replayed. Capture-learning is unavailable, so this append records the outcome directly.
+
+## 2026-11-16 — Ground agent inventory in system discovery
+
+Outcome: the live tool catalog now exposes system agent discovery directly, and the voice prompt routes agent inventory questions to it. The orchestration selector recognizes plural “agents.” Focused orchestration and persona checks passed.
+
+Lesson: an inventory question needs the current agent catalog. A list of jobs answers a different question, and an installed command provides no evidence of sign-in.
+
+Sources: `orchestration/tool_tiers.py`, `voice_layer/persona.py`, and `tests/test_orchestration.py`. The capture-learning skill was unavailable. The installed runtime and live microphone were unverified.
+
+## 2026-11-16 — Include native departments in agent discovery
+
+Outcome: the agent lookup now includes the LinkedIn and Memory rosters alongside local command availability. Focused orchestration and persona tests verified 12 LinkedIn agents and six Memory agents.
+
+Lesson: agent inventory should account for internal specialists as well as external delegates. A roster alone does not establish runtime readiness.
+
+Sources: `skills/domains/orchestration.py`, `voice_layer/persona.py`, and `tests/test_orchestration.py`. The capture-learning skill was unavailable. Deployment and live voice were unverified.
+
+## 2026-11-16 — Register teams in the JARVIS agent catalog
+
+Outcome: JARVIS returns one agent list with department membership on native and pipeline entries. The list includes 12 LinkedIn, six Memory, five YouTube Brain, and eight local command entries. Focused routing and catalog tests passed.
+
+Lesson: use department membership as catalog metadata and keep execution behind the owning workflow. Recording a pipeline stage in the inventory leaves its health unverified.
+
+Sources: `skills/domains/orchestration.py`, `skills/domains/yt_brain.py`, `tests/test_orchestration.py`, and the five stages in the adjacent YouTube Brain project's `yt_brain/main.py`. The capture-learning skill was unavailable.
+
+## 2026-11-17 — Keep voice responsive while department work runs
+
+Outcome: synchronous LinkedIn operations now use a dedicated worker. Voice requests for drafts, sprint plans, and profile audits return a tracked background task receipt, and the main voice can give one factual status reply when an action lacks completion evidence. A regression test held a synchronous draft open while a second voice turn completed. The focused voice, interruption, background delivery, and task suites passed 125 tests.
+
+Lesson: moving execution off the audio event loop keeps capture alive, while returning a task receipt releases the conversational turn. Reuse the task runner for status and idle delivery, and keep confirmation-bound actions out of automatic background admission.
+
+Sources: `voice_layer/daemon.py`, `jarvis_control/skills.py`, `skills/domains/linkedin.py`, `filesystem/task_runner.py`, `tests/test_daemon.py`, and the JARVIS Voice service journal. Capture-learning was unavailable. Live microphone conversation and NVIDIA authentication were not exercised.
+
+## 2026-11-17 — Recover missing voice replies without speculative acknowledgements
+
+Outcome: the voice journal showed local “okay,” “sure,” and “hmm” clips followed by new speech turns before reply audio, and a provider reply that recovered only after an empty turn boundary. Ordinary turns now wait for actual reply audio or admitted work. A transcribed turn that stalls can request one spoken answer without replaying tools. All 154 focused checks passed. After restart, the journal recorded two microphone turns with provider audio beginning in roughly one second. Live stall recovery was not induced.
+
+Lesson: a local acknowledgement does not establish that a reply reached playback. Check upload, provider audio, and turn transitions separately. Bound recovery to one attempt per recognized turn and keep it clear of tools in flight.
+
+Sources: JARVIS Voice service journal, `voice_layer/daemon.py`, `tests/test_daemon.py`, `tests/test_gemini_decisions.py`, and `tests/test_spoken_fillers.py`. The capture-learning skill was unavailable.
+
+## 2026-11-17 — Verify low-cost LinkedIn drafts against source facts
+
+The live LinkedIn drafting workflow reached the review queue using the configured primary NVIDIA model alone after agents were fixed to honor their supplied client configuration. The draft invented activity counts, which were removed in review. An authenticity check does not verify factual claims. Sources: the department regression tests and review card `post_20261117_085823_f7`.
+
+## 2026-11-17 — Publish approved images through the LinkedIn department
+
+The Content Scheduler now hands an approved image to the LinkedIn publishing tool as a structured upload, and the department records the returned post ID. The department regression test confirms that approving a published draft again does not trigger another upload or post.
+
+## 2026-11-17 — Route LinkedIn work through the department
+
+The voice persona routes LinkedIn work through the department even when Hermes is absent. The tool catalog exposes post lookup through the department using the connector's `post_id` argument. Sources: `voice_layer/persona.py`, `skill_manifests/linkedin-department.json`, and the focused routing tests.
+
+## 2026-11-17 — Use API Anything for other online services
+
+Voice routing now selects mapped API Anything operations for non-LinkedIn online services. Removing the competing generic platform action instruction keeps the selected route consistent with the existing authorization flow. Sources: `voice_layer/persona.py`, `voice_layer/daemon.py`, and `tests/test_system_persona.py`.
+
+## 2026-11-17 — Preserve sync checkpoints during vault maintenance
+
+The vault pruner now preserves notes that carry session sync checkpoints and keeps index prose intact when cleaning standalone links. The legacy conversations folder also rejects symlinks. The Memory suite passed 198 tests and 87 subtests. A disposable DesktopSkills run verified session sync, replay protection, prune preview, remember, and recall. Sources: `departments/memory/tests/test_memory_department.py` and the disposable DesktopSkills check.
+
+## 2026-11-17 — Keep simultaneous YouTube Brain requests on the live worker
+
+Six parallel reads produced one live reply before the connector assigned unique broker client IDs. After the change, all six used the worker, and live note retrieval passed. A readable SQLite archive now has its own status. Sources: `connectors/yt_brain.py`, `tests/test_yt_brain.py`, and the live read-only smoke check.
+
+## 2026-11-17 — Bound Google Workspace agents by service
+
+The Google Workspace department now owns six agents for Gmail, Calendar, Tasks, Drive, Docs, and Sheets. Every existing Google tool has exactly one service owner or belongs to the department control plane, and off-service dispatch is rejected before the connector runs. JARVIS agent discovery and voice routing now identify Google Workspace as a native department. Forty-one focused offline checks passed, and the local connection check reported Gmail, Calendar, Tasks, and read-only Drive, Docs, and Sheets authorization.
+
+Lesson: reuse the connector as the transport boundary and enforce service ownership above it with immutable allowlists. Capability isolation over one shared OAuth grant is not separate credential isolation.
+
+Sources: `departments/google_workspace/`, `skills/domains/workspace.py`, `skills/domains/orchestration.py`, `voice_layer/persona.py`, and `tests/test_google_workspace_department.py`. No live Google content was read or changed.
+
+## 2026-11-17 — Deploy agent catalogs before testing voice answers
+
+The voice journal showed `list_system_agents` executing successfully while the active service still ran the November 5 managed release, which only returned local command agents. The tested department catalog had remained in the workspace. A prepared release now installs the catalog and Google department through the atomic runtime switch. The restarted voice service connected successfully, and its active package reports 38 registered agents: 12 LinkedIn, six Memory, five YouTube Brain, six Google Workspace, one Update agent, and eight local agents.
+
+Lesson: a passing workspace test does not establish live voice behavior when systemd starts an installed release. Verify the active release path and execute the catalog from that package after activation.
+
+Sources: the JARVIS Voice journal, `systemd/jarvis-voice.service`, `scripts/prepare_google_workspace_release.py`, and the post-activation `list_system_agents` check.
+
+Live acceptance: a typed request was sent through the running voice session. JARVIS invoked `list_system_agents`, began response audio in about 1.5 seconds, and answered that 38 agents are registered with the correct department counts, including six Google Workspace agents. No runtime error appeared during the inventory call.

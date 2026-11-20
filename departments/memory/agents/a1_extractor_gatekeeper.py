@@ -57,7 +57,7 @@ class ExtractorGatekeeperAgent(BaseMemoryAgent):
 
         # 2. Check for small talk / noise
         if self._is_noise(clean_user):
-            self.logger.debug("Turn filtered as low-signal chit-chat: %s", clean_user[:40])
+            self.logger.debug("Turn filtered as low-signal chit-chat")
             return None
 
         # 3. Determine Provenance & Importance
@@ -89,9 +89,8 @@ class ExtractorGatekeeperAgent(BaseMemoryAgent):
             importance=importance,
             provenance=provenance,
             ttl_expires_at=ttl,
-            obsidian_path=f"04 Semantic Memory/Facts/{category}.md" if layer == "semantic" else None,
         )
-        self.logger.info("Extracted memory candidate [%s] (score: %.2f, provenance: %s)", title, importance, provenance)
+        self.logger.debug("Extracted %s candidate (score: %.2f, provenance: %s)", category, importance, provenance)
         return candidate
 
     def _trap_tool_failures(
@@ -110,11 +109,11 @@ class ExtractorGatekeeperAgent(BaseMemoryAgent):
                     session_id=session_id,
                     trigger_prompt=trigger_prompt,
                     tool_name=event.get("tool_name", "unknown_tool"),
-                    tool_input=event.get("input", {}),
+                    tool_input=self.redact_diagnostics(event.get("input", {})),
                     exit_code=exit_code if exit_code != 0 else 1,
-                    stdout=event.get("stdout"),
-                    stderr=event.get("stderr"),
-                    error_message=event.get("error"),
+                    stdout=self.redact_diagnostics(event.get("stdout")),
+                    stderr=self.redact_diagnostics(event.get("stderr")),
+                    error_message=self.redact_diagnostics(event.get("error")),
                 )
                 self.logger.warning("Captured tool failure into episodic trace: %s", trace_id)
 
