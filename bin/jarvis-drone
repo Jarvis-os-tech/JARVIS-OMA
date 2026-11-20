@@ -50,6 +50,16 @@ case "$cmd" in
             exit 0
         fi
 
+        # Prefer systemd service if available
+        if systemctl --user is-enabled jarvis-drone.service &>/dev/null || [[ -f "${HOME}/.config/systemd/user/jarvis-drone.service" ]]; then
+            systemctl --user start jarvis-drone.service 2>/dev/null || true
+            sleep 1
+            if is_drone_running; then
+                echo "JARVIS Drone Companion launched via systemd (Bridge: ws://127.0.0.1:${DRONE_PORT})."
+                exit 0
+            fi
+        fi
+
         echo "Launching JARVIS Drone Companion..."
         setsid "${DRONE_DIR}/launch.sh" "$@" >/tmp/jarvis_drone_launch.log 2>&1 &
         sleep 1
@@ -65,6 +75,7 @@ case "$cmd" in
 
     stop)
         echo "Stopping JARVIS Drone Companion..."
+        systemctl --user stop jarvis-drone.service 2>/dev/null || true
         pkill -f "electron.*ui/jarvis_drone" 2>/dev/null || true
         pkill -f "electron.*--port=${DRONE_PORT}" 2>/dev/null || true
         pkill -f "[a]pp-path=.*ui/jarvis_drone" 2>/dev/null || true

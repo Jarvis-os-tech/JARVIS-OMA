@@ -4,6 +4,7 @@ set -euo pipefail
 
 SERVICE="jarvis-voice.service"
 MONITOR_SERVICE="jarvis-monitor.service"
+DRONE_SERVICE="jarvis-drone.service"
 SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 
@@ -69,9 +70,11 @@ case "$cmd" in
         echo "Restarting JARVIS..."
         systemctl --user restart "$SERVICE" 2>/dev/null || true
         systemctl --user restart "$MONITOR_SERVICE" 2>/dev/null || true
+        systemctl --user restart "$DRONE_SERVICE" 2>/dev/null || true
         sleep 0.5
         active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
         m_active=$(systemctl --user is-active "$MONITOR_SERVICE" 2>/dev/null || true)
+        d_active=$(systemctl --user is-active "$DRONE_SERVICE" 2>/dev/null || true)
         if [[ "$active" == "active" ]]; then
             echo "JARVIS Voice is active and running."
         else
@@ -80,29 +83,38 @@ case "$cmd" in
         if [[ "$m_active" == "active" ]]; then
             echo "JARVIS Monitor is active and running."
         fi
+        if [[ "$d_active" == "active" ]]; then
+            echo "JARVIS Drone Companion is active and running."
+        fi
         ;;
     disable|disanble)
         echo "Disabling JARVIS services..."
         systemctl --user disable --now "$SERVICE" 2>/dev/null || true
         systemctl --user disable --now "$MONITOR_SERVICE" 2>/dev/null || true
+        systemctl --user disable --now "$DRONE_SERVICE" 2>/dev/null || true
         echo "JARVIS services disabled and stopped."
         ;;
     enable)
         echo "Enabling JARVIS services..."
         systemctl --user enable --now "$SERVICE" 2>/dev/null || true
         systemctl --user enable --now "$MONITOR_SERVICE" 2>/dev/null || true
+        systemctl --user enable --now "$DRONE_SERVICE" 2>/dev/null || true
         sleep 0.5
         active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
         m_active=$(systemctl --user is-active "$MONITOR_SERVICE" 2>/dev/null || true)
-        echo "Voice service: ${active:-inactive}, Monitor service: ${m_active:-inactive}"
+        d_active=$(systemctl --user is-active "$DRONE_SERVICE" 2>/dev/null || true)
+        echo "Voice service: ${active:-inactive}, Monitor service: ${m_active:-inactive}, Drone service: ${d_active:-inactive}"
         ;;
     status)
         active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
         enabled=$(systemctl --user is-enabled "$SERVICE" 2>/dev/null || true)
         m_active=$(systemctl --user is-active "$MONITOR_SERVICE" 2>/dev/null || true)
         m_enabled=$(systemctl --user is-enabled "$MONITOR_SERVICE" 2>/dev/null || true)
-        echo "Voice service: ${active:-inactive} (enabled: ${enabled:-no})"
+        d_active=$(systemctl --user is-active "$DRONE_SERVICE" 2>/dev/null || true)
+        d_enabled=$(systemctl --user is-enabled "$DRONE_SERVICE" 2>/dev/null || true)
+        echo "Voice service:   ${active:-inactive} (enabled: ${enabled:-no})"
         echo "Monitor service: ${m_active:-inactive} (enabled: ${m_enabled:-no})"
+        echo "Drone service:   ${d_active:-inactive} (enabled: ${d_enabled:-no})"
         if [[ "$active" == "active" ]]; then
             if [[ -x "${SCRIPT_DIR}/bin/jarvis-voice" ]]; then
                 "${SCRIPT_DIR}/bin/jarvis-voice" status || true
@@ -115,18 +127,22 @@ case "$cmd" in
         echo "Starting JARVIS..."
         systemctl --user start "$SERVICE" 2>/dev/null || true
         systemctl --user start "$MONITOR_SERVICE" 2>/dev/null || true
+        systemctl --user start "$DRONE_SERVICE" 2>/dev/null || true
         sleep 0.5
         active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
         m_active=$(systemctl --user is-active "$MONITOR_SERVICE" 2>/dev/null || true)
-        echo "Voice status: ${active:-inactive}, Monitor status: ${m_active:-inactive}"
+        d_active=$(systemctl --user is-active "$DRONE_SERVICE" 2>/dev/null || true)
+        echo "Voice status: ${active:-inactive}, Monitor status: ${m_active:-inactive}, Drone status: ${d_active:-inactive}"
         ;;
     stop)
         echo "Stopping JARVIS..."
         systemctl --user stop "$SERVICE" 2>/dev/null || true
         systemctl --user stop "$MONITOR_SERVICE" 2>/dev/null || true
+        systemctl --user stop "$DRONE_SERVICE" 2>/dev/null || true
         active=$(systemctl --user is-active "$SERVICE" 2>/dev/null || true)
         m_active=$(systemctl --user is-active "$MONITOR_SERVICE" 2>/dev/null || true)
-        echo "Voice status: ${active:-inactive}, Monitor status: ${m_active:-inactive}"
+        d_active=$(systemctl --user is-active "$DRONE_SERVICE" 2>/dev/null || true)
+        echo "Voice status: ${active:-inactive}, Monitor status: ${m_active:-inactive}, Drone status: ${d_active:-inactive}"
         ;;
     monitor)
         shift || true
