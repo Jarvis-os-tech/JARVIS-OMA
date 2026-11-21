@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "main", "dev", "JARVIS-OS" ]
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,6 +20,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -46,11 +53,25 @@ jobs:
           name: behavior-gate-python-${{ matrix.python-version }}
           path: behavior-gate.json
 
-      - name: Run unit and regression tests
+      - name: Run unit and regression tests with autonomous self-healing
         env:
           PYTHONPATH: .
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_SELF_HEAL_AUTO_PUSH: "true"
+          CI_SELF_HEAL_MAX_ATTEMPTS: "3"
         run: |
-          timeout 300 python -m pytest -q
+          python scripts/ci_self_heal.py \
+            --test-cmd "timeout 300 python -m pytest -q" \
+            --max-attempts 3 \
+            --report ci-self-heal-report.json
+
+      - name: Preserve self-healing report evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-self-heal-report-python-${{ matrix.python-version }}
+          path: ci-self-heal-report.json
 
       - name: Memory quality baseline comparison
         run: python scripts/evaluate_memory.py --baseline tests/fixtures/memory_quality/baseline.json --report memory-quality.json
