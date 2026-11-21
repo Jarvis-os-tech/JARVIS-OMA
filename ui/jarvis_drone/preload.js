@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setIgnoreMouseEvents: (ignore, options) => {
     ipcRenderer.send('set-ignore-mouse-events', ignore, options);
   },
+  setDragging: (dragging) => {
+    ipcRenderer.send(dragging ? 'drone-drag-start' : 'drone-drag-end');
+  },
   moveWindowBy: (dx, dy) => {
     ipcRenderer.send('move-window-by', { dx, dy });
   },

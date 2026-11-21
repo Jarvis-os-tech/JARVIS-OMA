@@ -407,3 +407,14 @@ Lesson: a passing workspace test does not establish live voice behavior when sys
 Sources: the JARVIS Voice journal, `systemd/jarvis-voice.service`, `scripts/prepare_google_workspace_release.py`, and the post-activation `list_system_agents` check.
 
 Live acceptance: a typed request was sent through the running voice session. JARVIS invoked `list_system_agents`, began response audio in about 1.5 seconds, and answered that 38 agents are registered with the correct department counts, including six Google Workspace agents. No runtime error appeared during the inventory call.
+
+## 2026-11-20 — Standardize JARVIS Prompting Style into Cross-Runtime Skill
+
+Standardized the Omarchy-derived prompt design invariants into a dedicated, cross-runtime skill `jarvis-prompt-style` located at `~/.agents/skills/jarvis-prompt-style/SKILL.md`. Symlinked the skill across Antigravity (`~/.gemini/config/skills/`), Claude Code (`~/.claude/skills/`), and the JARVIS workspace (`skills/jarvis-prompt-style`).
+
+The skill provides 6 production prompt templates (Crash Forensics, Safe Customization, Zero-Polling Components, Native App Scaffolding, Idempotent Migrations, and Zero-Filler Voice Persona) and enforces the negative constraints matrix prohibiting affirmative filler, unverified root cause speculation, polling loops, raw numeric animation durations, and direct modifications to `/usr/share/omarchy`.
+
+Verified that Claude's dynamic skill selector hook (`~/.claude/hooks/dynamic_skill_selector.py`) and Antigravity discover and select `jarvis-prompt-style` automatically.
+
+Sources: `~/.agents/skills/jarvis-prompt-style/SKILL.md`, `knowledge-base/OMARCHY-PROMPT-STYLE-GUIDE.md`.
+

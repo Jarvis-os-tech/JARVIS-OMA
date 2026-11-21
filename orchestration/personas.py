@@ -22,15 +22,17 @@ def software_assignments(executables):
         raise ValueError('Autonomous workflow requires installed agents: ' + ', '.join(missing or ['claude']))
     return [
         {'agent': 'hermes', 'visible': True, 'batch': False, 'yolo': True, 'prompt':
-         'Research the goal and inspect the project. Produce a concrete implementation plan, '
-         'acceptance criteria and test strategy. Do not change application source.'},
+         'Research the goal and inspect project evidence. Distinguish proven facts from inferences. '
+         'Produce a concrete implementation plan, acceptance criteria and test strategy following non-destructive Omarchy invariants. '
+         'Do not change application source.'},
         {'agent': developer, 'visible': True, 'batch': False, 'yolo': True, 'prompt':
-         'Implement the goal using the preceding research and plan. Preserve unrelated edits. '
-         'Do not modify or override locked voice core files (audio/engine.py, audio/downstream.py, audio/echo_cancel.py). '
+         'Implement the goal using the preceding research and plan. Follow Omarchy standards: preserve unrelated edits, '
+         'adhere to zero-polling architecture and purposeful motion budgets, never touch /usr/share/omarchy (use ~/.config overrides with backups), '
+         'and do not modify or override locked voice core files (audio/engine.py, audio/downstream.py, audio/echo_cancel.py). '
          'Run relevant checks and report changed files and limitations.'},
         {'agent': 'opencode', 'visible': True, 'batch': False, 'yolo': True, 'prompt':
-         'Independently test the implementation against the goal and acceptance criteria. '
-         'Run relevant tests, investigate failures and add regression tests where needed. '
+         'Independently test the implementation against the goal and acceptance criteria. Work strictly from evidence: '
+         'run relevant tests, investigate failures and add regression tests where needed. '
          'Report exact evidence and remaining defects; do not claim success without checks.'},
         {'agent': 'claude', 'visible': True, 'batch': False, 'yolo': True, 'prompt':
          'Review implementation and independent QA evidence. Fix remaining defects within scope, '

@@ -26,7 +26,7 @@ app.on('second-instance', () => {
 app.commandLine.appendSwitch('enable-transparent-visuals');
 
 let win = null;
-const WINDOW_SIZE = 220;
+const WINDOW_SIZE = 96;
 let isQuitting = false;
 
 app.on('before-quit', () => {
@@ -125,42 +125,8 @@ ipcMain.handle('drone-is-visible', () => {
   return win && !win.isDestroyed() ? win.isVisible() : false;
 });
 
-// IPC handler: setIgnoreMouseEvents fallback (if needed)
-ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-  const webContents = event.sender;
-  const targetWindow = BrowserWindow.fromWebContents(webContents);
-  if (targetWindow && !targetWindow.isDestroyed()) {
-    try {
-      targetWindow.setIgnoreMouseEvents(ignore, options || { forward: true });
-    } catch (_) {}
-  }
-});
-
-// Broadcast global cursor point so the drone's eyes follow the cursor across the entire desktop
-let cursorInterval = null;
-function startCursorTracking() {
-  if (cursorInterval) clearInterval(cursorInterval);
-  cursorInterval = setInterval(() => {
-    if (win && !win.isDestroyed() && win.isVisible() && win.webContents && !win.webContents.isDestroyed()) {
-      try {
-        const cursor = screen.getCursorScreenPoint();
-        const [winX, winY] = win.getPosition();
-        const centerX = winX + WINDOW_SIZE / 2;
-        const centerY = winY + WINDOW_SIZE / 2;
-        win.webContents.send('global-cursor', {
-          globalX: cursor.x,
-          globalY: cursor.y,
-          dx: cursor.x - centerX,
-          dy: cursor.y - centerY
-        });
-      } catch (_) {}
-    }
-  }, 40); // 25 FPS gaze tracking
-}
-
 app.whenReady().then(() => {
   createWindow();
-  startCursorTracking();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -170,7 +136,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (cursorInterval) clearInterval(cursorInterval);
   if (process.platform !== 'darwin') {
     app.quit();
   }

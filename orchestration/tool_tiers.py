@@ -41,6 +41,7 @@ _ORCHESTRATION = frozenset({
     'call_hermes_api', 'get_hermes_features', 'run_hermes_command',
     'start_hermes_goal',
     'start_agent_goal', 'list_system_agents', 'delegate_agent', 'delegate_team',
+    'format_agent_prompt',
     'check_agent_team', 'cancel_agent_team', 'check_agent_job', 'list_agent_jobs',
     'cancel_agent_job', 'get_hermes_status', 'create_task_agent', 'task_agent_status',
     'list_task_agents', 'cancel_task_agent', 'followup_task_agent', 'start_development',

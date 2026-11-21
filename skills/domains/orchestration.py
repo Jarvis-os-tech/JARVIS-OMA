@@ -40,6 +40,7 @@ ADAPTERS = {
     'agents.list': '_adapter_list_system_agents',
     'agents.delegate': '_adapter_delegate_agent',
     'agents.delegate_team': '_adapter_delegate_team',
+    'agents.format_prompt': '_adapter_format_agent_prompt',
     'agents.start_goal': '_adapter_start_agent_goal',
     'agents.team_status': '_adapter_check_agent_team',
     'agents.cancel_team': '_adapter_cancel_agent_team',
@@ -56,6 +57,7 @@ ADAPTERS = {
 ADAPTER_COMMANDS = {
     'agents.list': (),
     'agents.delegate': (),
+    'agents.format_prompt': (),
     'agents.status': (),
     'agents.jobs': (),
     'agents.cancel': (),
@@ -202,6 +204,13 @@ class OrchestrationDomain:
             return self._agent_orchestrator.delegate_team(
                 goal, assignments, workspace, timeout_seconds)
         except OrchestrationError as error:
+            raise SkillError(str(error)) from None
+
+    async def _adapter_format_agent_prompt(self, task, context=None, constraints=None, role=None, workspace=None):
+        try:
+            from orchestration.prompt_style import format_prompt
+            return format_prompt(task=task, context=context, constraints=constraints, role=role, workspace=workspace)
+        except (ValueError, TypeError) as error:
             raise SkillError(str(error)) from None
 
     async def _adapter_start_agent_goal(self, goal, workspace, timeout_seconds=900, cost_profile='budget'):

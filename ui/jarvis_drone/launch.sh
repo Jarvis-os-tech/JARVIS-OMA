@@ -42,11 +42,12 @@ if command -v hyprctl &>/dev/null; then
     hyprctl keyword windowrulev2 "float, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "pin, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "noborder, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
+    hyprctl keyword windowrulev2 "bordersize 0, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "noshadow, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "nodim, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "opacity 1.0 override 1.0 override, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
     hyprctl keyword windowrulev2 "noinitialfocus, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
-    hyprctl keyword windowrulev2 "size 220 220, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
+    hyprctl keyword windowrulev2 "size 96 96, class:^(jarvis-drone|jarvis-drone-companion|electron)$" &>/dev/null || true
 
     # Also apply via hyprctl eval for modern Lua/Omarchy config environments
     hyprctl eval "pcall(function() if o and o.window then o.window({ class = '^(jarvis-drone|jarvis-drone-companion|electron)$' }, { float = true, pin = true, border_size = 0, no_shadow = true, no_dim = true, no_initial_focus = true, opacity = '1.0 1.0' }) end end)" &>/dev/null || true

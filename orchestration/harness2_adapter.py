@@ -68,19 +68,9 @@ class Harness2Adapter:
         return out
 
     def prepare_prompt(self, prompt: str, *, agent: str, workspace: str) -> str:
-        return (
-            "Task\n"
-            f"{prompt.strip()}\n\n"
-            "Context\n"
-            "Relevant project background.\n\n"
-            "Expected result\n"
-            "- Add the required functionality\n"
-            "- Run the appropriate tests\n"
-            "- Report changed files\n\n"
-            "Constraints\n"
-            "- Do not modify locked voice files\n"
-            f"- Work only in the supplied workspace: {workspace}"
-        )
+        from orchestration.prompt_style import format_prompt
+        formatted = format_prompt(task=prompt, workspace=workspace)
+        return formatted['formatted_prompt']
 
     def record_outcome(self, *, agent: str, task: str, state: str, output: str = "") -> None:
         try:

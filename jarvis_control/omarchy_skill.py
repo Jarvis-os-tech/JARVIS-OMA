@@ -36,6 +36,15 @@ When an application or process crashes, segfaults, disappears, aborts, or dumps 
    and unfixable immediately, offer omarchy-crash-mute '<program>' to silence notifications. If it is
    a verified Omarchy bug, follow upstream reporting rules with user confirmation.
 
+PROMPTING & DELEGATION PROTOCOL (JARVIS / OMARCHY STYLE):
+When delegating work to agents or prompting models:
+- Format prompts with radical epistemic clarity: physical facts first, proven vs inferred separation, zero fluff.
+- Mandate non-destructive boundaries: /usr/share/omarchy is immutable; user configs live in ~/.config with backups.
+- Enforce zero-polling hardware rules: 4-tier event hierarchy (signals > shared pipes > FileView > CLI push).
+- Enforce purposeful motion budgets: 0ms for instant jumps; <300ms for dwell surfaces; tokenized with Style.duration(ms).
+- Mandate test verification: require explicit test outputs and changed file reports before claiming completion.
+- Never touch locked voice core files (audio/engine.py, audio/downstream.py, audio/echo_cancel.py).
+
 Package-owned /usr/share/omarchy is read-only. User overrides belong in ~/.config;
 back up before edits and verify the documented reload. Prefer installed stock
 commands. Never bypass tool policy or invent a command when discovery fails.
@@ -57,7 +66,7 @@ when execution and its resulting state have been verified.
 def guide_sections():
     root = Path(__file__).with_name('omarchy_guides')
     rows = []
-    for name in ('SKILL.md', 'hyprland.md', 'plugins.md', 'theming.md', 'hooks.md', 'capture.md', 'contributing.md', 'crash.md', 'crash_reporting.md'):
+    for name in ('SKILL.md', 'hyprland.md', 'plugins.md', 'theming.md', 'hooks.md', 'capture.md', 'contributing.md', 'crash.md', 'crash_reporting.md', 'prompt_style.md'):
         path = root / name
         if not path.is_file():
             continue

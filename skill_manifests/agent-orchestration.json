@@ -29,6 +29,39 @@
       }
     },
     {
+      "name": "format_agent_prompt",
+      "description": "Format and structure a task prompt using the canonical Omarchy/JARVIS prompt style (evidence-first framing, non-destructive boundaries, zero-polling physics, verification criteria, and negative constraints) before delegating to subagents or background models.",
+      "adapter": "agents.format_prompt",
+      "parameters_json_schema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The primary goal, action, or question to execute."
+          },
+          "context": {
+            "type": "string",
+            "description": "Observed system evidence, error logs, or relevant facts."
+          },
+          "constraints": {
+            "type": "string",
+            "description": "Additional negative constraints or limits."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["coding", "qa", "research", "triage", "customization"],
+            "description": "Optional specialist role shaping the brief."
+          },
+          "workspace": {
+            "type": "string",
+            "description": "Optional absolute workspace path."
+          }
+        },
+        "required": ["task"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "delegate_agent",
       "description": "Delegate a task to a local coding agent running in an isolated tmux terminal session or background supervisor. Check the job ID for results. Task type selects preset routing; model overrides it.",
       "adapter": "agents.delegate",

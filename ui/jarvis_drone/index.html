@@ -46,6 +46,7 @@
       user-select: none;
       -webkit-user-select: none;
       -webkit-user-drag: none;
+      outline: none;
     }
 
     html, body {
@@ -59,8 +60,8 @@
 
     body.is-electron,
     body.is-electron html {
-      width: 220px;
-      height: 220px;
+      width: 96px;
+      height: 96px;
       overflow: hidden;
     }
 
@@ -73,8 +74,8 @@
     }
 
     body.is-electron #jarvis-stage {
-      width: 220px;
-      height: 220px;
+      width: 96px;
+      height: 96px;
       overflow: hidden;
     }
 
@@ -94,8 +95,8 @@
 
     body.is-electron #drone-anchor {
       position: absolute;
-      left: 110px;
-      top: 110px;
+      left: 48px;
+      top: 48px;
       transform: none !important;
     }
 
@@ -116,6 +117,16 @@
       z-index: 100;
       background: transparent;
       touch-action: none;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #drone-hitbox:focus,
+    #drone-hitbox:focus-visible,
+    #drone-hitbox:active {
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
     }
 
     #drone-hitbox.is-dragging {
@@ -158,8 +169,12 @@
       left: 0;
       top: 0;
       transform-style: preserve-3d;
-      transition: filter 0.4s ease;
+      transition: filter 0.3s ease;
       will-change: transform;
+    }
+
+    #drone-posture-layer.is-hovered {
+      filter: brightness(1.18) drop-shadow(0 0 10px var(--accent-glow));
     }
 
     /* =========================================================================
@@ -169,10 +184,10 @@
     /* 1. Ambient Aura Glow */
     .ambient-aura {
       position: absolute;
-      left: -65px;
-      top: -65px;
-      width: 130px;
-      height: 130px;
+      left: -48px;
+      top: -48px;
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
       background: radial-gradient(circle, var(--accent-glow) 0%, rgba(0, 0, 0, 0) 70%);
       filter: blur(12px);
@@ -771,7 +786,7 @@
     <!-- Floating 3D Micro-Drone -->
     <div id="drone-anchor">
       <!-- 84x84 Hitbox for Grab, Fling, and Click-Through Filtering -->
-      <div id="drone-hitbox" class="drone-hitbox" title="Drag to fling / Tap to interact"></div>
+      <div id="drone-hitbox" class="drone-hitbox"></div>
 
       <!-- 3D Scene Assembly -->
       <div class="drone-scene">
@@ -951,9 +966,9 @@
       if (isElectron) {
         // Default safe desktop bounds for floating window before IPC resolution
         minX = 20;
-        maxX = 1920 - 240;
+        maxX = 1920 - 116;
         minY = 20;
-        maxY = 1080 - 240;
+        maxY = 1080 - 116;
         posX = maxX - 40;
         posY = 60;
 
@@ -961,9 +976,9 @@
           window.electronAPI.getScreenBounds().then((bounds) => {
             if (bounds) {
               minX = bounds.x + 20;
-              maxX = bounds.x + bounds.width - 240;
+              maxX = bounds.x + bounds.width - 116;
               minY = bounds.y + 20;
-              maxY = bounds.y + bounds.height - 240;
+              maxY = bounds.y + bounds.height - 116;
               if (!isDragging && !isFlinging) {
                 posX = Math.max(minX, Math.min(maxX, posX));
                 posY = Math.max(minY, Math.min(maxY, posY));
@@ -990,12 +1005,8 @@
       let droneStartY = 0;
       let velocityHistory = [];
 
-      // Idle patrol & Auto-dodge
+      // Interaction tracking
       let lastInteractionTime = performance.now();
-      let isPatrolling = false;
-      let patrolTargetX = posX;
-      let patrolTargetY = posY;
-      let nextPatrolTime = performance.now() + 15000;
 
       // Cursor tracking & Eye physics
       let cursorX = window.innerWidth / 2;
@@ -1132,13 +1143,27 @@
 
       // =======================================================================
       // Natural Eye Blinking & Cursor Tracking
+      // Gated strictly to when cursor is on top of the drone; otherwise no changes
       // =======================================================================
+      let isHoveringDrone = false;
+      let blinkTimeoutId = null;
+
       function scheduleNextBlink() {
-        const interval = 2000 + Math.random() * 3000; // 2 to 5 seconds
-        setTimeout(() => {
-          performBlink();
-          scheduleNextBlink();
+        if (!isHoveringDrone) return;
+        const interval = 2200 + Math.random() * 2600;
+        blinkTimeoutId = setTimeout(() => {
+          if (isHoveringDrone) {
+            performBlink();
+            scheduleNextBlink();
+          }
         }, interval);
+      }
+
+      function stopBlinking() {
+        if (blinkTimeoutId) {
+          clearTimeout(blinkTimeoutId);
+          blinkTimeoutId = null;
+        }
       }
 
       function performBlink() {
@@ -1154,67 +1179,55 @@
 
         leftEye.animate(blinkKeyframes, blinkTiming);
         rightEye.animate(blinkKeyframes, blinkTiming);
-
-        // 25% chance of double blink
-        if (Math.random() < 0.25) {
-          setTimeout(() => {
-            leftEye.animate(blinkKeyframes, blinkTiming);
-            rightEye.animate(blinkKeyframes, blinkTiming);
-          }, 220);
-        }
       }
 
-      scheduleNextBlink();
+      // Hover and gaze tracking strictly bound to the drone hitbox
+      hitbox.addEventListener('pointerenter', () => {
+        isHoveringDrone = true;
+        if (postureLayer) postureLayer.classList.add('is-hovered');
+        performBlink();
+        scheduleNextBlink();
+      });
 
-      function handleCursorMove(e) {
-        if (isElectron) return;
-        cursorX = e.clientX;
-        cursorY = e.clientY;
+      hitbox.addEventListener('pointermove', (e) => {
+        if (isDragging) return;
+        isHoveringDrone = true;
+        const rect = hitbox.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = e.clientX - centerX;
+        const dy = e.clientY - centerY;
 
-        // Reset idle timer on active user cursor movement
+        // Subtle, decreased gaze reaction within visor
+        const maxEyeX = 2.5;
+        const maxEyeY = 1.5;
+        targetEyeX = Math.max(-maxEyeX, Math.min(maxEyeX, dx * 0.03));
+        targetEyeY = Math.max(-maxEyeY, Math.min(maxEyeY, dy * 0.03));
         lastInteractionTime = performance.now();
-        isPatrolling = false;
-        nextPatrolTime = performance.now() + 15000;
+      });
 
-        // Eye tracking within visor bounds
-        const droneCenterX = posX;
-        const droneCenterY = posY;
-        const dx = cursorX - droneCenterX;
-        const dy = cursorY - droneCenterY;
+      hitbox.addEventListener('pointerleave', () => {
+        if (!isDragging) {
+          isHoveringDrone = false;
+          targetEyeX = 0;
+          targetEyeY = 0;
+          if (postureLayer) postureLayer.classList.remove('is-hovered');
+          stopBlinking();
+        }
+      });
 
-        const maxEyeX = 7;
-        const maxEyeY = 4;
-        targetEyeX = Math.max(-maxEyeX, Math.min(maxEyeX, dx * 0.02));
-        targetEyeY = Math.max(-maxEyeY, Math.min(maxEyeY, dy * 0.02));
-      }
-
-      window.addEventListener('pointermove', handleCursorMove);
-
-      // In Electron, track global desktop cursor for wide-angle eye tracking
-      if (isElectron && window.electronAPI && typeof window.electronAPI.onGlobalCursor === 'function') {
-        window.electronAPI.onGlobalCursor((data) => {
-          cursorX = data.globalX;
-          cursorY = data.globalY;
-
-          const maxEyeX = 7;
-          const maxEyeY = 4;
-          targetEyeX = Math.max(-maxEyeX, Math.min(maxEyeX, data.dx * 0.02));
-          targetEyeY = Math.max(-maxEyeY, Math.min(maxEyeY, data.dy * 0.02));
-
-          const now = performance.now();
-          lastInteractionTime = now;
-          if (isPatrolling) {
-            const dist = Math.hypot(data.dx, data.dy);
-            if (dist < 150) {
-              isPatrolling = false;
-              nextPatrolTime = now + 15000;
-            }
-          }
-        });
-      }
+      window.addEventListener('pointerleave', () => {
+        if (!isDragging) {
+          isHoveringDrone = false;
+          targetEyeX = 0;
+          targetEyeY = 0;
+          if (postureLayer) postureLayer.classList.remove('is-hovered');
+          stopBlinking();
+        }
+      });
 
       // =======================================================================
-      // Physics: Dragging, Inertial Fling, Boundary Bounce & Idle Patrol
+      // Physics: Dragging, Inertial Fling, and Boundary Bounce
       // =======================================================================
       function cancelFling() {
         if (flingAnimId) {
@@ -1229,8 +1242,10 @@
       hitbox.addEventListener('pointerdown', (e) => {
         hitbox.setPointerCapture(e.pointerId);
         isDragging = true;
+        if (isElectron && window.electronAPI && typeof window.electronAPI.setDragging === 'function') {
+          window.electronAPI.setDragging(true);
+        }
         cancelFling();
-        isPatrolling = false;
 
         const startPtX = isElectron ? e.screenX : e.clientX;
         const startPtY = isElectron ? e.screenY : e.clientY;
@@ -1241,7 +1256,6 @@
         droneStartY = posY;
 
         lastInteractionTime = performance.now();
-        nextPatrolTime = performance.now() + 15000;
 
         velocityHistory = [{
           x: startPtX,
@@ -1274,7 +1288,6 @@
         }
 
         lastInteractionTime = now;
-        nextPatrolTime = now + 15000;
       });
 
       function handlePointerUpOrCancel(e) {
@@ -1283,6 +1296,9 @@
           try { hitbox.releasePointerCapture(e.pointerId); } catch (_) {}
         }
         isDragging = false;
+        if (isElectron && window.electronAPI && typeof window.electronAPI.setDragging === 'function') {
+          window.electronAPI.setDragging(false);
+        }
         hitbox.classList.remove('is-dragging');
 
         const endPtX = isElectron ? e.screenX : e.clientX;
@@ -1318,6 +1334,8 @@
 
       hitbox.addEventListener('pointerup', handlePointerUpOrCancel);
       hitbox.addEventListener('pointercancel', handlePointerUpOrCancel);
+      window.addEventListener('pointerup', handlePointerUpOrCancel);
+      window.addEventListener('pointercancel', handlePointerUpOrCancel);
 
       function clampPositionToBounds() {
         posX = Math.max(minX, Math.min(maxX, posX));
@@ -1396,54 +1414,12 @@
         setState(next);
       }
 
-      // Main Animation / Physics RAF Loop (Patrol, Eye Lerp, Auto-Dodge)
+      // Main Animation / Physics RAF Loop (Eye Pupil Lerp)
       function physicsLoop(timestamp) {
-        // 1. Smooth eye pupil interpolation
+        // Smooth eye pupil interpolation
         currentEyeX += (targetEyeX - currentEyeX) * 0.16;
         currentEyeY += (targetEyeY - currentEyeY) * 0.16;
         eyesTrack.style.transform = `translate3d(${currentEyeX.toFixed(2)}px, ${currentEyeY.toFixed(2)}px, 0)`;
-
-        // 2. Autonomous Patrol (if idle > 15 seconds)
-        const now = performance.now();
-        if (currentState === 'idle' && !isDragging && !isFlinging) {
-          if (now > nextPatrolTime && !isPatrolling) {
-            isPatrolling = true;
-            patrolTargetX = minX + Math.random() * (maxX - minX);
-            patrolTargetY = minY + Math.random() * (maxY - minY);
-          }
-
-          if (isPatrolling) {
-            const pDx = patrolTargetX - posX;
-            const pDy = patrolTargetY - posY;
-            const pDist = Math.hypot(pDx, pDy);
-
-            if (pDist > 4) {
-              // Drift smoothly at ~35-45 px/s (approx 0.65 px/frame)
-              const patrolSpeed = 0.65;
-              posX += (pDx / pDist) * patrolSpeed;
-              posY += (pDy / pDist) * patrolSpeed;
-              updateDroneTransform();
-            } else {
-              // Reached waypoint, rest before next drift
-              isPatrolling = false;
-              nextPatrolTime = now + 9000 + Math.random() * 8000;
-            }
-          }
-
-          // 3. Auto-Dodge: Gentle repulsive vector if cursor approaches too close
-          const dCenterX = isElectron ? (posX + 110) : posX;
-          const dCenterY = isElectron ? (posY + 110) : posY;
-          const dCenterDx = dCenterX - cursorX;
-          const dCenterDy = dCenterY - cursorY;
-          const cursorDist = Math.hypot(dCenterDx, dCenterDy);
-
-          if (cursorDist < 120 && cursorDist > 2) {
-            const dodgeForce = (120 - cursorDist) * 0.035;
-            posX = Math.max(minX, Math.min(maxX, posX + (dCenterDx / cursorDist) * dodgeForce));
-            posY = Math.max(minY, Math.min(maxY, posY + (dCenterDy / cursorDist) * dodgeForce));
-            updateDroneTransform();
-          }
-        }
 
         requestAnimationFrame(physicsLoop);
       }
@@ -1451,21 +1427,24 @@
       requestAnimationFrame(physicsLoop);
 
       // =======================================================================
-      // Element Hover Reporting
+      // Element Hover Reporting & Dynamic Click-Through
       // =======================================================================
       function setupPassthroughElement(el) {
         if (!el) return;
         el.addEventListener('mouseenter', () => {
+          isHoveringDrone = true;
           window.dispatchEvent(new CustomEvent('drone-hover', { detail: { hovering: true, element: el.id } }));
         });
 
         el.addEventListener('mouseleave', () => {
+          isHoveringDrone = false;
+          if (!isDragging) {
+            targetEyeX = 0;
+            targetEyeY = 0;
+          }
           window.dispatchEvent(new CustomEvent('drone-hover', { detail: { hovering: false, element: el.id } }));
         });
       }
-
-      setupPassthroughElement(hitbox);
-      setupPassthroughElement(controlBar);
 
       setupPassthroughElement(hitbox);
       setupPassthroughElement(controlBar);
