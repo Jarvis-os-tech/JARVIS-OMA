@@ -2058,6 +2058,10 @@ class LiveVoice:
                     if frame.closed or (blocked and not self.gate.active):
                         self.activity_end_sent_at = time.monotonic()
                         self._reply_wait_started_at = self.activity_end_sent_at
+                        pending_ack, self._pending_task_ack = self._pending_task_ack, None
+                        if (pending_ack and pending_ack[0] == self._reply_serial
+                                and self._tools_in_flight):
+                            self._play_filler_reflex(pending_ack[1], pending_ack[2], admitted=True)
                         self._barge_pending = False
 
     async def receive(self, session):

@@ -43,8 +43,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Required behavior gate
-        run: python scripts/behavior_gate.py --report behavior-gate.json
+      - name: Required behavior gate with autonomous self-healing
+        env:
+          PYTHONPATH: .
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_SELF_HEAL_AUTO_PUSH: "true"
+          CI_SELF_HEAL_MAX_ATTEMPTS: "3"
+        run: |
+          python scripts/ci_self_heal.py \
+            --test-cmd "python scripts/behavior_gate.py --report behavior-gate.json" \
+            --max-attempts 3 \
+            --report behavior-gate-self-heal.json
 
       - name: Preserve behavior gate evidence
         if: always()
